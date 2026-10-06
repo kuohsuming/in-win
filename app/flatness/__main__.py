@@ -23,6 +23,7 @@ def parse_args(argv=None):
     p.add_argument("--no-restart", action="store_true", help="開發用：套用時不重啟 dnsmasq")
     p.add_argument("--log-file", type=Path, default=Path("/var/log/flatness/flatness.log"))
     p.add_argument("--fullscreen", action="store_true", help="產線全螢幕")
+    p.add_argument("--on-top", action="store_true", help="視窗保持在最上層（Wayland 下需搭配 QT_QPA_PLATFORM=xcb）")
     return p.parse_args(argv)
 
 
@@ -54,6 +55,9 @@ def main(argv=None) -> int:
 
     win = MainWindow(args.def_file, args.hosts, args.equip_net,
                      restart_cmd=None if args.no_restart else bootp.RESTART_CMD)
+    if args.on_top:
+        from PySide6.QtCore import Qt
+        win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
     if args.fullscreen:
         win.showFullScreen()
     else:
