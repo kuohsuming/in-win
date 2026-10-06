@@ -19,6 +19,9 @@ print(n.network_address, n.netmask)' "$PC_IP/$NET_PREFIX") || fail "PC_IP/NET_PR
   # 1. DL-EN1 定義檔：已存在則保留現場版本（3.0.8）
   local def_src="$INSTALLER_DIR/$DLEN1_DEF_FILE"
   [[ $DLEN1_DEF_FILE == /* ]] && def_src=$DLEN1_DEF_FILE
+  # App 在設備設定畫面套用時，以「暫存檔 + 改名」原子覆寫定義檔並在此建立備份（UPL-06、UPL-07），
+  # 故 /etc/flatness 目錄須讓 App 帳號群組可寫
+  install -d -m 2775 -o root -g "$APP_USER" /etc/flatness
   if [[ ! -f $DEF_DST ]]; then
     [[ -f $def_src ]] || fail "找不到 DL-EN1 定義檔 $def_src"
     install -D -m 664 -o root -g "$APP_USER" "$def_src" "$DEF_DST"

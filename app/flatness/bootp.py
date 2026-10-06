@@ -178,7 +178,7 @@ def render_hosts(devices: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def atomic_write(path: Path, text: str) -> None:
     """先寫暫存檔再改名，斷電時檔案只會是完整的新檔或舊檔（UPL-07）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
@@ -194,7 +194,7 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def _backup(path: Path, keep: int = BACKUP_KEEP) -> Path | None:
+def backup_file(path: Path, keep: int = BACKUP_KEEP) -> Path | None:
     """備份舊檔（檔名含時間），只保留最近 keep 份（DEF-03）。"""
     if not path.exists():
         return None
@@ -212,8 +212,8 @@ def _backup(path: Path, keep: int = BACKUP_KEEP) -> Path | None:
 def apply(devices: list[dict], hosts_path: Path, restart_cmd=RESTART_CMD) -> None:
     """備份 → 覆寫對應檔 → 重啟 dnsmasq；重啟失敗時還原舊檔並再次重啟（DEF-03）。"""
     hosts_path = Path(hosts_path)
-    backup = _backup(hosts_path)
-    _atomic_write(hosts_path, render_hosts(devices))
+    backup = backup_file(hosts_path)
+    atomic_write(hosts_path, render_hosts(devices))
     if not restart_cmd:
         return
     result = subprocess.run(restart_cmd, capture_output=True, text=True)

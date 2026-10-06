@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DL-EN1 定義檔",
+  "type": "object",
+  "required": ["version", "dl_en1"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "dl_en1": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/device" }
+    }
+  },
+  "$defs": {
+    "device": {
+      "type": "object",
+      "required": ["key", "name", "mac", "ipv4", "max_probes", "probes"],
+      "additionalProperties": false,
+      "properties": {
+        "key":        { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,29}$" },
+        "name":       { "type": "string", "minLength": 1, "maxLength": 10 },
+        "mac":        { "type": "string", "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" },
+        "ipv4":       { "type": "string", "format": "ipv4" },
+        "port":       { "type": "integer", "minimum": 1, "maximum": 65535, "default": 64000 },
+        "max_probes": { "type": "integer", "minimum": 1, "maximum": 15 },
+        "probes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 15,
+          "items": { "$ref": "#/$defs/probe" }
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "required": ["id", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "integer", "minimum": 1, "maximum": 15 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 10 }
+      }
+    }
+  }
+}
