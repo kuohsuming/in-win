@@ -1,96 +1,83 @@
-# 步驟 3：BOOTP 服務（INS-04、3.0.4、DEF-03、DEF-10）
-# dnsmasq 只在設備網卡上運作、關閉 DNS，依 MAC 對應表配發固定 IP 給 DL-EN1，開機自動啟動。
+# 步驟 3：BOOTP 服務（INS-04、3.0.4、DSC-07）
+# 安裝 dnsmasq 並遮蔽作業系統的 dnsmasq.service：dnsmasq 由 App 啟動與管理，開機時不啟動。
+# 產生 root 擁有、App 不可改的主設定；sudoers 只允許 App 帳號以固定參數執行 dnsmasq。
+# BOOTP 主機對應由 App 啟動時依資料庫產生（DSC-06），安裝包不寫入內容。
 # 由 install.sh / setup-bootp.sh 在載入 common.sh 與 site.conf 後 source。
 
 BOOTP_DIR=/var/lib/flatness/bootp
 BOOTP_HOSTS=$BOOTP_DIR/dl-en1.hosts
-DNSMASQ_CONF=/etc/dnsmasq.d/flatness-dl-en1.conf
-DEF_DST=/etc/flatness/dl-en1.json
+DNSMASQ_CONF=/etc/flatness/dnsmasq.conf
+OLD_DNSMASQ_CONF=/etc/dnsmasq.d/flatness-dl-en1.conf   # 舊版安裝包（由系統服務啟動）留下的設定
+# 與 app/flatness/dnsmasq.py 的 COMMAND 必須完全相同
+DNSMASQ_CMD="/usr/sbin/dnsmasq --keep-in-foreground --log-facility=- --conf-file=$DNSMASQ_CONF"
 
 step_bootp() {
-  log "步驟 3：BOOTP 服務（dnsmasq）"
-  local changed=0 net_addr netmask
+  log "步驟 3：BOOTP 服務（dnsmasq，由 App 啟動）"
+  local net_addr netmask
 
   read -r net_addr netmask < <(python3 -c '
 import ipaddress, sys
 n = ipaddress.IPv4Interface(sys.argv[1]).network
 print(n.network_address, n.netmask)' "$PC_IP/$NET_PREFIX") || fail "PC_IP/NET_PREFIX 格式錯誤"
 
-  # 1. DL-EN1 定義檔：已存在則保留現場版本（3.0.8）
-  local def_src="$INSTALLER_DIR/$DLEN1_DEF_FILE"
-  [[ $DLEN1_DEF_FILE == /* ]] && def_src=$DLEN1_DEF_FILE
-  # App 在設備設定畫面套用時，以「暫存檔 + 改名」原子覆寫定義檔並在此建立備份（UPL-06、UPL-07），
-  # 故 /etc/flatness 目錄須讓 App 帳號群組可寫
-  install -d -m 2775 -o root -g "$APP_USER" /etc/flatness
-  if [[ ! -f $DEF_DST ]]; then
-    [[ -f $def_src ]] || fail "找不到 DL-EN1 定義檔 $def_src"
-    install -D -m 664 -o root -g "$APP_USER" "$def_src" "$DEF_DST"
-    ok "已安裝定義檔 $DEF_DST"
-  else
-    ok "定義檔已存在，保留現場版本 $DEF_DST"
-  fi
-  PYTHONPATH="$PKG_DIR/app" python3 -m flatness.bootp check \
-      --def "$DEF_DST" --equip-net "$PC_IP/$NET_PREFIX" || fail "DL-EN1 定義檔驗證失敗"
-
-  # 2. BOOTP 主機對應檔：已存在則保留（3.0.8）；App 上傳定義檔時重新產生（DEF-03）
+  # 1. 目錄：/etc/flatness 讓 App 帳號群組可寫（App 原子覆寫 dl-en1.json 並在此備份，3.0.6），
+  #    加上 sticky bit，App 只能改自己擁有的檔案，不能刪除或替換 root 擁有的 dnsmasq.conf（DSC-07-A5）
+  install -d -m 3775 -o root -g "$APP_USER" /etc/flatness
   install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$BOOTP_DIR"
   if [[ ! -f $BOOTP_HOSTS ]]; then
-    PYTHONPATH="$PKG_DIR/app" python3 -m flatness.bootp apply --no-restart \
-        --def "$DEF_DST" --equip-net "$PC_IP/$NET_PREFIX" --hosts "$BOOTP_HOSTS" \
-        || fail "產生 BOOTP 主機對應檔失敗"
-    chown "$APP_USER:$APP_USER" "$BOOTP_HOSTS"
-    changed=1
-  else
-    ok "BOOTP 主機對應檔已存在，保留 $BOOTP_HOSTS"
+    echo "# 由 App 依資料庫 lan_device 產生（DSC-06）" | install -m 644 -o "$APP_USER" -g "$APP_USER" /dev/stdin "$BOOTP_HOSTS"
   fi
 
-  # 3. dnsmasq 設定：先寫設定再安裝套件，避免套件安裝時以預設 DNS 模式啟動而與 systemd-resolved 衝突
+  # 2. 主設定（root 擁有、App 不可寫）
   if write_if_changed "$DNSMASQ_CONF" 644 <<EOF
 # 由表面平整檢查系統安裝包產生；修改請改 site.conf 後重新執行安裝包
+# dnsmasq 由 App 以 sudo 執行（DSC-07），此檔不可由 App 修改
 # 只做 BOOTP/DHCP，不做 DNS（避免與 systemd-resolved 衝突）
 port=0
 # 只在設備網卡上運作；bind-dynamic 讓網卡較晚取得 IP（例如開機時未接網路線）也能自動開始服務
 interface=$EQUIP_IF
 bind-dynamic
-# static：只配發給對應檔中有登錄 MAC 的設備；BOOTP 用戶端只會取得對應檔中的 IP
+# static：只配發給主機對應中有登錄 MAC 的設備
 dhcp-range=$net_addr,static,$netmask,infinite
 dhcp-hostsfile=$BOOTP_HOSTS
+# 記錄每一筆請求（含未登錄的 MAC、主機名稱、廠商識別），App 以此探索設備（DSC-01）
 log-dhcp
+# 由 App 管理程序，不寫 PID 檔
+pid-file=
 EOF
   then
-    changed=1
     ok "已寫入 $DNSMASQ_CONF"
   else
-    ok "dnsmasq 設定未變更"
+    ok "dnsmasq 主設定未變更"
   fi
 
-  # 4. 安裝 dnsmasq
+  # 3. 安裝 dnsmasq；遮蔽作業系統的服務（INS-04）
   if ! dpkg -s dnsmasq >/dev/null 2>&1; then
+    # 先遮蔽再安裝，避免套件安裝時以預設 DNS 模式啟動而與 systemd-resolved 衝突
+    systemctl mask dnsmasq >>"$LOG_FILE" 2>&1 || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq >>"$LOG_FILE" 2>&1 || fail "安裝 dnsmasq 失敗"
-    changed=1
     ok "已安裝 dnsmasq"
   fi
-  dnsmasq --test --conf-file="$DNSMASQ_CONF" >>"$LOG_FILE" 2>&1 || fail "dnsmasq 設定檢查失敗，詳見 $LOG_FILE"
+  systemctl disable --now dnsmasq >>"$LOG_FILE" 2>&1 || true
+  systemctl mask dnsmasq >>"$LOG_FILE" 2>&1 || fail "無法遮蔽 dnsmasq.service"
+  ok "dnsmasq.service 已停用並遮蔽（由 App 啟動）"
+  if [[ -f $OLD_DNSMASQ_CONF ]]; then
+    rm -f "$OLD_DNSMASQ_CONF"
+    ok "已移除舊版設定 $OLD_DNSMASQ_CONF"
+  fi
+  dnsmasq --test --conf-file="$DNSMASQ_CONF" >>"$LOG_FILE" 2>&1 || fail "dnsmasq 主設定檢查失敗，詳見 $LOG_FILE"
 
-  # 5. 防火牆：只在設備網卡開放 UDP 67
+  # 4. 防火牆：只在設備網卡開放 UDP 67
   if command -v ufw >/dev/null; then
     ufw allow in on "$EQUIP_IF" to any port 67 proto udp comment 'flatness BOOTP' >>"$LOG_FILE" 2>&1 \
       && ok "防火牆：$EQUIP_IF 開放 UDP 67"
   fi
 
-  # 6. 允許 App 帳號重啟 dnsmasq（僅此一項 root 權限）
+  # 5. sudoers：只允許 App 帳號以固定參數執行 dnsmasq（僅此一項 root 權限，DSC-07-A5）
   local sudoers_tmp
   sudoers_tmp=$(mktemp)
-  echo "$APP_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart dnsmasq" > "$sudoers_tmp"
+  echo "$APP_USER ALL=(root) NOPASSWD: $DNSMASQ_CMD" > "$sudoers_tmp"
   visudo -cf "$sudoers_tmp" >/dev/null || { rm -f "$sudoers_tmp"; fail "sudoers 內容錯誤"; }
   write_if_changed /etc/sudoers.d/flatness 440 < "$sudoers_tmp" && ok "已設定 /etc/sudoers.d/flatness"
   rm -f "$sudoers_tmp"
-
-  # 7. 開機自動啟動；設定有變更才重啟
-  systemctl enable dnsmasq >>"$LOG_FILE" 2>&1 || fail "無法設定 dnsmasq 開機啟動"
-  if (( changed )) || ! systemctl is-active --quiet dnsmasq; then
-    systemctl restart dnsmasq || fail "dnsmasq 啟動失敗：journalctl -u dnsmasq -n 30"
-  fi
-  systemctl is-active --quiet dnsmasq || fail "dnsmasq 未運作"
-  ok "dnsmasq 運作中，已設定開機自動啟動"
 }

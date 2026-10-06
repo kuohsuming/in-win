@@ -3,7 +3,7 @@
 --
 -- 用途：在新的量測 PC（或開發機）上建立整套資料庫、App 帳號與資料表。
 -- 依據：Downloads/表面平整檢查系統_需求規格書.md
---       INS-05、3.0.6、3.0.8、DAT-02～DAT-04、DEF-08、DEF-09、SIM-15、5.2
+--       INS-05、3.0.6、3.0.8、DAT-02～DAT-04、DAT-06、DEF-08、DEF-09、SIM-15、5.2、3.10（lan_device）
 --
 -- 執行方式（MySQL root 以作業系統帳號驗證，不需密碼）：
 --     sudo mysql < sql/in-win.sql
@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS flatness.inspection_point (
   judgment           ENUM('OK','HIGH','LOW','ERROR') NOT NULL COMMENT '單點判定：合格／偏高／偏低／設備異常（JDG-01、JDG-04）',
   raw_response       VARCHAR(64)           NULL COMMENT 'DL-EN1 原始回傳字串（DAT-03）',
   error_text         VARCHAR(255)          NULL COMMENT '設備異常原因（3.0.6）',
+  device_mac         CHAR(17)              NULL COMMENT '量測當時該排 DL-EN1 的 MAC（DAT-06）',
   PRIMARY KEY (serial, device_key, probe_id),
   CONSTRAINT fk_point_inspection
     FOREIGN KEY (serial) REFERENCES flatness.inspection (serial)
@@ -71,8 +72,45 @@ CREATE TABLE IF NOT EXISTS flatness.inspection_point (
   DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='量測明細';
 
+-- 舊版已建立的明細表補上 device_mac（DAT-06；可重複執行）
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'device_mac'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.inspection_point ADD COLUMN device_mac CHAR(17) NULL COMMENT ''量測當時該排 DL-EN1 的 MAC（DAT-06）'' AFTER error_text',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 設備網路探索與 DL-EN1 設定（3.10 DSC；DL-EN1 設定的主檔，DEF-01）
+-- 每個 MAC 一筆；App 帳號沒有 DELETE 權限，設備只會新增或更新
+CREATE TABLE IF NOT EXISTS flatness.lan_device (
+  mac            CHAR(17)          NOT NULL COMMENT 'XX:XX:XX:XX:XX:XX，統一大寫（DSC-01）',
+  status         ENUM('unclassified','dl_en1_live','dl_en1_maint','dl_en1_retired','not_dl_en1')
+                                   NOT NULL DEFAULT 'unclassified'
+                                   COMMENT '不明設備／DL-EN1 使用中／維修中／已停用／其他設備',
+  first_seen     DATETIME(3)           NULL COMMENT '首次收到請求的時間；匯入建立、尚未出現過者為 NULL',
+  last_seen      DATETIME(3)           NULL COMMENT '最後一次收到請求的時間',
+  seen_count     INT UNSIGNED      NOT NULL DEFAULT 0 COMMENT '請求封包數，每個 BOOTP／DHCP 請求加 1',
+  last_request   ENUM('BOOTP','DHCP')  NULL COMMENT '最後一次請求的類型',
+  hostname       VARCHAR(64)           NULL COMMENT 'DHCP option 12 主機名稱',
+  vendor_class   VARCHAR(64)           NULL COMMENT 'DHCP option 60 廠商識別',
+  ipv4           VARCHAR(15)           NULL COMMENT '配發的 IP；DL-EN1 使用中與維修中必填，其他設備可留空',
+  dl_en1_config  JSON                  NULL COMMENT 'DL-EN1 設定（3.7.1 去除 mac、ipv4；DSC-12）',
+  sort_order     SMALLINT UNSIGNED     NULL COMMENT '主畫面由上而下的順序',
+  hidden         TINYINT(1)        NOT NULL DEFAULT 0 COMMENT '清單中隱藏（DSC-13）',
+  hidden_at      DATETIME(3)           NULL COMMENT '隱藏時間',
+  updated_at     DATETIME(3)       NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '狀態或設定最後修改時間',
+  PRIMARY KEY (mac),
+  KEY idx_lan_device_status (status)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='設備網路探索與 DL-EN1 設定';
+
 -- -----------------------------------------------------------------------------
--- 3. 資料表（模擬資料庫，結構與正式相同）
+-- 3. 資料表（模擬資料庫，結構與正式相同；模擬模式不探索，不建 lan_device，3.10）
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS flatness_sim.inspection       LIKE flatness.inspection;
 CREATE TABLE IF NOT EXISTS flatness_sim.inspection_point LIKE flatness.inspection_point;
@@ -89,6 +127,18 @@ SET @sql := IF(@fk_missing,
   'ALTER TABLE flatness_sim.inspection_point
      ADD CONSTRAINT fk_sim_point_inspection
      FOREIGN KEY (serial) REFERENCES flatness_sim.inspection (serial)',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 舊版已建立的模擬明細表補上 device_mac
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness_sim' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'device_mac'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness_sim.inspection_point ADD COLUMN device_mac CHAR(17) NULL AFTER error_text',
   'DO 0');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;

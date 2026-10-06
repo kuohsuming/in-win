@@ -17,7 +17,8 @@ ip -br addr show "$IFACE"
 if [[ $(cat "/sys/class/net/$IFACE/carrier" 2>/dev/null) != 1 ]]; then
   echo "⚠ $IFACE 沒有連線訊號（網路線未接或 DL-EN1 未上電）；接上後封包會自動出現"
 fi
-echo "=== dnsmasq：$(systemctl is-active dnsmasq) ==="
+# dnsmasq 由 App 啟動（DSC-07），輸出寫入 App 日誌
+if pgrep -x dnsmasq >/dev/null; then echo "=== dnsmasq：執行中（由 App 啟動）==="; else echo "=== dnsmasq：未執行（App 未啟動？）==="; fi
 [[ -f /var/lib/flatness/bootp/dl-en1.hosts ]] && grep -v '^#' /var/lib/flatness/bootp/dl-en1.hosts \
   | sed 's/^/  對應：/'
 echo
@@ -31,7 +32,9 @@ echo
 
 trap 'kill 0 2>/dev/null' EXIT INT TERM
 
-journalctl -u dnsmasq -f -n 0 -o cat 2>/dev/null | sed -u 's/^/[dnsmasq] /' &
+APP_LOG=${APP_LOG:-/var/log/flatness/flatness.log}
+[[ -f $APP_LOG ]] && tail -F -n 0 "$APP_LOG" 2>/dev/null | grep --line-buffered 'dnsmasq-dhcp' \
+  | sed -u 's/^.*dnsmasq-dhcp/[dnsmasq] dnsmasq-dhcp/' &
 
 # -e 顯示 MAC；-vvv 解碼 BOOTP 欄位；--print 同時顯示並寫檔
 tcpdump -i "$IFACE" -n -e -l -vvv --print -w "$PCAP" 'udp port 67 or udp port 68' 2>&1 \

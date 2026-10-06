@@ -1,0 +1,37 @@
+# 表面平整檢查系統 App 設定檔（/etc/flatness/config.toml，3.0.6、NFR-12）
+# 安裝時已存在則保留，不覆蓋（3.0.8）。DL-EN1 的 MAC、IP 與探頭不在此，於 App「設備設定」維護。
+
+station_id = "ST01"          # 工站代號（site.conf STATION_ID）
+equip_if = "eno2"            # 設備網卡（site.conf EQUIP_IF）
+pc_ip = "192.168.10.1"       # 設備網卡沒有位址時使用的網段（site.conf PC_IP／NET_PREFIX，DSC-08）
+net_prefix = 24
+countdown_seconds = 5        # 量測前倒數（MEA-03、MEA-07）
+redetect_seconds = 10        # 設備異常時重新偵測間隔（DEV-05）
+
+# 工程人員密碼（UPL-01）的 SHA-256；留空則無法進入「設備設定」
+# 產生方式：python3 -c 'import hashlib,getpass;print(hashlib.sha256(getpass.getpass().encode()).hexdigest())'
+engineer_password_sha256 = ""
+
+[ip_range]                   # 預設 IP 範圍（DSC-08），主機位址
+dl_en1 = [11, 99]
+other = [100, 199]
+
+# 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id，單位 mm
+# ⚠ 以下為假設值（TBD-01，待品保提供正式標準值與上下限）；未設定的探頭量測時顯示「未設定允收標準」
+[standards.front]
+1 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+2 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+3 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+4 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+
+[standards.middle]
+1 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
+2 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
+3 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
+4 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
+
+[standards.rear]
+1 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
+2 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
+3 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
+4 = { nominal = 12.520, lower = 12.470, upper = 12.570 }

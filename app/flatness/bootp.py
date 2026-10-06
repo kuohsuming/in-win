@@ -1,13 +1,12 @@
-"""DL-EN1 定義檔驗證與 BOOTP 主機對應檔產生（DEF-02、DEF-03、DEF-10）。
+"""DL-EN1 定義檔驗證（DEF-02）與檔案工具（原子覆寫、備份；UPL-06、UPL-07）。
 
 只用 Python 標準函式庫：安裝包在建立虛擬環境之前（3.0.4 步驟 3）就要呼叫本模組。
 App 執行時另以 jsonschema 做完整 Schema 驗證（DEF-02）；這裡實作的規則與 3.7.1 一致。
+BOOTP 主機對應由 App 依資料庫產生（lan.render_hosts、sync.py），dnsmasq 由 App 啟動（DSC-07）。
 
 命令列：
     python3 -m flatness.bootp check    --def dl-en1.json --equip-net 192.168.10.1/24
     python3 -m flatness.bootp render   --def dl-en1.json --equip-net 192.168.10.1/24
-    python3 -m flatness.bootp apply    --def dl-en1.json --equip-net 192.168.10.1/24 \
-                                       --hosts /var/lib/flatness/bootp/dl-en1.hosts
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from datetime import datetime
@@ -26,7 +24,6 @@ from pathlib import Path
 
 DEFAULT_PORT = 64000
 BACKUP_KEEP = 20
-RESTART_CMD = ["sudo", "-n", "/usr/bin/systemctl", "restart", "dnsmasq"]
 
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,29}$")
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
@@ -209,32 +206,12 @@ def backup_file(path: Path, keep: int = BACKUP_KEEP) -> Path | None:
     return dest
 
 
-def apply(devices: list[dict], hosts_path: Path, restart_cmd=RESTART_CMD) -> None:
-    """備份 → 覆寫對應檔 → 重啟 dnsmasq；重啟失敗時還原舊檔並再次重啟（DEF-03）。"""
-    hosts_path = Path(hosts_path)
-    backup = backup_file(hosts_path)
-    atomic_write(hosts_path, render_hosts(devices))
-    if not restart_cmd:
-        return
-    result = subprocess.run(restart_cmd, capture_output=True, text=True)
-    if result.returncode == 0:
-        return
-    if backup is not None:
-        shutil.copy2(backup, hosts_path)
-    else:
-        hosts_path.unlink(missing_ok=True)
-    subprocess.run(restart_cmd, capture_output=True, text=True)
-    raise RuntimeError(f"dnsmasq 重啟失敗，已還原 BOOTP 主機對應：{result.stderr.strip()}")
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="flatness.bootp", description=__doc__.splitlines()[0])
-    parser.add_argument("action", choices=["check", "render", "apply"])
+    parser.add_argument("action", choices=["check", "render"])
     parser.add_argument("--def", dest="def_file", required=True, type=Path, help="DL-EN1 定義檔")
     parser.add_argument("--equip-net", required=True, type=ipaddress.IPv4Interface,
                         help="量測 PC 設備網卡 IP/遮罩長度，例：192.168.10.1/24")
-    parser.add_argument("--hosts", type=Path, help="apply：BOOTP 主機對應檔路徑")
-    parser.add_argument("--no-restart", action="store_true", help="apply：只寫檔，不重啟 dnsmasq")
     args = parser.parse_args(argv)
 
     try:
@@ -247,17 +224,8 @@ def main(argv=None) -> int:
 
     if args.action == "check":
         print(f"OK：{len(devices)} 台 DL-EN1")
-    elif args.action == "render":
-        sys.stdout.write(render_hosts(devices))
     else:
-        if args.hosts is None:
-            parser.error("apply 需要 --hosts")
-        try:
-            apply(devices, args.hosts, restart_cmd=None if args.no_restart else RESTART_CMD)
-        except RuntimeError as exc:
-            print(exc, file=sys.stderr)
-            return 1
-        print(f"已寫入 {args.hosts}（{len(devices)} 台 DL-EN1）")
+        sys.stdout.write(render_hosts(devices))
     return 0
 
 

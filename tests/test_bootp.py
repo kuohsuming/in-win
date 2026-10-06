@@ -92,23 +92,14 @@ class HostsTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("#"))
         self.assertEqual(lines[1], "00:01:fc:de:3a:75,192.168.10.11,front")
 
-    def test_apply_backs_up_and_keeps_20(self):
+    def test_backup_keeps_20(self):
         with tempfile.TemporaryDirectory() as tmp:
             hosts = Path(tmp, "dl-en1.hosts")
-            for _ in range(23):
-                bootp.apply(SAMPLE["dl_en1"], hosts, restart_cmd=None)
-            self.assertEqual(hosts.read_text(), bootp.render_hosts(SAMPLE["dl_en1"]))
+            for i in range(23):
+                bootp.backup_file(hosts)
+                bootp.atomic_write(hosts, f"{i}\n")
+            self.assertEqual(hosts.read_text(), "22\n")
             self.assertEqual(len(list(Path(tmp, "backup").iterdir())), 20)
-
-    def test_apply_restores_old_file_when_restart_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            hosts = Path(tmp, "dl-en1.hosts")
-            hosts.write_text("old\n")
-            changed = copy.deepcopy(SAMPLE["dl_en1"])
-            changed[0]["ipv4"] = "192.168.10.99"
-            with self.assertRaises(RuntimeError):
-                bootp.apply(changed, hosts, restart_cmd=["false"])
-            self.assertEqual(hosts.read_text(), "old\n")
 
 
 if __name__ == "__main__":
