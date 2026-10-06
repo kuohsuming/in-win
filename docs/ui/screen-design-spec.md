@@ -246,7 +246,7 @@
 
 | 項目 | 規格 |
 | --- | --- |
-| 容器 | 寬 460px（最大 92% 螢幕寬），背景 `panel`，邊框 1px `line`，圓角 8px，內距 20px 22px，元素間距 14px；背景遮罩黑色 45% |
+| 容器 | 寬 460px（最大 92% 螢幕寬），背景 `panel`，邊框 1px `line`，圓角 8px，內距 20px 22px，元素間距 14px；背景遮罩黑色 45%；置於主畫面中央（UI-09） |
 | 標題 | 「取出測試數據」，20px |
 | 日期 | 標籤「日期」15px `ink-2`；日期輸入框：數字字型 20px，內距 8px 10px，邊框 2px `line`，背景 `panel-2`；預設今天 |
 | 資訊框 | 背景 `panel-2`，圓角 4px，內距 10px 12px，16px，行高 1.6：「該日共 **N** 筆紀錄／預設檔名：平整檢查_YYYY-MM-DD.xlsx」；無紀錄時「該日沒有紀錄，不會產生檔案。」 |
@@ -265,7 +265,7 @@
 
 | 項目 | 規格 |
 | --- | --- |
-| 尺寸 | 寬 1120px（最大 96% 螢幕寬），高度最大 92% 螢幕高；模態，背景遮罩黑色 45% |
+| 尺寸 | 寬 1120px（最大 96% 螢幕寬），高度最大 92% 螢幕高；模態，背景遮罩黑色 45%；置於主畫面中央，切換步驟改變大小或主畫面改變大小時重新置中（UI-09） |
 | 結構 | 標題列（固定）／內容區（可捲動）／按鍵列（固定） |
 | 標題列 | 「設備設定」20px；右側「✕」關閉鍵（22px，`ink-2`）；下方 1px `line` 分隔線；內距 16px 22px |
 | 內容區 | 內距 16px 22px，區塊間距 18px；區塊標題 17px 粗體，右側可接 13px `ink-2` 說明 |
@@ -437,7 +437,7 @@
 | SVG 圖示 | `QSvgRenderer` 或 `QIcon`；繪製前將 `currentColor` 替換為狀態色 |
 | 透明度淡化 | `QGraphicsOpacityEffect`（0.55） |
 | 閃爍、旋轉、倒數 | `QTimer`；旋轉可用 `QPropertyAnimation` 或於 `paintEvent` 中旋轉 |
-| 對話框 | `QDialog`（模態）；日期用 `QDateEdit`；儲存位置用 `QFileDialog.getSaveFileName` |
+| 對話框 | `QDialog`（模態），嵌入主畫面的遮罩元件內並置中，不另開視窗（Wayland 不允許程式指定視窗座標，UI-09）；日期用 `QDateEdit`；儲存位置用 `QFileDialog.getSaveFileName` |
 | 設備設定 | `QDialog` + `QStackedWidget` 切換三個步驟；左右兩欄用 `QSplitter` 或 `QHBoxLayout`；設備清單用 `QTableWidget`（整列選取），「顯示已隱藏」用 `QCheckBox`；設備類型用 `QComboBox`；內容用 `QFormLayout`；最多探頭數用 `QSpinBox`；探頭表用可編輯的 `QTableWidget`；檢查訊息用 `QListWidget`；匯入用 `QFileDialog.getOpenFileName`、下載用 `getSaveFileName` |
 | 清單自動更新 | 探索執行緒寫入資料庫後以 Qt signal 通知對話框更新清單，不可在 GUI 執行緒讀取 dnsmasq 輸出 |
 | IP 檢查（ARP） | 背景執行緒或 `QProcess` 執行 `ping -c1 -W1 <IP>` 後讀 `ip neigh show <IP> dev <設備網卡>` 取得回應者 MAC；結果以 signal 回到畫面，期間顯示「檢查中…」 |

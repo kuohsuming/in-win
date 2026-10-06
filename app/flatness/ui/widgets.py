@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel, QWidget
 
@@ -52,10 +52,15 @@ class Toast(QLabel):
 
 
 class Backdrop(QWidget):
-    """對話框背景遮罩：黑色 45%（5.8、5.10）。"""
+    """對話框背景遮罩：黑色 45%（5.8、5.10），並把對話框置於主畫面中央（UI-09）。
+
+    對話框嵌入遮罩內，不另開視窗：Wayland 不允許程式指定視窗位置，嵌入後在任何桌面環境都能精確置中；
+    對話框改變大小（例如設備設定切換步驟）或主畫面改變大小時重新置中。遮罩擋住主畫面的點擊。
+    """
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
+        self._dialog: QWidget | None = None
         self.hide()
 
     def paintEvent(self, _):
@@ -66,6 +71,44 @@ class Backdrop(QWidget):
         self.setGeometry(QRect(0, 0, self.parentWidget().width(), self.parentWidget().height()))
         self.raise_()
         self.show()
+        self.center()
+
+    def host(self, dialog: QWidget):
+        """嵌入對話框並置中；對話框可提供 fit() 依可用空間調整大小。"""
+        self._dialog = dialog
+        dialog.setParent(self, Qt.Widget)
+        dialog.installEventFilter(self)
+        self.cover()
+        if hasattr(dialog, "fit"):
+            dialog.fit()
+        else:
+            dialog.adjustSize()
+        self.center()
+
+    def release(self):
+        if self._dialog is not None:
+            self._dialog.removeEventFilter(self)
+            self._dialog = None
+        self.hide()
+
+    def center(self):
+        d = self._dialog
+        if d is not None:
+            w, h = min(d.width(), self.width()), min(d.height(), self.height())
+            if (w, h) != (d.width(), d.height()):
+                d.resize(w, h)
+            d.move((self.width() - w) // 2, (self.height() - h) // 2)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self._dialog is not None and hasattr(self._dialog, "fit"):
+            self._dialog.fit()
+        self.center()
+
+    def eventFilter(self, obj, event):
+        if obj is self._dialog and event.type() == QEvent.Resize:
+            self.center()
+        return False
 
 
 class Dot(QWidget):

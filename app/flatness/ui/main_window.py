@@ -962,11 +962,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ 對話框
 
     def _modal(self, dlg) -> int:
-        self.backdrop.cover()
+        """對話框嵌入遮罩、置於主畫面中央（UI-09），以模態方式執行。"""
+        self.backdrop.host(dlg)
         try:
             return dlg.exec()
         finally:
-            self.backdrop.hide()
+            self.backdrop.release()
 
     def open_export(self):
         if not self.busy:

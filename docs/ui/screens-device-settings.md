@@ -12,7 +12,7 @@
 | 取出測試數據 | `main_window.ExportDialog` | 無邊框模態 `QDialog` | 工具列「取出測試數據」 |
 | 設備設定 | `settings_dialog.SettingsDialog` | 無邊框模態 `QDialog`，三步驟 `QStackedWidget` | 工具列鉛筆按鍵 |
 
-開啟對話框時主畫面蓋上黑色 45% 遮罩（`widgets.Backdrop`）。倒數、讀取、偵測中，三個工具按鍵停用。
+開啟對話框時主畫面蓋上黑色 45% 遮罩（`widgets.Backdrop`），對話框嵌入遮罩內並置於主畫面中央；對話框或主畫面改變大小時重新置中（UI-09）。倒數、讀取、偵測中，三個工具按鍵停用。
 
 ## 2. 共用元件與樣式
 
@@ -110,7 +110,7 @@
 
 ### 5.3 整合注意事項
 
-- 新的模態對話框請用 `MainWindow._modal(dlg)` 開啟，才會蓋上遮罩；倒數、讀取、偵測中（`MainWindow.busy`）不可開啟。
+- 新的模態對話框請用 `MainWindow._modal(dlg)` 開啟，才會蓋上遮罩並置中（UI-09）；對話框可實作 `fit()` 依主畫面大小調整尺寸；倒數、讀取、偵測中（`MainWindow.busy`）不可開啟。
 - 背景工作不可在畫面執行緒阻斷：沿用 `threading` ＋ Qt signal 回到畫面執行緒的做法。
 - 測試以 `QT_QPA_PLATFORM=offscreen` 執行（`tests/test_ui.py`）；`Backend` 可搭配 `MemoryStore`、不啟動 dnsmasq、注入假的 ARP 探測。
 

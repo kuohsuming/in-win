@@ -160,17 +160,21 @@ class SettingsDialog(QDialog):
     # ================================================================ 版面
 
     def _size_for(self, page: int):
-        screen = (self.parentWidget().screen() if self.parentWidget() else QGuiApplication.primaryScreen())
-        geo = screen.availableGeometry()
-        if page == 0:
-            w, h = min(560, int(geo.width() * 0.96)), 300
+        self._page_size = page
+        self.fit()
+
+    def fit(self):
+        """依可用空間決定大小（5.10 容器）：嵌在主畫面時以主畫面為準，否則以螢幕為準。置中由遮罩負責（UI-09）。"""
+        if self.isWindow():
+            area = (self.parentWidget().screen() if self.parentWidget() else QGuiApplication.primaryScreen()
+                    ).availableGeometry().size()
         else:
-            w = min(1240, int(geo.width() * 0.97))
-            h = int(geo.height() * 0.92)
+            area = self.parentWidget().size()
+        if getattr(self, "_page_size", 0) == 0:
+            w, h = min(560, int(area.width() * 0.96)), 300
+        else:
+            w, h = min(1240, int(area.width() * 0.97)), int(area.height() * 0.92)
         self.resize(w, h)
-        if self.parentWidget():
-            pg = self.parentWidget().window().geometry()
-            self.move(pg.x() + (pg.width() - w) // 2, pg.y() + (pg.height() - h) // 2)
 
     def _header(self) -> QWidget:
         bar = QFrame()

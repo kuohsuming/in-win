@@ -388,6 +388,56 @@ class MainWindowTest(UiBase):
         texts = [w.flag_box.itemAt(i).widget().text() for i in range(w.flag_box.count())]
         self.assertFalse(any("BOOTP" in t for t in texts))
 
+    def _centered(self, dlg):
+        host = dlg.parentWidget()
+        self.assertIs(host, self.win.backdrop)
+        g = dlg.geometry()
+        self.assertLessEqual(abs(g.center().x() - host.width() / 2), 1)
+        self.assertLessEqual(abs(g.center().y() - host.height() / 2), 1)
+        self.assertTrue(host.rect().contains(g))
+
+    def test_settings_dialog_centered(self):  # UI-09
+        from PySide6.QtCore import QTimer
+        from flatness.ui.settings_dialog import SettingsDialog
+        w = self.win
+        w.show()
+        dlg = SettingsDialog(self.be, w)
+        checks = []
+
+        def check():
+            self._centered(dlg)                 # 步驟一（密碼）
+            checks.append(dlg.size().width())
+            dlg.enter_edit()                    # 步驟二：對話框變大後仍置中
+            pump(self.app, 0.05)
+            self._centered(dlg)
+            checks.append(dlg.size().width())
+            w.resize(1400, 900)                 # 主畫面改變大小後仍置中
+            pump(self.app, 0.05)
+            self._centered(dlg)
+            checks.append(dlg.size().width())
+            dlg.done(0)
+        QTimer.singleShot(0, check)
+        w._modal(dlg)
+        self.assertEqual(len(checks), 3)
+        self.assertLess(checks[0], checks[1])
+        self.assertFalse(w.backdrop.isVisible())
+
+    def test_export_dialog_centered(self):  # UI-09
+        from PySide6.QtCore import QTimer
+        from flatness.ui.main_window import ExportDialog
+        w = self.win
+        w.show()
+        dlg = ExportDialog(w.sink, w)
+        ok = []
+
+        def check():
+            self._centered(dlg)
+            ok.append(True)
+            dlg.done(0)
+        QTimer.singleShot(0, check)
+        w._modal(dlg)
+        self.assertEqual(ok, [True])
+
     def test_close_writes_pending(self):  # DAT-05
         w = self.win
         w.detect()
