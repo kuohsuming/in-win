@@ -829,18 +829,16 @@ class SettingsDialog(QDialog):
         can_hide = d is not None and not d.is_dl_en1 and not (o and o.is_dl_en1) and not self.read_only
         self.btn_hide.setEnabled(can_hide)
         self.btn_hide.setText("取消隱藏" if d and d.hidden else "隱藏")
-        # 上移／下移：主畫面上的排（已儲存的使用中與維修中），且未在本次編輯中改變類型（DSC-17：按下即儲存）
-        live = lan.screen_devices(self.original.values())
-        idx = next((i for i, x in enumerate(live) if d and x.mac == d.mac), None)
-        movable = idx is not None and d.status == live[idx].status and not self.read_only
+        # 上移／下移（DSC-17）：任何設備皆可，到頂停用「上移」、到底停用「下移」，其餘兩鍵皆可用
+        shown = [x.mac for x in self._visible_devices()]
+        idx = shown.index(d.mac) if d is not None and d.mac in shown else None
+        movable = idx is not None and d.mac in self.original and not self.read_only
         self.btn_up.setEnabled(movable and idx > 0)
-        self.btn_down.setEnabled(movable and idx < len(live) - 1)
-        if d is None or not d.is_dl_en1:
-            hint = "上移／下移只適用 DL-EN1 使用中與維修中" if d is not None else ""
-        elif not movable:
-            hint = "新設定的 DL-EN1 請先按「儲存」，再調整順序" if not self.read_only else ""
-        elif len(live) < 2:
-            hint = "主畫面只有 1 台 DL-EN1，不需調整順序"
+        self.btn_down.setEnabled(movable and idx < len(shown) - 1)
+        if d is not None and self.read_only:
+            hint = "無法連線資料庫，暫時無法調整順序"
+        elif d is not None and d.mac not in self.original:
+            hint = "匯入的新設備請先儲存，再調整順序"
         else:
             hint = ""
         self.move_hint.setText(hint)
@@ -968,13 +966,17 @@ class SettingsDialog(QDialog):
     def _move(self, step):
         """上移／下移：按下即寫入資料庫並更新定義檔，主畫面同步調整順序（DSC-17）。
 
-        只寫入順序（`sort_order`）：以已儲存的內容為準移動，其他尚未儲存的編輯保留在畫面上。
+        任何設備皆可移動，與清單上看得到的相鄰設備交換位置。只寫入順序（`sort_order`），
+        其他尚未儲存的編輯（包括設備類型）保留在畫面上，待「儲存」時寫入。
         """
         if not self.selected:
             return
+        shown = [x.mac for x in self._visible_devices()]
+        order = [x.mac for x in lan.list_order(self._devices())]
         old = [d.copy() for d in self.original.values()]
         new = [d.copy() for d in old]
-        if not lan.move(new, self.selected, step):
+        lan.renumber(new, order) if self._needs_renumber(new) else None
+        if not lan.move(new, self.selected, step, visible=set(shown)):
             return
         try:
             result = self.backend.apply(old, new, summary="調整 DL-EN1 順序")
@@ -984,14 +986,19 @@ class SettingsDialog(QDialog):
             return
         for d in new:
             self.original[d.mac].sort_order = d.sort_order
-            w = self.work.get(d.mac)
-            if w is not None and w.status in (LIVE, MAINT) and self.original[d.mac].status in (LIVE, MAINT):
-                w.sort_order = d.sort_order
-        names = "、".join(x["name"] for x in result.layout["dl_en1"])
-        log.info("調整 DL-EN1 順序並儲存：%s", names)
-        self.toast.show_text(f"已儲存順序：{names}")
+            if d.mac in self.work:
+                self.work[d.mac].sort_order = d.sort_order
+        moved = self.work[self.selected]
+        log.info("調整順序並儲存：%s %s；主畫面：%s", moved.label(), "上移" if step < 0 else "下移",
+                 "、".join(x["name"] for x in result.layout["dl_en1"]))
+        self.toast.show_text(f"已儲存順序：{moved.label()} {'上移' if step < 0 else '下移'}")
         self.order_saved.emit(result.layout)
         self._after_change()
+
+    @staticmethod
+    def _needs_renumber(devices) -> bool:
+        nums = [d.sort_order for d in devices]
+        return None in nums or len(set(nums)) != len(nums)
 
     # ---------------------------------------------------------------- IP 探測（DSC-10）
 

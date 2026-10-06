@@ -66,7 +66,7 @@
 
 | 部位 | 說明 |
 | --- | --- |
-| 偵測到的設備清單 | `QTableWidget`，排序依 DSC-02；「設備」欄由 `HtmlDelegate` 繪製類型標籤；探索到新設備時自動更新（`Backend.devices_seen` → 300 ms 合併後重讀資料庫） |
+| 偵測到的設備清單 | `QTableWidget`，依共用順序 `sort_order` 排列（`lan.list_order`，DSC-02、DSC-17）；「設備」欄由 `HtmlDelegate` 繪製類型標籤；探索到新設備時自動更新（`Backend.devices_seen` → 300 ms 合併後重讀資料庫） |
 | 清單按鍵 | 隱藏／取消隱藏、上移、下移（三者皆按下即寫入資料庫；上移／下移發出 `order_saved`，主畫面以 `reorder()` 只調整排的順序）、「顯示已隱藏（N）」 |
 | 偵測到的設備 | 唯讀資訊框（MAC、KEYENCE 提示、首次／最後出現、主機名稱、廠商識別）＋ 表單；依設備類型顯示欄位（`QFormLayout.setRowVisible`） |
 | IPv4 檢查 | 先比對資料表（顯示佔用者），再於離開欄位時在背景做 ARP 探測（`Backend.probe_async`） |

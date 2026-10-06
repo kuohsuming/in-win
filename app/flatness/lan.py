@@ -119,18 +119,14 @@ def config_from_entry(entry: dict) -> dict:
     return cfg
 
 
-def _sort_key(d: LanDevice):
-    return (d.sort_order is None, d.sort_order or 0, d.mac)
-
-
 def live_devices(devices) -> list[LanDevice]:
     """「DL-EN1 使用中」依畫面順序。"""
-    return sorted((d for d in devices if d.status == LIVE), key=_sort_key)
+    return sorted((d for d in devices if d.status == LIVE), key=_list_key)
 
 
 def screen_devices(devices) -> list[LanDevice]:
-    """主畫面上的排：「使用中」與「維修中」，依同一個順序（DSC-15、DSC-17）。"""
-    return sorted((d for d in devices if d.status in DL_STATUSES), key=_sort_key)
+    """主畫面上的排：「使用中」與「維修中」，依它們在設備清單中的相對順序（DSC-15、DSC-17）。"""
+    return sorted((d for d in devices if d.status in DL_STATUSES), key=_list_key)
 
 
 def screen_layout(devices) -> dict:
@@ -144,14 +140,23 @@ def screen_layout(devices) -> dict:
     return {"version": 1, "dl_en1": out}
 
 
+def _list_key(d: LanDevice):
+    """設備清單順序（DSC-02、DSC-17）：所有設備共用一個順序（`sort_order`），不分設備類型。
+
+    1. 尚未排序的不明設備（新偵測到）在最上面，最近出現的在前
+    2. 已排序的設備依 `sort_order`
+    3. 舊資料中尚未排序的其他設備：依設備類型、最近出現；第一次調整順序時全部重新編號
+    """
+    ts = -d.last_seen.timestamp() if d.last_seen else float("inf")
+    if d.sort_order is None and d.status == UNCLASSIFIED:
+        return (0, 0, ts, d.mac)
+    if d.sort_order is not None:
+        return (1, d.sort_order, 0, d.mac)
+    return (2, STATUS_RANK[d.status], ts, d.mac)
+
+
 def list_order(devices) -> list[LanDevice]:
-    """設備清單排序（DSC-02）：不明 → 使用中與維修中（依主畫面順序）→ 其他 → 已停用；其餘依最後出現由新到舊。"""
-    def key(d: LanDevice):
-        if d.status in DL_STATUSES:
-            return (STATUS_RANK[LIVE], *_sort_key(d))
-        ts = d.last_seen.timestamp() if d.last_seen else float("-inf")
-        return (STATUS_RANK[d.status], False, -ts, d.mac)
-    return sorted(devices, key=key)
+    return sorted(devices, key=_list_key)
 
 
 def definition_from(devices) -> dict:
@@ -360,25 +365,20 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
     if status in DL_STATUSES:
         if not d.config:
             d.config = copy.deepcopy((remembered or {}).get(mac)) or default_config()
-        # 使用中與維修中互換時保留順序（DSC-15 改回使用中回到原位置）；
-        # 已停用改回時，原順序未被其他 DL-EN1 使用才沿用，否則排到最後
-        keep = before in DL_STATUSES or (
-            before == RETIRED and all(x.sort_order != d.sort_order for x in devices
-                                      if x is not d and x.is_dl_en1))
-        if d.sort_order is None or not keep:
+        # 改變設備類型時清單位置不變（DSC-17）；尚未排序者（新偵測到）排到最後一位
+        if d.sort_order is None:
             d.sort_order = next_sort_order([x for x in devices if x is not d])
         d.hidden, d.hidden_at = False, None  # DSC-13：設為使用中或維修中時自動取消隱藏
         if not d.ipv4:
             d.ipv4 = default_ip(devices, "dl_en1", equip_net, ranges, exclude_mac=mac)
     elif status == OTHER:
         d.config = None  # 其他設備只能設定 IP（DSC-04）
-        d.sort_order = None
         if not d.ipv4:
             d.ipv4 = default_ip(devices, "other", equip_net, ranges, exclude_mac=mac)
     elif status == RETIRED:
         pass  # 保留最後的設定與 IP 供查詢，但不配發、不佔用（DSC-09）
     elif status == UNCLASSIFIED:
-        d.config, d.ipv4, d.sort_order = None, None, None
+        d.config, d.ipv4 = None, None
     return d
 
 
@@ -390,9 +390,12 @@ def replace(devices, old_mac: str, new_mac: str) -> LanDevice:
         raise ValueError("只能替換「DL-EN1 使用中」的設備")
     if new is old or new.status == LIVE:
         raise ValueError("新機不可為使用中，也不可與舊機相同")
+    new_pos = new.sort_order
     new.status, new.config, new.ipv4, new.sort_order = LIVE, copy.deepcopy(old.config), old.ipv4, old.sort_order
     new.hidden, new.hidden_at = False, None
     old.status = RETIRED
+    # 舊機移到新機原本的位置，順序不重複
+    old.sort_order = new_pos if new_pos is not None else next_sort_order(devices)
     return new
 
 
@@ -402,17 +405,31 @@ def replace_candidates(devices, old_mac: str) -> list[LanDevice]:
     return sorted(cands, key=lambda d: (not d.keyence, -(d.last_seen.timestamp() if d.last_seen else 0)))
 
 
-def move(devices, mac: str, step: int) -> bool:
-    """上移／下移（使用中與維修中共用主畫面順序，DSC-17）；回傳是否有移動。"""
-    live = screen_devices(devices)
-    idx = next((i for i, d in enumerate(live) if d.mac == mac), None)
-    if idx is None or not 0 <= idx + step < len(live):
+def renumber(devices, order=None) -> None:
+    """依目前清單順序（或指定的 MAC 順序）重新編號 1～N。"""
+    by = {d.mac: d for d in devices}
+    macs = order if order is not None else [d.mac for d in list_order(devices)]
+    macs = [m for m in macs if m in by] + [d.mac for d in list_order(devices) if d.mac not in set(macs)]
+    for i, m in enumerate(macs):
+        by[m].sort_order = i + 1
+
+
+def move(devices, mac: str, step: int, visible=None) -> bool:
+    """上移／下移（DSC-17）：任何設備皆可，與清單上相鄰的設備交換位置；回傳是否有移動。
+
+    visible：畫面上看得到的 MAC（隱藏的設備不顯示時略過）；None 表示全部。
+    第一次調整時若有尚未排序或重複的順序，先依目前清單順序全部重新編號。
+    """
+    devices = list(devices)
+    order = list_order(devices)
+    nums = [d.sort_order for d in order]
+    if None in nums or len(set(nums)) != len(nums):
+        renumber(devices, [d.mac for d in order])
+    shown = [d for d in order if visible is None or d.mac in visible]
+    idx = next((i for i, d in enumerate(shown) if d.mac == mac), None)
+    if idx is None or not 0 <= idx + step < len(shown):
         return False
-    a, b = live[idx], live[idx + step]
-    order = [d.sort_order for d in live]
-    if len(set(order)) != len(order) or None in order:  # 修正重複或缺漏的順序
-        for i, d in enumerate(live):
-            d.sort_order = i + 1
+    a, b = shown[idx], shown[idx + step]
     a.sort_order, b.sort_order = b.sort_order, a.sort_order
     return True
 
@@ -433,11 +450,10 @@ def import_definition(devices, definition: dict) -> list[LanDevice]:
     for d in out.values():
         if d.status == LIVE and d.mac not in in_file:
             d.status = RETIRED
-    # 維修中的順序排在匯入的設備之後，改回使用中時不與它們衝突
-    n = len(definition["dl_en1"])
-    for d in sorted((x for x in out.values() if x.status == MAINT), key=_sort_key):
-        n += 1
-        d.sort_order = n
+    # 檔案中的 DL-EN1 依檔案順序排在最前，其餘設備維持原本的相對順序
+    file_order = [normalize_mac(e["mac"]) for e in definition["dl_en1"]]
+    rest = [d.mac for d in list_order(devices) if d.mac not in in_file]
+    renumber(list(out.values()), file_order + rest)
     return list(out.values())
 
 

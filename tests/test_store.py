@@ -65,7 +65,7 @@ class StoreContract:
         lan.move(new, m.mac, -1)
         with s.transaction() as tx:
             n = tx.save(old, new)
-        self.assertEqual(n, 2)  # 中排（設定與順序）＋ 前排（順序）
+        self.assertEqual(n, 6)  # 第一次調整順序時全部設備重新編號（DSC-17）
         back = by_mac(s.load())["00:01:FC:DE:3A:76"]
         self.assertEqual(back.config, m.config)
         self.assertEqual([d["key"] for d in lan.definition_from(s.load())["dl_en1"]], ["middle", "front", "rear"])

@@ -35,8 +35,9 @@ class OutputTest(unittest.TestCase):
         self.assertNotIn("3c:52:82", lan.render_hosts(devs))
 
     def test_list_order(self):
+        # 新的不明設備在最上；其餘依 sort_order（範例中已停用為 9）；舊資料中未排序者在最後
         order = [d.status for d in lan.list_order(sample_devices())]
-        self.assertEqual(order, [UNCLASSIFIED, LIVE, LIVE, LIVE, OTHER, RETIRED])
+        self.assertEqual(order, [UNCLASSIFIED, LIVE, LIVE, LIVE, RETIRED, OTHER])
 
     def test_normalize_mac(self):
         self.assertEqual(lan.normalize_mac("00-01-fc-de-3a-75"), "00:01:FC:DE:3A:75")
@@ -178,11 +179,36 @@ class OperationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             lan.replace(devs, new.mac, by_mac(devs)["00:01:FC:DE:3A:76"].mac)  # 新機不可為使用中
 
-    def test_move(self):
+    def test_move(self):  # DSC-17：任何設備皆可移動
         devs = sample_devices()
         self.assertTrue(lan.move(devs, "00:01:FC:DE:3A:76", -1))
         self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["middle", "front", "rear"])
-        self.assertFalse(lan.move(devs, "00:01:FC:DE:3A:76", -1))
+        self.assertEqual(sorted(d.sort_order for d in devs), [1, 2, 3, 4, 5, 6])  # 第一次調整時全部編號
+        self.assertTrue(lan.move(devs, "00:01:FC:DE:3A:76", -1))   # 與最上面的不明設備交換
+        self.assertEqual(lan.list_order(devs)[0].mac, "00:01:FC:DE:3A:76")
+        self.assertFalse(lan.move(devs, "00:01:FC:DE:3A:76", -1))  # 已到頂
+        last = lan.list_order(devs)[-1].mac
+        self.assertFalse(lan.move(devs, last, 1))                 # 已到底
+        other = "3C:52:82:11:22:33"
+        self.assertTrue(lan.move(devs, other, -1))                # 其他設備也可移動
+
+    def test_move_skips_hidden(self):
+        devs = sample_devices()
+        by_mac(devs)["00:01:FC:DE:3A:70"].hidden = True           # 已停用設備隱藏
+        visible = {d.mac for d in devs if not d.hidden}
+        order = [d.mac for d in lan.list_order(devs)]
+        other = "3C:52:82:11:22:33"
+        self.assertTrue(lan.move(devs, other, -1, visible=visible))  # 越過隱藏的設備，與後排交換
+        new = [d.mac for d in lan.list_order(devs)]
+        self.assertLess(new.index(other), new.index("00:01:FC:DE:3A:77"))
+        self.assertEqual(order.index("00:01:FC:DE:3A:70"), new.index("00:01:FC:DE:3A:70"))
+
+    def test_status_change_keeps_position(self):  # DSC-17
+        devs = sample_devices()
+        lan.renumber(devs)
+        pos = by_mac(devs)["00:01:FC:DE:3A:76"].sort_order
+        lan.set_status(devs, "00:01:FC:DE:3A:76", OTHER, NET)
+        self.assertEqual(by_mac(devs)["00:01:FC:DE:3A:76"].sort_order, pos)
 
     def test_import(self):  # DEF-07
         devs = sample_devices()

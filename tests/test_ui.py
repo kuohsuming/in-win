@@ -94,7 +94,7 @@ class SettingsDialogTest(UiBase):
     def test_list_order_and_no_add_or_mac_edit(self):  # DSC-02、DSC-16
         macs = [self.dlg.table.item(r, 3).text() for r in range(self.dlg.table.rowCount())]
         self.assertEqual(macs[0], "00:01:FC:12:39:A0")  # 不明設備在最前
-        self.assertEqual(macs[-1], "00:01:FC:DE:3A:70")  # 已停用在最後
+        self.assertEqual(macs[1:4], ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"])
         self.assertIn("有 1 台不明設備", self.dlg.list_hint.text())
         texts = [b.text() for b in self.dlg.findChildren(type(self.dlg.btn_save))]
         self.assertFalse(any("新增設備" in t or t == "刪除" for t in texts))
@@ -218,7 +218,6 @@ class SettingsDialogTest(UiBase):
         d.order_saved.connect(lambda defn: orders.append([x["key"] for x in defn["dl_en1"]]))
         hosts_before = Path(self.tmp.name, "dl-en1.hosts").read_text()
         d.select("00:01:FC:DE:3A:77")              # 後排
-        self.assertFalse(d.btn_down.isEnabled())   # 已在最後
         d.btn_up.click()
         d.btn_up.click()                           # 後排 → 最上，每按一次即儲存
         live = ["00:01:FC:DE:3A:77", "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76"]
@@ -282,34 +281,50 @@ class SettingsDialogTest(UiBase):
         self.assertEqual([(x["key"], x.get("maint", False)) for x in layout],
                          [("front", False), ("rear", True), ("middle", False)])
 
-    def test_move_hints(self):  # DSC-17：停用時說明原因
+    def test_move_buttons_any_device(self):  # DSC-17：到頂停用上移、到底停用下移，其餘兩鍵可用
+        d = self.dlg
+        shown = self.list_macs(d)
+        d.select(shown[0])
+        self.assertEqual((d.btn_up.isEnabled(), d.btn_down.isEnabled()), (False, True))
+        d.select(shown[-1])
+        self.assertEqual((d.btn_up.isEnabled(), d.btn_down.isEnabled()), (True, False))
+        for mac in shown[1:-1]:                     # 不論設備類型
+            d.select(mac)
+            self.assertTrue(d.btn_up.isEnabled() and d.btn_down.isEnabled(), mac)
+            self.assertEqual(d.move_hint.text(), "")
+
+    def test_move_other_device_saves_order_only(self):  # DSC-17
         from flatness import lan
         d = self.dlg
-        d.select("3C:52:82:11:22:33")
-        self.assertIn("只適用 DL-EN1 使用中與維修中", d.move_hint.text())
-        d.select("00:01:FC:12:39:A0")
-        d.status_box.setCurrentIndex(1)            # 設為使用中，尚未儲存
-        self.assertFalse(d.btn_up.isEnabled())
-        self.assertIn("請先按「儲存」", d.move_hint.text())
-        d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.move_hint.text(), "")
-        self.assertTrue(d.btn_up.isEnabled() and d.btn_down.isEnabled())
-        # 只剩一台在主畫面
-        old = self.store.load()
-        new = [x.copy() for x in old]
-        for mac in ("00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"):
-            lan.set_status(new, mac, lan.RETIRED, NET)
-        self.be.apply(old, new)
-        d.load()
-        d.select("00:01:FC:DE:3A:75")
-        self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled())
-        self.assertIn("只有 1 台", d.move_hint.text())
+        d.select("3C:52:82:11:22:33")              # 其他設備
+        before = self.list_macs(d)
+        d.btn_up.click()
+        after = self.list_macs(d)
+        i = before.index("3C:52:82:11:22:33")
+        self.assertEqual(after[i - 1], "3C:52:82:11:22:33")
+        stored = [x.mac for x in lan.list_order(self.store.load())]
+        self.assertEqual(stored, after)             # 已寫入資料庫
+        self.assertFalse(d.is_dirty())
 
-    def test_move_only_for_live(self):  # DSC-17
+    def test_move_unsaved_classified_device(self):  # DSC-17：類型尚未儲存也可調整順序
+        from flatness import lan
         d = self.dlg
-        for mac in ("3C:52:82:11:22:33", "00:01:FC:12:39:A0", "00:01:FC:DE:3A:70"):
-            d.select(mac)
-            self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled(), mac)
+        d.select("00:01:FC:12:39:A0")
+        d.status_box.setCurrentIndex(1)            # 設為使用中（尚未儲存）
+        self.assertTrue(d.btn_up.isEnabled())
+        d.btn_up.click()
+        self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].status, "unclassified")  # 類型未寫入
+        self.assertTrue(d.is_dirty())
+        self.assertEqual(d.work["00:01:FC:12:39:A0"].status, "dl_en1_live")
+
+    def test_move_disabled_when_db_down(self):
+        from flatness.ui.settings_dialog import SettingsDialog
+        self.store.available = False
+        d = SettingsDialog(self.be)
+        d.enter_edit()
+        d.select(self.list_macs(d)[2])
+        self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled())
+        self.assertIn("無法連線資料庫", d.move_hint.text())
 
     def test_maint_stays_on_screen_not_measured(self):  # DSC-15-G1
         d = self.dlg
