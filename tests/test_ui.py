@@ -205,6 +205,55 @@ class SettingsDialogTest(UiBase):
         self.assertIn("舊機 00:01:FC:DE:3A:75 仍在線上", d.ip_note.text())
         self.assertTrue(d.btn_save.isEnabled())
 
+    def list_macs(self, dlg):
+        return [dlg.table.item(r, 3).text() for r in range(dlg.table.rowCount())]
+
+    def test_move_order_persists_after_restart(self):  # DSC-17-G1
+        from flatness import sync
+        from flatness.backend import Backend
+        from flatness.ui.main_window import MainWindow
+        from flatness.ui.settings_dialog import SettingsDialog
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:77")              # 後排
+        self.assertFalse(d.btn_down.isEnabled())   # 已在最後
+        d.btn_up.click()
+        d.btn_up.click()                           # 後排 → 最上
+        live = ["00:01:FC:DE:3A:77", "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76"]
+        self.assertEqual(self.list_macs(d)[1:4], live)  # 設定頁立即反映
+        self.assertTrue(d.is_dirty())
+        self.save()
+        self.assertEqual([x["key"] for x in self.saved[0][0].definition["dl_en1"]], ["rear", "front", "middle"])
+        self.assertEqual([i.tag for i in self.saved[0][1].items], ["順序"])
+
+        # 模擬 App 重新啟動：同一個資料庫、新的 Backend，檔案由資料庫重新產生
+        base = Path(self.tmp.name, "restart")
+        be2 = Backend(self.be.cfg, self.store, sync.Files(base / "dl-en1.json", base / "dl-en1.hosts"), None,
+                      equip_net=NET, probe=lambda *a: None)
+        be2.start()
+        self.assertEqual([x["key"] for x in be2.definition["dl_en1"]], ["rear", "front", "middle"])
+        win = MainWindow(be2, lambda defn: None)
+        self.assertEqual([r.dev["name"] for r in win.rows], ["後排", "前排", "中排"])  # 主畫面
+        d2 = SettingsDialog(be2)
+        d2.enter_edit()
+        self.assertEqual(self.list_macs(d2)[1:4], live)  # 設定頁
+        win.deleteLater()
+        d2.deleteLater()
+
+    def test_move_not_saved_is_discarded(self):  # DSC-17-A2
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:77")
+        d.btn_up.click()
+        d.reject()
+        from flatness import lan
+        self.assertEqual([x["key"] for x in lan.definition_from(self.store.load())["dl_en1"]],
+                         ["front", "middle", "rear"])
+
+    def test_move_only_for_live(self):  # DSC-17
+        d = self.dlg
+        for mac in ("3C:52:82:11:22:33", "00:01:FC:12:39:A0", "00:01:FC:DE:3A:70"):
+            d.select(mac)
+            self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled(), mac)
+
     def test_maint_removes_from_screen(self):  # DSC-15-G1
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
