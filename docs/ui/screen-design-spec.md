@@ -327,7 +327,7 @@
 | 清單排序 | 不明設備 → DL-EN1 使用中與維修中（依主畫面順序）→ 其他設備 → 已停用；同一類依最後出現時間由新到舊（DSC-02、DSC-17） |
 | 清單列狀態 | 點擊列即選取；選取列背景 `ink`、文字 `panel`；有錯誤的列首欄顯示「✘」，未選取時整列文字 `ng` |
 | 自動更新 | 探索到新設備時，清單即時加入（不明設備），並以提示訊息「偵測到 N 台新設備，已以「不明設備」加入清單」通知；「重新整理」可手動更新 |
-| 清單按鍵 | 「隱藏／取消隱藏」（DL-EN1 使用中、維修中時停用）、「上移」「下移」（只對已儲存的 DL-EN1 使用中與維修中；同一個順序決定主畫面與本清單的排列；按下即儲存、主畫面同步調整，提示訊息「已儲存順序：…」，不需按「儲存」，App 重新啟動後不變，DSC-17）；右側核取方塊「顯示已隱藏（N）」。**不提供刪除與新增** |
+| 清單按鍵 | 「隱藏／取消隱藏」（DL-EN1 使用中、維修中時停用）、「上移」「下移」（只對已儲存的 DL-EN1 使用中與維修中；無法使用時按鍵右側以 13px `ink-2` 說明原因；同一個順序決定主畫面與本清單的排列；按下即儲存、主畫面同步調整，提示訊息「已儲存順序：…」，不需按「儲存」，App 重新啟動後不變，DSC-17）；右側核取方塊「顯示已隱藏（N）」。**不提供刪除與新增** |
 | 隱藏（DSC-13） | 只影響清單顯示，按下即生效、寫入資料庫、不需儲存；狀態、IP 配發與探索不受影響；不明設備再次出現時自動取消隱藏；設為 DL-EN1 使用中或維修中時自動取消隱藏 |
 | 設備資訊 | 右欄最上方唯讀框（背景 `panel`，邊框 1px `line`）：MAC（KEYENCE 者另加綠底「KEYENCE｜可能是 DL-EN1」）、首次出現、最後出現（含請求類型與次數）、主機名稱（DHCP 才有） |
 | 內容表單 | 兩欄表單：標籤欄 120px（15px `ink-2`）＋輸入框；欄位依序：設備、識別碼 key、排名稱 name、IPv4、TCP 埠 port、最多探頭數；空白時顯示淡色提示字 |
@@ -438,7 +438,7 @@
 | SVG 圖示 | `QSvgRenderer` 或 `QIcon`；繪製前將 `currentColor` 替換為狀態色 |
 | 透明度淡化 | `QGraphicsOpacityEffect`（0.55） |
 | 閃爍、旋轉、倒數 | `QTimer`；旋轉可用 `QPropertyAnimation` 或於 `paintEvent` 中旋轉 |
-| 對話框 | `QDialog`（模態），嵌入主畫面的遮罩元件內並置中，不另開視窗（Wayland 不允許程式指定視窗座標，UI-09）；日期用 `QDateEdit`；儲存位置用 `QFileDialog.getSaveFileName` |
+| 對話框 | `QDialog`（模態），嵌入主畫面的遮罩元件內並置中，不另開視窗（Wayland 不允許程式指定視窗座標，UI-09）；確認、警告訊息框同樣嵌入置中（`widgets.show_message`，不使用 `QMessageBox`）；日期用 `QDateEdit`；儲存位置用 `QFileDialog.getSaveFileName` |
 | 設備設定 | `QDialog` + `QStackedWidget` 切換三個步驟；左右兩欄用 `QSplitter` 或 `QHBoxLayout`；設備清單用 `QTableWidget`（整列選取），「顯示已隱藏」用 `QCheckBox`；設備類型用 `QComboBox`；內容用 `QFormLayout`；最多探頭數用 `QSpinBox`；探頭表用可編輯的 `QTableWidget`；檢查訊息用 `QListWidget`；匯入用 `QFileDialog.getOpenFileName`、下載用 `getSaveFileName` |
 | 清單自動更新 | 探索執行緒寫入資料庫後以 Qt signal 通知對話框更新清單，不可在 GUI 執行緒讀取 dnsmasq 輸出 |
 | IP 檢查（ARP） | 背景執行緒或 `QProcess` 執行 `ping -c1 -W1 <IP>` 後讀 `ip neigh show <IP> dev <設備網卡>` 取得回應者 MAC；結果以 signal 回到畫面，期間顯示「檢查中…」 |

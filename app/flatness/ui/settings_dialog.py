@@ -18,7 +18,7 @@ from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-    QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+    QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QAbstractSpinBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
     QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
@@ -28,7 +28,7 @@ from .. import bootp, definition, lan, netinfo
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
 from .theme import C, tag_style
-from .widgets import Toast
+from .widgets import Toast, show_message
 
 log = logging.getLogger(__name__)
 
@@ -354,6 +354,8 @@ class SettingsDialog(QDialog):
         self.btn_down = _btn("下移", "small", lambda: self._move(1))
         for w in (self.btn_hide, self.btn_up, self.btn_down):
             row.addWidget(w)
+        self.move_hint = _label("", "note")  # 上移／下移無法使用時說明原因（DSC-17）
+        row.addWidget(self.move_hint)
         row.addStretch()
         self.chk_hidden = QCheckBox("顯示已隱藏（0）")
         self.chk_hidden.toggled.connect(lambda _: self._render_list())
@@ -833,6 +835,15 @@ class SettingsDialog(QDialog):
         movable = idx is not None and d.status == live[idx].status and not self.read_only
         self.btn_up.setEnabled(movable and idx > 0)
         self.btn_down.setEnabled(movable and idx < len(live) - 1)
+        if d is None or not d.is_dl_en1:
+            hint = "上移／下移只適用 DL-EN1 使用中與維修中" if d is not None else ""
+        elif not movable:
+            hint = "新設定的 DL-EN1 請先按「儲存」，再調整順序" if not self.read_only else ""
+        elif len(live) < 2:
+            hint = "主畫面只有 1 台 DL-EN1，不需調整順序"
+        else:
+            hint = ""
+        self.move_hint.setText(hint)
         for b in (self.btn_import, self.btn_restore):
             b.setEnabled(not self.read_only)
         self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0)
@@ -1208,10 +1219,10 @@ class SettingsDialog(QDialog):
 
     # 以下可在測試中替換
     def _ask(self, text: str) -> bool:
-        return QMessageBox.question(self, "設備設定", text) == QMessageBox.Yes
+        return show_message(self, text, buttons=("取消", "確定"), primary=1, kind="ask") == 1
 
     def _warn(self, text: str):
-        QMessageBox.warning(self, "設備設定", text)
+        show_message(self, text, kind="warn")
 
     def _info(self, text: str):
-        QMessageBox.information(self, "設備設定", text)
+        show_message(self, text)

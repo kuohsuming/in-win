@@ -282,6 +282,29 @@ class SettingsDialogTest(UiBase):
         self.assertEqual([(x["key"], x.get("maint", False)) for x in layout],
                          [("front", False), ("rear", True), ("middle", False)])
 
+    def test_move_hints(self):  # DSC-17：停用時說明原因
+        from flatness import lan
+        d = self.dlg
+        d.select("3C:52:82:11:22:33")
+        self.assertIn("只適用 DL-EN1 使用中與維修中", d.move_hint.text())
+        d.select("00:01:FC:12:39:A0")
+        d.status_box.setCurrentIndex(1)            # 設為使用中，尚未儲存
+        self.assertFalse(d.btn_up.isEnabled())
+        self.assertIn("請先按「儲存」", d.move_hint.text())
+        d.select("00:01:FC:DE:3A:76")
+        self.assertEqual(d.move_hint.text(), "")
+        self.assertTrue(d.btn_up.isEnabled() and d.btn_down.isEnabled())
+        # 只剩一台在主畫面
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        for mac in ("00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"):
+            lan.set_status(new, mac, lan.RETIRED, NET)
+        self.be.apply(old, new)
+        d.load()
+        d.select("00:01:FC:DE:3A:75")
+        self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled())
+        self.assertIn("只有 1 台", d.move_hint.text())
+
     def test_move_only_for_live(self):  # DSC-17
         d = self.dlg
         for mac in ("3C:52:82:11:22:33", "00:01:FC:12:39:A0", "00:01:FC:DE:3A:70"):
@@ -546,6 +569,36 @@ class MainWindowTest(UiBase):
         self.assertEqual(len(checks), 3)
         self.assertLess(checks[0], checks[1])
         self.assertFalse(w.backdrop.isVisible())
+
+    def test_message_box_centered(self):  # UI-09：設定頁的確認、警告訊息框
+        from PySide6.QtCore import QTimer
+        from flatness.ui.settings_dialog import SettingsDialog
+        from flatness.ui.widgets import MessageDialog
+        w = self.win
+        w.show()
+        dlg = SettingsDialog(self.be, w)
+        answers = []
+
+        def in_settings():
+            dlg.enter_edit()
+            dlg.select("00:01:FC:DE:3A:76")
+            dlg.name_edit.setText("中段")
+            dlg.name_edit.textEdited.emit("中段")
+
+            def in_message():
+                box = next(x for x in w.findChildren(MessageDialog) if x.isVisible())
+                host = box.parentWidget()
+                g = box.geometry()
+                answers.append(abs(g.center().x() - host.width() / 2) <= 1 and
+                               abs(g.center().y() - host.height() / 2) <= 1)
+                self.assertIn("有尚未儲存的變更", box.findChildren(type(dlg.info))[1].text())
+                box.buttons[1].click()                 # 確定 → 放棄變更並關閉
+            QTimer.singleShot(0, in_message)
+            dlg.reject()
+        QTimer.singleShot(0, in_settings)
+        w._modal(dlg)
+        self.assertEqual(answers, [True])
+        self.assertFalse(dlg.isVisible())
 
     def test_export_dialog_centered(self):  # UI-09
         from PySide6.QtCore import QTimer

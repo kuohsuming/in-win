@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel, QWidget
+from PySide6.QtWidgets import (
+    QDialog, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget,
+)
 
 from .theme import C
 
@@ -139,3 +141,56 @@ class Dot(QWidget):
         p.setBrush(c)
         p.setPen(Qt.NoPen)
         p.drawEllipse(self.rect())
+
+
+class MessageDialog(QDialog):
+    """確認、警告訊息框：與其他對話框相同，嵌入遮罩並置於主畫面中央（UI-09）。"""
+
+    def __init__(self, title: str, text: str, buttons: tuple[str, ...], primary: int, kind: str = "info"):
+        super().__init__(None, Qt.Dialog | Qt.FramelessWindowHint)
+        self.setObjectName("message")
+        border = {"warn": C["ng"], "ask": C["ink-2"]}.get(kind, C["line"])
+        self.setStyleSheet(f"#message {{ background:{C['panel']}; border:2px solid {border}; border-radius:8px; }}")
+        self.setFixedWidth(520)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 18, 22, 18)
+        lay.setSpacing(14)
+        head = QLabel(title)
+        head.setObjectName("h1")
+        if kind == "warn":
+            head.setStyleSheet(f"color:{C['ng']}")
+        lay.addWidget(head)
+        body = QLabel(text)
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        body.setStyleSheet("font-size:16px; line-height:150%;")
+        lay.addWidget(body)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.buttons = []
+        for i, t in enumerate(buttons):
+            b = QPushButton(t)
+            if i == primary:
+                b.setProperty("kind", "primary")
+                b.setDefault(True)
+            b.setMinimumWidth(110)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, i=i: self.done(i + 1))
+            row.addWidget(b)
+            self.buttons.append(b)
+        lay.addLayout(row)
+
+
+def show_message(origin: QWidget, text: str, *, title: str = "設備設定", buttons=("確定",), primary: int = -1,
+                 kind: str = "info") -> int:
+    """在主畫面中央顯示訊息框，回傳按下的按鍵索引；按 Esc 或關閉回傳 -1。"""
+    win = origin.window()
+    host = win.centralWidget() if isinstance(win, QMainWindow) else win
+    backdrop = Backdrop(host)
+    dlg = MessageDialog(title, text, tuple(buttons), primary if primary >= 0 else len(buttons) - 1, kind)
+    backdrop.host(dlg)
+    try:
+        return dlg.exec() - 1
+    finally:
+        backdrop.release()
+        backdrop.deleteLater()
