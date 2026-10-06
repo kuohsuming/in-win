@@ -260,6 +260,7 @@ class DeviceRow(QFrame):
     def __init__(self, index: int, dev: dict, standards: dict):
         super().__init__()
         self.index, self.dev = index, dev
+        self.maint = bool(dev.get("maint"))  # 維修中：顯示但不連線、不量測（DSC-15）
         self.setObjectName("row")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 12, 12, 12)
@@ -290,11 +291,21 @@ class DeviceRow(QFrame):
         ll.addStretch()
         lay.addWidget(left)
 
+        self.tiles: dict[int, ProbeTile] = {}
+        if self.maint:
+            note = QLabel(f"維修中：不連線、不量測（{len(dev['probes'])} 個探頭）")
+            note.setFont(text_font(22, 700))
+            note.setAlignment(Qt.AlignCenter)
+            note.setMinimumHeight(90)
+            note.setStyleSheet(f"color:{C['ink-2']};background:{C['panel-2']};border:2px dashed {C['line']};"
+                               f"border-radius:6px;")
+            lay.addWidget(note, 1)
+            self.set_down(False)
+            return
         grid = QGridLayout()
         grid.setSpacing(10)
         probes = sorted(dev["probes"], key=lambda p: p["id"])
         ncols = min(max(len(probes), 4), 6)
-        self.tiles: dict[int, ProbeTile] = {}
         for i, p in enumerate(probes):
             t = ProbeTile(p["description"], (standards.get(dev["key"]) or {}).get(p["id"]))
             self.tiles[p["id"]] = t
@@ -315,7 +326,14 @@ class DeviceRow(QFrame):
         self.setStyleSheet(
             f"QFrame#row {{ background:{C['panel']}; border:{border}; border-radius:6px; }}"
             f"QFrame#rowname {{ background:{C['ng-soft'] if down else C['panel-2']}; border-radius:4px; border:none; }}")
-        self.name.setStyleSheet(f"color:{C['ng'] if down else C['ink']}; background:transparent;")
+        self.name.setStyleSheet(f"color:{C['ng'] if down else (C['ink-2'] if self.maint else C['ink'])};"
+                                f" background:transparent;")
+        if self.maint:
+            self.unit_dot.hide()
+            self.unit_text.setText(f"DL-EN1 #{self.index + 1}\n維修中")
+            self.unit_text.setStyleSheet(f"background:{C['warn-soft']};color:{C['warn']};font-weight:700;"
+                                         f"padding:2px 8px;border-radius:3px;")
+            return
         if down:
             self.unit_dot.hide()
             self.unit_text.setText(f"DL-EN1 #{self.index + 1}\n偵測不到")
@@ -556,7 +574,7 @@ class MainWindow(QMainWindow):
         r = backend.startup_result
         if r is not None and r.problem:
             self.set_flag("db", r.problem)
-        self.rebuild(backend.definition)
+        self.rebuild(backend.layout)
 
     # ------------------------------------------------------------------ 版面
 
@@ -669,11 +687,15 @@ class MainWindow(QMainWindow):
     def _on_bootp(self, running: bool, reason: str):
         self.set_flag("bootp", None if running or not reason else "BOOTP 服務停止，自動重新啟動中")
 
-    def rebuild(self, definition: dict):
-        """依定義檔建立排與探頭（DEF-04）；套用設定後不需重啟程式。"""
-        self.definition = definition
-        self.devices = definition.get("dl_en1", [])
-        self.station = self.station_factory(definition)
+    def rebuild(self, layout: dict):
+        """依主畫面版面建立排與探頭（DEF-04）；套用設定後不需重啟程式。
+
+        layout 為定義檔格式，含使用中與維修中（"maint": True）；只有使用中連線、偵測、量測（DSC-15）。
+        """
+        self.layout = layout
+        self.devices = [d for d in layout.get("dl_en1", []) if not d.get("maint")]
+        self.definition = {"version": 1, "dl_en1": self.devices}
+        self.station = self.station_factory(self.definition)
         holder = QWidget()
         holder.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(holder)
@@ -681,7 +703,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(12)
         self.rows: list[DeviceRow] = []
         std = self.backend.standards()
-        for i, d in enumerate(self.devices):
+        for i, d in enumerate(layout.get("dl_en1", [])):
             row = DeviceRow(i, d, std)
             self.rows.append(row)
             lay.addWidget(row)
@@ -693,6 +715,10 @@ class MainWindow(QMainWindow):
             lay.addWidget(hint)
         lay.addStretch()
         self.rows_area.setWidget(holder)
+
+    @property
+    def live_rows(self) -> list[DeviceRow]:
+        return [r for r in self.rows if not r.maint]
 
     @property
     def n_probes(self) -> int:
@@ -725,7 +751,7 @@ class MainWindow(QMainWindow):
         self.reread_label.setText(f"重讀 {self.rereads} 次" if self.rereads else "")
 
     def _clear_tiles(self, dev_color="stale", dev_text="", blink=False):
-        for row in self.rows:
+        for row in self.live_rows:
             row.set_down(False, dev_color, blink)
             for t in row.tiles.values():
                 t.set_blank(dev_color, dev_text, blink)
@@ -774,7 +800,7 @@ class MainWindow(QMainWindow):
             return
         errs, n_err = [], 0
         std = self.backend.standards()
-        for row in self.rows:
+        for row in self.live_rows:
             d = row.dev
             s = by_key.get(d["key"], measure.DeviceStatus(d["key"], reachable=False))
             if not s.reachable:
@@ -912,7 +938,7 @@ class MainWindow(QMainWindow):
         std = self.backend.standards()
         points, outs, errs, n_err = [], [], [], 0
         mac = {d["key"]: d.get("mac", "") for d in self.devices}
-        for row in self.rows:
+        for row in self.live_rows:
             d = row.dev
             row.set_down(False, "go")
             missing = 0
@@ -961,7 +987,7 @@ class MainWindow(QMainWindow):
 
     def _fade_ok(self, on: bool):
         """淡化規則（5.5）：不合格或設備異常時，合格方塊透明度 55%。"""
-        for row in self.rows:
+        for row in self.live_rows:
             for t in row.tiles.values():
                 t.fade(on and t.state == OK)
 
@@ -990,13 +1016,16 @@ class MainWindow(QMainWindow):
         dlg.order_saved.connect(self.reorder)
         self._modal(dlg)
 
-    def reorder(self, definition: dict):
+    def reorder(self, layout: dict):
         """設定頁上移／下移後（DSC-17）：只調整排的上下順序，畫面上的量測結果與狀態保留。"""
-        keys = [d["key"] for d in definition.get("dl_en1", [])]
+        entries = layout.get("dl_en1", [])
+        keys = [d["key"] for d in entries]
         if sorted(keys) != sorted(r.dev["key"] for r in self.rows):
-            self.rebuild(definition)
+            self.rebuild(layout)
             return
-        self.definition, self.devices = definition, definition["dl_en1"]
+        self.layout = layout
+        self.devices = [d for d in entries if not d.get("maint")]
+        self.definition = {"version": 1, "dl_en1": self.devices}
         by_key = {r.dev["key"]: r for r in self.rows}
         lay = self.rows_area.widget().layout()
         self.rows = [by_key[k] for k in keys]
@@ -1004,14 +1033,14 @@ class MainWindow(QMainWindow):
             lay.removeWidget(row)
         for i, row in enumerate(self.rows):
             lay.insertWidget(i, row)
-            row.dev = self.devices[i]
+            row.dev = entries[i]
             row.set_index(i)
 
     def _on_settings_saved(self, result, preview):
         """儲存後：清除編號與重讀次數 → 依新設定重建主畫面 → 自動偵測設備（5.10 儲存後）。"""
         self.serial, self.rereads, self.result = None, 0, None
         self._meta()
-        self.rebuild(result.definition)
+        self.rebuild(result.layout)
         msg = "已儲存設定並更新 BOOTP 對應"
         if preview.power_cycle:
             msg += "；請將 " + "、".join(preview.power_cycle) + " 重新上電"

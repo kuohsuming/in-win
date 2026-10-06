@@ -29,14 +29,14 @@
 
 ![主畫面：合格](images/app-main-pass.png)
 
-由上而下：頂端工具列 → 編號列 → 結果橫幅 → 每台「DL-EN1 使用中」一排（只有排與探頭區可捲動）。
+由上而下：頂端工具列 → 編號列 → 結果橫幅 → 每台「DL-EN1 使用中」或「維修中」一排，依同一個順序（`Backend.layout`；只有排與探頭區可捲動）。連線與量測只用使用中的設備（`Backend.definition`，即 `dl-en1.json`）。
 
 | 部位 | 類別 | 說明 |
 | --- | --- | --- |
 | 頂端工具列 | `MainWindow._topbar()` | 標題、系統狀態提示（`set_flag()`）、設備狀態摘要、「偵測設備」「取出測試數據」、鉛筆按鍵 |
 | 編號列 | `MainWindow._serialbar()` | 17 碼編號（DAT-01）、重讀次數、每秒更新的時鐘 |
 | 結果橫幅 | `Banner.set(state, …)` | `detecting`／`booting`／`idle`／`countdown`／`reading`／`pass`／`fail`／`error`，按鍵可用性依 5.3 |
-| 排 | `DeviceRow` | 排名稱、DL-EN1 標示；偵測不到時整排紅框（5.4） |
+| 排 | `DeviceRow` | 排名稱、DL-EN1 標示；偵測不到時整排紅框（5.4）；維修中（`dev["maint"]`）顯示灰色「維修中」、沒有探頭方塊，不列入偵測與量測（`MainWindow.live_rows` 只含使用中） |
 | 探頭方塊 | `ProbeTile` | `set_blank()`、`set_result(state, value, note, …)`、`fade()`（5.5） |
 | 刻度條 | `ScaleBar` | 5.6 公式，`paintEvent` 繪製 |
 

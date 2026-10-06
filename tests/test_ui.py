@@ -268,13 +268,27 @@ class SettingsDialogTest(UiBase):
         self.assertIn("無法儲存順序", self.warnings[-1])
         self.assertEqual(self.list_macs(d)[1:4], ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"])
 
+    def test_move_maint_row(self):  # DSC-17：維修中也在主畫面上，可調整順序
+        from flatness import lan
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        lan.set_status(new, "00:01:FC:DE:3A:77", lan.MAINT, NET)
+        self.be.apply(old, new)
+        self.dlg.load()
+        self.dlg.select("00:01:FC:DE:3A:77")
+        self.assertTrue(self.dlg.btn_up.isEnabled())
+        self.dlg.btn_up.click()
+        layout = lan.screen_layout(self.store.load())["dl_en1"]
+        self.assertEqual([(x["key"], x.get("maint", False)) for x in layout],
+                         [("front", False), ("rear", True), ("middle", False)])
+
     def test_move_only_for_live(self):  # DSC-17
         d = self.dlg
         for mac in ("3C:52:82:11:22:33", "00:01:FC:12:39:A0", "00:01:FC:DE:3A:70"):
             d.select(mac)
             self.assertFalse(d.btn_up.isEnabled() or d.btn_down.isEnabled(), mac)
 
-    def test_maint_removes_from_screen(self):  # DSC-15-G1
+    def test_maint_stays_on_screen_not_measured(self):  # DSC-15-G1
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         d.status_box.setCurrentIndex(2)  # 維修中
@@ -282,7 +296,9 @@ class SettingsDialogTest(UiBase):
         result, preview = self.saved[0]
         self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["front", "rear"])
         self.assertIn("00:01:fc:de:3a:76", Path(self.tmp.name, "dl-en1.hosts").read_text())
-        self.assertEqual(len(preview.removed_points), 4)
+        self.assertEqual((len(preview.paused_points), preview.removed_points), (4, []))
+        self.assertEqual([(x["key"], x.get("maint", False)) for x in result.layout["dl_en1"]],
+                         [("front", False), ("middle", True), ("rear", False)])  # 主畫面保留中排
 
     def test_apply_failure_keeps_dialog_and_restores(self):  # UPL-08
         d = self.dlg
@@ -440,9 +456,31 @@ class MainWindowTest(UiBase):
         lan.set_status(new, "00:01:FC:DE:3A:76", lan.MAINT, NET)
         result = self.be.apply(old, new)
         w._on_settings_saved(result, lan.diff(old, new))
-        self.assertEqual([r.dev["key"] for r in w.rows], ["front", "rear"])
+        self.assertEqual([(r.dev["key"], r.maint) for r in w.rows],
+                         [("front", False), ("middle", True), ("rear", False)])
+        self.assertEqual([r.dev["key"] for r in w.live_rows], ["front", "rear"])
+        self.assertEqual([d["key"] for d in self.stations[-1].definition["dl_en1"]], ["front", "rear"])
         self.wait_state("idle")
         self.assertEqual(w.detect_count, 2)
+
+    def test_maint_row_not_measured(self):  # DSC-15
+        from flatness import lan
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        lan.set_status(new, "00:01:FC:DE:3A:76", lan.MAINT, NET)
+        result = self.be.apply(old, new)
+        w = self.win
+        w.rebuild(result.layout)
+        self.assertEqual(w.rows[1].unit_text.text(), "DL-EN1 #2\n維修中")
+        self.assertEqual(w.rows[1].tiles, {})
+        w.detect()
+        self.wait_state("idle")
+        self.assertIn("2 台 DL-EN1、8 個探頭正常", w.sum_text.text())
+        self.stations[-1].force = "pass"
+        w.next_piece()
+        self.wait_state("pass")
+        self.assertEqual({p.key for p in w.result.points}, {"front", "rear"})
+        self.assertIn("8 個量測點都在標準範圍內", w.banner.say.text())
 
     def test_reorder_keeps_result(self):  # DSC-17：主畫面同步順序，結果保留
         w = self.win

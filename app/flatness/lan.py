@@ -128,11 +128,27 @@ def live_devices(devices) -> list[LanDevice]:
     return sorted((d for d in devices if d.status == LIVE), key=_sort_key)
 
 
+def screen_devices(devices) -> list[LanDevice]:
+    """主畫面上的排：「使用中」與「維修中」，依同一個順序（DSC-15、DSC-17）。"""
+    return sorted((d for d in devices if d.status in DL_STATUSES), key=_sort_key)
+
+
+def screen_layout(devices) -> dict:
+    """主畫面版面：定義檔格式，維修中的設備另加 "maint": True（只在 App 內部使用，不寫入定義檔）。"""
+    out = []
+    for d in screen_devices(devices):
+        entry = d.definition_entry()
+        if d.status == MAINT:
+            entry["maint"] = True
+        out.append(entry)
+    return {"version": 1, "dl_en1": out}
+
+
 def list_order(devices) -> list[LanDevice]:
-    """設備清單排序（DSC-02）：狀態 → 使用中依畫面順序 → 其餘依最後出現由新到舊。"""
+    """設備清單排序（DSC-02）：不明 → 使用中與維修中（依主畫面順序）→ 其他 → 已停用；其餘依最後出現由新到舊。"""
     def key(d: LanDevice):
-        if d.status == LIVE:
-            return (STATUS_RANK[d.status], *_sort_key(d))
+        if d.status in DL_STATUSES:
+            return (STATUS_RANK[LIVE], *_sort_key(d))
         ts = d.last_seen.timestamp() if d.last_seen else float("-inf")
         return (STATUS_RANK[d.status], False, -ts, d.mac)
     return sorted(devices, key=key)
@@ -387,8 +403,8 @@ def replace_candidates(devices, old_mac: str) -> list[LanDevice]:
 
 
 def move(devices, mac: str, step: int) -> bool:
-    """上移／下移（只對使用中，調整主畫面順序）；回傳是否有移動。"""
-    live = live_devices(devices)
+    """上移／下移（使用中與維修中共用主畫面順序，DSC-17）；回傳是否有移動。"""
+    live = screen_devices(devices)
     idx = next((i for i, d in enumerate(live) if d.mac == mac), None)
     if idx is None or not 0 <= idx + step < len(live):
         return False
@@ -440,6 +456,7 @@ class Preview:
     power_cycle: list[str] = field(default_factory=list)       # 需重新上電才會取得新 IP
     no_standard: list[str] = field(default_factory=list)       # 尚未設定允收標準的探頭
     removed_points: list[str] = field(default_factory=list)    # 將從主畫面移除的量測點
+    paused_points: list[str] = field(default_factory=list)     # 改為維修中、暫停量測的量測點（DSC-15）
     replaced: list[tuple[str, str, str]] = field(default_factory=list)  # (key, 舊 MAC, 新 MAC)
 
     @property
@@ -529,8 +546,8 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
             tag = "新增" if o.status == UNCLASSIFIED and n.is_dl_en1 else "變更"
             p.items.append(ChangeItem(tag, _title(n), lines))
 
-    old_order = [d.mac for d in live_devices(old.values()) if new.get(d.mac) and new[d.mac].status == LIVE]
-    new_order = [d.mac for d in live_devices(new.values()) if old.get(d.mac) and old[d.mac].status == LIVE]
+    old_order = [d.mac for d in screen_devices(old.values()) if new.get(d.mac) and new[d.mac].is_dl_en1]
+    new_order = [d.mac for d in screen_devices(new.values()) if old.get(d.mac) and old[d.mac].is_dl_en1]
     if old_order != new_order:
         p.items.append(ChangeItem("順序", "主畫面排列順序", [
             (" → ".join(_title(new[m]) for m in new_order), False)]))
@@ -544,7 +561,9 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
                 out[(cfg.get("key"), pid)] = f"{cfg.get('name')} {desc}"
         return out
     po, pn = points(old.values()), points(new.values())
-    p.removed_points = [po[k] for k in po if k not in pn]
+    maint_keys = {(d.config or {}).get("key") for d in new.values() if d.status == MAINT}
+    p.paused_points = [po[k] for k in po if k not in pn and k[0] in maint_keys]
+    p.removed_points = [po[k] for k in po if k not in pn and k[0] not in maint_keys]
     if standards is not None:
         p.no_standard = [pn[k] for k in pn if not (standards.get(k[0]) or {}).get(k[1])]
     return p

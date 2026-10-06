@@ -36,7 +36,7 @@ STATUS_ORDER = (UNCLASSIFIED, LIVE, MAINT, RETIRED, OTHER)
 STATUS_HELP = {
     UNCLASSIFIED: "新偵測到、尚未確認身分。不配發 IP、不顯示在主畫面，紀錄保留在清單中。",
     LIVE: "配發固定 IP，連線讀取探頭，並顯示在主畫面。",
-    MAINT: "暫時不使用（例如送修）。保留設定與 IP 配發，不連線、不顯示在主畫面；key、名稱與 IP 仍保留給它。",
+    MAINT: "暫時不使用（例如送修）。主畫面保留該排並標示「維修中」，但不連線、不量測、不影響判定；保留設定與 IP 配發，key、名稱與 IP 仍保留給它。",
     RETIRED: "已不再使用。不配發 IP、不顯示在主畫面；保留最後的設定供查詢，key、名稱與 IP 讓給其他設備。",
     OTHER: "不是 DL-EN1 的設備（例如協同合作設備、筆電）。只能設定 IP，留空表示不配發。",
 }
@@ -827,10 +827,10 @@ class SettingsDialog(QDialog):
         can_hide = d is not None and not d.is_dl_en1 and not (o and o.is_dl_en1) and not self.read_only
         self.btn_hide.setEnabled(can_hide)
         self.btn_hide.setText("取消隱藏" if d and d.hidden else "隱藏")
-        # 上移／下移只對已儲存為使用中、且未在本次編輯中改變類型的設備（DSC-17：按下即儲存）
-        live = lan.live_devices(self.original.values())
+        # 上移／下移：主畫面上的排（已儲存的使用中與維修中），且未在本次編輯中改變類型（DSC-17：按下即儲存）
+        live = lan.screen_devices(self.original.values())
         idx = next((i for i, x in enumerate(live) if d and x.mac == d.mac), None)
-        movable = idx is not None and d.status == LIVE and not self.read_only
+        movable = idx is not None and d.status == live[idx].status and not self.read_only
         self.btn_up.setEnabled(movable and idx > 0)
         self.btn_down.setEnabled(movable and idx < len(live) - 1)
         for b in (self.btn_import, self.btn_restore):
@@ -976,10 +976,10 @@ class SettingsDialog(QDialog):
             w = self.work.get(d.mac)
             if w is not None and w.status in (LIVE, MAINT) and self.original[d.mac].status in (LIVE, MAINT):
                 w.sort_order = d.sort_order
-        names = "、".join(x["name"] for x in result.definition["dl_en1"])
+        names = "、".join(x["name"] for x in result.layout["dl_en1"])
         log.info("調整 DL-EN1 順序並儲存：%s", names)
         self.toast.show_text(f"已儲存順序：{names}")
-        self.order_saved.emit(result.definition)
+        self.order_saved.emit(result.layout)
         self._after_change()
 
     # ---------------------------------------------------------------- IP 探測（DSC-10）
@@ -1150,6 +1150,8 @@ class SettingsDialog(QDialog):
             impacts.append(("需將下列設備重新上電才會取得新 IP：", p.power_cycle))
         if p.no_standard:
             impacts.append(("下列探頭尚未設定允收標準，量測時將顯示設備異常：", p.no_standard))
+        if p.paused_points:
+            impacts.append(("下列量測點改為維修中，主畫面保留但不量測：", p.paused_points))
         if p.removed_points:
             impacts.append(("下列量測點將從主畫面移除：", p.removed_points))
         if impacts:

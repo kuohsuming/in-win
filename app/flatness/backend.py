@@ -36,7 +36,8 @@ class Backend(QObject):
         self._equip_net = equip_net
         self._probe = probe or netinfo.probe
         self.startup_result: sync.StartupResult | None = None
-        self.definition: dict = {"version": 1, "dl_en1": []}
+        self.definition: dict = {"version": 1, "dl_en1": []}   # 連線用（只含使用中）
+        self.layout: dict = self.definition                    # 主畫面版面（使用中 ＋ 維修中）
         self.bootp_ok = True
         self.bootp_reason = ""
         self._db_ok = True
@@ -50,7 +51,7 @@ class Backend(QObject):
 
     def start(self) -> sync.StartupResult:
         r = sync.startup(self.store, self.files, self.equip_net())
-        self.startup_result, self.definition = r, r.definition
+        self.startup_result, self.definition, self.layout = r, r.definition, r.layout
         self._db_ok = r.db_ok
         if r.devices is not None:
             self._cache = r.devices
@@ -111,7 +112,7 @@ class Backend(QObject):
     def apply(self, old, new, summary: str = "") -> sync.ApplyResult:
         restart = self.dnsmasq.restart if self.dnsmasq.command else None
         result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary)
-        self.definition = result.definition
+        self.definition, self.layout = result.definition, result.layout
         return result
 
     def probe(self, ip: str, own_mac: str | None = None) -> netinfo.ProbeResult:

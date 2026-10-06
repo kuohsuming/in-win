@@ -78,12 +78,17 @@ def _restore(path: Path, text: str | None):
 
 @dataclass
 class StartupResult:
-    definition: dict                       # 畫面與連線使用的定義檔內容
+    definition: dict                       # 連線使用的定義檔內容（只含使用中）
     devices: list | None = None            # 資料庫內容；無法讀取時為 None
     changed: bool = False                  # 是否改寫了檔案
     problem: str | None = None             # 畫面要顯示的原因（DSC-06、DSC-11）
     db_ok: bool = True
     issues: list = field(default_factory=list)
+    layout: dict | None = None             # 主畫面版面（使用中 ＋ 維修中）；資料庫無法讀取時同定義檔
+
+    def __post_init__(self):
+        if self.layout is None:
+            self.layout = self.definition
 
 
 def load_existing(files: Files) -> dict:
@@ -107,18 +112,20 @@ def startup(store, files: Files, equip_net: ipaddress.IPv4Interface) -> StartupR
         defn, def_text, hosts_text = render(devices, equip_net)
     except SyncError as exc:
         log.error("啟動：%s", exc)
-        return StartupResult(load_existing(files), devices, False, str(exc), issues=exc.issues)
+        defn = load_existing(files)
+        return StartupResult(defn, devices, False, str(exc), issues=exc.issues)
     changed = _write(files.def_path, def_text)
     changed = _write(files.hosts_path, hosts_text) or changed
     log.info("啟動：依資料庫產生定義檔與 BOOTP 主機對應（%s）DL-EN1 %d 台",
              "已更新" if changed else "內容相同，未改寫", len(defn["dl_en1"]))
-    return StartupResult(defn, devices, changed)
+    return StartupResult(defn, devices, changed, layout=lan.screen_layout(devices))
 
 
 @dataclass
 class ApplyResult:
     definition: dict
     restarted: bool
+    layout: dict | None = None             # 主畫面版面（使用中 ＋ 維修中）
 
 
 def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, new_devices,
@@ -152,7 +159,7 @@ def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, 
         raise
     log.info("套用設備設定成功：資料庫 %d 筆；變更=%s；dnsmasq %s", n, summary,
              "已重新啟動" if hosts_changed and restart else "未重新啟動")
-    return ApplyResult(defn, hosts_changed and restart is not None)
+    return ApplyResult(defn, hosts_changed and restart is not None, lan.screen_layout(new_devices))
 
 
 def backups(files: Files, keep: int = bootp.BACKUP_KEEP) -> list[Path]:
