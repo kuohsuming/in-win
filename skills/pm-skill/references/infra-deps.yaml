@@ -1,0 +1,378 @@
+# AzureLineBOT — Infrastructure Dependencies
+# Used by /pm bootstrap-project to install + verify dev environment
+# Schema version aligned with PM Skill v1.0.1
+---
+schema_version: infra-deps-v1
+project: AzureLineBOT
+description: |
+  System-level + Python + Node + service config deps for AzureLineBOT dev.
+  Loaded by /pm bootstrap-project subcommand.
+  Each item supports user_choice for install method customization.
+
+# ─────────────────────────────────────────
+# System-level tools(需 sudo / brew install)
+# ─────────────────────────────────────────
+system:
+  # ─── Core utilities(rev v1.1.13 added — 對齊 spectra meta-finding cross-doc coherence drift)──
+  # These were used by SKILL.md workflows but missing from SSOT (caught by Layer 3 drift detection)
+  - name: git
+    version: ">=2.30"
+    install:
+      linux_apt: ["git"]
+      linux_dnf: ["git"]
+      macos_brew: ["git"]
+    verify: "git --version"
+    sudo_required: true
+    optional: false
+    needed_for: "All /pm workflows(push-gate / setup-worktree / migration-* / deploy / rollback,使用 58 次)"
+
+  - name: gh
+    version: ">=2.0"
+    install:
+      linux_apt: ["gh"]                # Ubuntu 22.04 universe repo
+      linux_dnf: ["gh"]
+      macos_brew: ["gh"]
+    verify: "gh --version | head -1"
+    sudo_required: true
+    optional: true
+    needed_for: "/pm setup-worktree GitHub push,/pm bootstrap-project gh auth(使用 6 次)"
+    post_install_note: "跑完後手動 gh auth login(browser flow)"
+
+  - name: curl
+    version: ">=7.0"
+    install:
+      linux_apt: ["curl"]
+      linux_dnf: ["curl"]
+      macos_brew: []                   # preinstalled on macOS
+    verify: "curl --version | head -1"
+    sudo_required: true
+    optional: false                    # Microsoft Azure CLI install_script 用,smoke-test 也用
+    needed_for: "/pm deploy smoke-test(curl liffbeauty.azurewebsites.net/health)+ Microsoft az install script"
+
+  - name: zip
+    version: ">=3.0"
+    install:
+      linux_apt: ["zip"]
+      linux_dnf: ["zip"]
+      macos_brew: []                   # preinstalled on macOS
+    verify: "zip --version | head -1"
+    sudo_required: true
+    optional: true
+    needed_for: "/pm deploy(direct ZIP deploy)+ /pm rollback(redeploy previous tag,使用 11 次)"
+
+  - name: wget
+    version: ">=1.20"
+    install:
+      linux_apt: ["wget"]
+      linux_dnf: ["wget"]
+      macos_brew: ["wget"]             # not preinstalled on macOS
+    verify: "wget --version | head -1"
+    sudo_required: true
+    optional: true
+    needed_for: "yq install_script(GitHub release binary download)+ alternative to curl"
+    alias_for_curl: true               # 多數場景兩者等效
+
+  - name: npm
+    bundled_with: nodejs               # npm 跟 nodejs 同包,不需獨立 install
+    verify: "npm --version"
+    sudo_required: false
+    optional: true
+    needed_for: "若有 V3 frontend build chain(目前 LineBOT 用得少)"
+    install_note: "Installed automatically with system.nodejs"
+
+  - name: python3
+    version: ">=3.10"
+    install:
+      linux_apt: ["python3", "python3-pip", "python3-dev", "python3-venv"]
+      linux_dnf: ["python3", "python3-pip", "python3-devel"]
+      macos_brew: ["python@3.11"]
+    verify: python3 --version
+    sudo_required: true
+    optional: false
+    needed_for: "app.py / valet_laundry_robot_app.py / all backend"
+
+  - name: mysql
+    version: ">=8.0"
+    install:
+      linux_apt: ["mysql-server", "libmysqlclient-dev"]
+      linux_dnf: ["mysql-server", "mysql-devel"]
+      macos_brew: ["mysql"]
+    verify: mysql --version
+    sudo_required: true
+    optional: true
+    needed_for: "subscriber profile / laundry schedule / namecard storage"
+    user_choice:
+      - id: local
+        label: "Local install(預設,本機 dev)"
+        post_install:
+          linux: "sudo systemctl start mysql && sudo systemctl enable mysql"
+          macos: "brew services start mysql"
+      - id: docker
+        label: "Docker container(乾淨隔離)"
+        replace_install: "docker run -d --name linebot-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=devpass mysql:8"
+        sudo_required: false
+      - id: external
+        label: "用既有 external MySQL(跳過 install)"
+        skip_install: true
+
+  - name: nodejs
+    version: ">=20"
+    install:
+      linux_apt: ["nodejs", "npm"]
+      linux_dnf: ["nodejs", "npm"]
+      macos_brew: ["node@20"]
+    verify: "node --version && npm --version"
+    sudo_required: true
+    optional: true
+    needed_for: "docs/archives/htmljscss2claude_v2ui_20260512.tar.gz:htmljscss2claude_20260512/v3/ bundle build,只在動 v3 frontend 時要"
+
+  - name: docker
+    version: ">=20"
+    install:
+      linux_apt: ["docker.io"]
+      macos_brew: ["docker"]
+    verify: docker --version
+    sudo_required: true
+    optional: true
+    needed_for: "若選 mysql 用 docker 模式 / 跑 prod-like env"
+    auto_select_if: "user picked mysql=docker"
+
+  # ─── PM Skill v1.2 deploy/migration tools(rev v1.1.12 added,對齊 SSOT drift fix)──
+  - name: azure_cli
+    version: ">=2.50"
+    install:
+      # Ubuntu 22.04 default repo doesn't have azure-cli → Microsoft official script
+      linux_apt: []
+      install_script: "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
+      linux_dnf: ["azure-cli"]   # Azure Linux 3.0 native
+      macos_brew: ["azure-cli"]
+    verify: "az --version | head -1"
+    sudo_required: true
+    optional: true
+    needed_for: "/pm deploy + /pm rollback(Azure Web App slot operations,對齊 §G.6.1/6.2)"
+    propose_required: true       # 對齊 memory:dep_management 嚴格 propose+ack
+    propose_template: |
+      用途: PM Skill /pm deploy + /pm rollback Azure Web App slot ops
+      OS 影響: Linux 3.0 native(prod runtime tdnf-based)/ Ubuntu apt for dev
+      範圍: dev machine + Azure App Service(同 memory:azure_webapp_runtime)
+      取代方案: Azure Portal manual(失 PM Skill 紀律 audit)
+      Reversible: sudo apt remove azure-cli + rm -rf ~/.azure
+    post_install_note: |
+      跑完後手動執行(Claude 不能代 browser auth):
+          az login
+      然後跑 /pm verify-runtime 確認
+
+  - name: jq
+    version: ">=1.6"
+    install:
+      linux_apt: ["jq"]
+      linux_dnf: ["jq"]
+      macos_brew: ["jq"]
+    verify: "jq --version"
+    sudo_required: true
+    optional: true
+    needed_for: "/pm deploy + /pm rollback parse Azure CLI JSON output"
+
+  - name: yq
+    version: ">=4.0"
+    install:
+      # Ubuntu 22.04 repo doesn't have yq v4 → GitHub release binary
+      linux_apt: []
+      install_script: |
+        sudo wget -qO /usr/local/bin/yq \
+          https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && \
+        sudo chmod +x /usr/local/bin/yq
+      linux_dnf: ["yq"]
+      macos_brew: ["yq"]
+    verify: "yq --version"
+    sudo_required: true
+    optional: true
+    needed_for: "/pm deploy + /pm migration-* parse azure-config.yaml + manifest.yaml"
+
+# ─────────────────────────────────────────
+# Python packages
+# ─────────────────────────────────────────
+python:
+  primary:
+    file: requirements.txt
+    description: "Production deps(Flask / SQLAlchemy / LINE SDK / etc.)"
+  dev:
+    file: requirements-dev.txt
+    description: "Dev deps(pytest / black / etc.)— 可選"
+    optional: true
+
+  isolation:
+    user_choice:
+      - id: venv
+        label: "Python venv(推薦,隔離乾淨)"
+        commands:
+          - "python3 -m venv .venv"
+          - "source .venv/bin/activate && pip install -q -r requirements.txt"
+          - "[ -f requirements-dev.txt ] && source .venv/bin/activate && pip install -q -r requirements-dev.txt || true"
+        post_install_note: |
+          記得每次新 terminal session 跑:
+              source .venv/bin/activate
+      - id: user
+        label: "User-local(pip install --user)"
+        commands:
+          - "pip install --user -q -r requirements.txt"
+          - "[ -f requirements-dev.txt ] && pip install --user -q -r requirements-dev.txt || true"
+      - id: system
+        label: "⚠ System-wide(sudo,不建議,可能 conflict 其他 project)"
+        commands:
+          - "sudo pip install -q -r requirements.txt"
+        sudo_required: true
+
+# ─────────────────────────────────────────
+# Service configuration(install 完後初始化)
+# ─────────────────────────────────────────
+services:
+  - name: mysql_schema_init
+    depends_on: [mysql]
+    description: "建 dev DB + 跑 schema(對齊 laundry_db_create_tables.sql)"
+    commands:
+      - "mysql -u root -p -e \"CREATE DATABASE IF NOT EXISTS linebot_dev;\""
+      - "mysql -u root -p linebot_dev < laundry_db_create_tables.sql"
+    sudo_required: false
+    skippable: true
+    skip_reason: "若用 external MySQL or schema 已存在 → skip"
+
+# ─────────────────────────────────────────
+# External credentials(per-engineer manual,不自動 install,只 verify + 提醒)
+# ─────────────────────────────────────────
+credentials:
+  - name: gcp_service_accounts
+    files:
+      - "shonebooking-309e1198900d-google-vertex-ai.json"
+      - "shonebooking-61e6d376e727.json"
+      - "shonebooking-789f76f1736c-google-document-ai.json"
+    location: repo_root
+    sensitivity: HIGH
+    note: |
+      跟 admin 拿 — 已 gitignored 不會誤 commit。
+      只 prod-like dev 才需要;純 PM Skill 試用不需。
+    auto_action: verify_presence_only
+
+  - name: line_channel_secret
+    env_var: LINE_CHANNEL_SECRET
+    sensitivity: HIGH
+    note: "從 LINE Developers Console 拿;放 ~/.bashrc or .env(已 gitignored)"
+    auto_action: prompt_user_to_set
+
+  - name: azure_storage_key
+    env_var: AZURE_STORAGE_CONNECTION_STRING
+    sensitivity: HIGH
+    note: "從 Azure Portal 拿"
+    auto_action: prompt_user_to_set
+
+# ─────────────────────────────────────────
+# Verification targets(bootstrap 完跑這些確認 env ready)
+# ─────────────────────────────────────────
+verify_targets:
+  - command: "python3 -c 'import flask; print(flask.__version__)'"
+    expected_pattern: "^[0-9]"
+    on_fail: "Flask 沒裝好,跑 pip install -r requirements.txt"
+
+  - command: "mysql -u root -e 'SELECT 1;' 2>/dev/null"
+    expected_pattern: "1"
+    on_fail: "MySQL 沒啟動 / 沒裝;跑 sudo systemctl start mysql"
+    optional: true
+
+  - command: "claude --version"
+    expected_pattern: "claude"
+    on_fail: "Claude Code 沒裝;https://docs.claude.com/en/docs/claude-code/setup"
+
+  - command: "gh auth status 2>&1 | grep -c 'Logged in'"
+    expected_pattern: "1"
+    on_fail: "gh 沒登入;跑 gh auth login"
+
+  # ─── PM Skill v1.2 deploy/migration verify_targets(rev v1.1.12 added)──
+  - command: "jq --version"
+    expected_pattern: "jq-"
+    on_fail: "jq 沒裝;sudo apt install -y jq(對齊 infra-deps.yaml system.jq)"
+    optional: true
+
+  - command: "yq --version 2>&1 | grep -c 'mikefarah'"
+    expected_pattern: "1"
+    on_fail: "yq 沒裝 or wrong version(需 mikefarah/yq v4+);see infra-deps.yaml system.yq install_script"
+    optional: true
+
+  - command: "az --version 2>&1 | grep -c 'azure-cli'"
+    expected_pattern: "1"
+    on_fail: "Azure CLI 沒裝;對齊 memory:dep_management 須 propose+ack;see infra-deps.yaml system.azure_cli"
+    optional: true
+
+  - command: "az account show --query name -o tsv 2>/dev/null"
+    expected_pattern: ".+"
+    on_fail: "Azure CLI 未 auth;跑 az login(browser flow)"
+    optional: true
+
+# ─────────────────────────────────────────
+# Bootstrap modes
+# ─────────────────────────────────────────
+scopes:
+  # 對齊 Round 2 C1 fix:include 用 dotted path 指向 yaml node,workflow 才能 resolve
+  minimal:
+    description: "只裝 PM Skill 試跑用最小 set"
+    include:
+      - system.git         # rev v1.1.13 — All workflows 都要 git
+      - system.curl        # rev v1.1.13 — Azure CLI install script 要
+      - system.python3
+    skip_credentials: true
+
+  standard:
+    description: "標準 dev env(裝 deps + MySQL local + verify + YAML/JSON 工具讓 /pm deploy 可看 config)"
+    include:
+      - system.git           # rev v1.1.13 — All workflows
+      - system.gh            # rev v1.1.13 — Auth + PR work
+      - system.curl          # rev v1.1.13 — Azure install + smoke
+      - system.python3
+      - system.mysql
+      - system.jq            # rev v1.1.12 加 — /pm deploy + Azure CLI JSON parse
+      - system.yq            # rev v1.1.12 加 — /pm deploy + manifest.yaml parse
+      - python.primary       # 對齊 schema dotted path(原 python_primary 是 typo,C1 fix)
+    user_choice_defaults:
+      "system.mysql": local
+      "python.isolation": venv
+
+  full:
+    description: "完整 prod-like + deploy(MySQL Docker + Node + Azure CLI + 全 credentials reminder)"
+    include:
+      - system.git           # rev v1.1.13
+      - system.gh            # rev v1.1.13
+      - system.curl          # rev v1.1.13
+      - system.zip           # rev v1.1.13 — /pm deploy ZIP packaging
+      - system.python3
+      - system.mysql
+      - system.nodejs
+      - system.docker
+      - system.jq            # rev v1.1.12
+      - system.yq            # rev v1.1.12
+      - system.azure_cli     # rev v1.1.12 — /pm deploy + /pm rollback real working
+      - python.primary
+      - python.dev
+      - services.mysql_schema_init
+    user_choice_defaults:
+      "system.mysql": docker
+      "python.isolation": venv
+
+  # New scope:deploy-ready(rev v1.1.12 — 對齊 SSOT drift fix;rev v1.1.13 加 git/curl/zip)
+  deploy:
+    description: "/pm deploy real working(extends standard + Azure CLI;對齊 memory:dep_management propose+ack)"
+    include:
+      - system.git           # rev v1.1.13
+      - system.curl          # rev v1.1.13
+      - system.zip           # rev v1.1.13 — ZIP packaging
+      - system.python3
+      - system.mysql
+      - system.jq
+      - system.yq
+      - system.azure_cli     # propose_required: true
+      - python.primary
+    user_choice_defaults:
+      "system.mysql": local
+      "python.isolation": venv
+    post_install_required_manual:
+      - "az login(browser flow,Claude 不能代)"
+      - "建 azure-config.yaml(可跑 /pm verify-runtime --setup-azure-config 自動 populate)"
+      - "建 .env.dev / .env.staging / .env.prod(複製 .env.example)"
