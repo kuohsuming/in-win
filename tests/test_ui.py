@@ -106,9 +106,14 @@ class SettingsDialogTest(UiBase):
         d.select("00:01:FC:12:39:A0")
         d.status_box.setCurrentIndex(1)  # DL-EN1 使用中
         self.assertEqual(d.ip_edit.text(), "192.168.10.14")  # DSC-08 預設 IP
-        self.assertFalse(d.btn_save.isEnabled())  # key、名稱未填
-        self.assertIn("有 2 項錯誤，修正後才能儲存", d.save_hint.text())  # 說明儲存鍵停用的原因
+        # 有變更儲存鍵就可按（EDT-03）；key、名稱未填 → 按下列出錯誤，不進入確認頁、不寫入
+        self.assertTrue(d.btn_save.isEnabled())
+        self.assertIn("有 2 項錯誤，儲存前須修正", d.save_hint.text())
         self.assertIn("識別碼 key", d.save_hint.toolTip())
+        d.btn_save.click()
+        self.assertEqual(d.pages.currentIndex(), 1)
+        self.assertIn("設定有 2 項錯誤，請修正後再儲存", self.warnings[-1])
+        self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].status, "unclassified")
         self.type(d.key_edit, "extra")
         self.type(d.name_edit, "加排")
         pump(self.app, 0.2)
@@ -138,7 +143,10 @@ class SettingsDialogTest(UiBase):
         self.type(d.ip_edit, "192.168.10.200")
         self.assertIn("已由 其他設備 3C:52:82:11:22:33（eng-laptop）使用", d.ip_note.text())
         self.assertTrue(d.ip_edit.property("error"))
-        self.assertFalse(d.btn_save.isEnabled())
+        self.assertTrue(d.btn_save.isEnabled())
+        d.btn_save.click()
+        self.assertEqual(d.pages.currentIndex(), 1)  # 資料表衝突：按下列出錯誤，不進入確認頁
+        self.assertIn("192.168.10.200", self.warnings[-1])
         self.assertEqual(self.probes, [])  # 資料表衝突時不探測
 
     def test_arp_taken_only_warns(self):  # DSC-10-G2：ARP 探測結果只提示，不阻擋儲存

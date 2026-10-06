@@ -804,7 +804,7 @@ class SettingsDialog(QDialog):
             return "無法連線資料庫，不能儲存"
         bad = self._problems()
         if bad:
-            return f'✘ 有 {len(bad)} 項錯誤，修正後才能儲存　<a href="#" style="color:{C["ng"]};">查看</a>'
+            return f'✘ 有 {len(bad)} 項錯誤，儲存前須修正　<a href="#" style="color:{C["ng"]};">查看</a>'
         return ""
 
     def _show_first_problem(self):
@@ -855,7 +855,8 @@ class SettingsDialog(QDialog):
         d = self.work.get(self.selected)
         dirty = self.is_dirty()
         self.dirty_label.setText("● 有尚未儲存的變更" if dirty else "")
-        self.btn_save.setEnabled(dirty and not self.issues and not self.read_only)
+        # 儲存鍵只跟設定變更走，與偵測（探索、ARP 探測）無關；設定有錯時按下才列出錯誤（EDT-03）
+        self.btn_save.setEnabled(dirty)
         reason = self._save_blocked_reason() if dirty else ""
         self.save_hint.setText(reason)
         self.save_hint.setToolTip("\n".join(i.text() for i in self._problems()))
@@ -1168,6 +1169,16 @@ class SettingsDialog(QDialog):
     # ---------------------------------------------------------------- 確認儲存
 
     def _go_confirm(self):
+        if self.read_only:
+            self._warn("無法連線資料庫，暫時無法儲存。")
+            return
+        bad = self._problems()
+        if bad:
+            self._show_first_problem()
+            lines = "\n".join("・" + i.text() for i in bad[:8])
+            more = f"\n…另有 {len(bad) - 8} 項" if len(bad) > 8 else ""
+            self._warn(f"設定有 {len(bad)} 項錯誤，請修正後再儲存：\n{lines}{more}")
+            return
         self.preview = lan.diff(self.original.values(), self._devices(), self.backend.standards())
         self._render_confirm()
         self.pages.setCurrentIndex(2)
