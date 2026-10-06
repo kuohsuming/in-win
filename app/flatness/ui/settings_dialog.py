@@ -296,6 +296,7 @@ class SettingsDialog(QDialog):
         b.addWidget(self.msg_list)
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
+        self.edit_scroll = scroll
 
         self.dirty_label = _label("")
         self.dirty_label.setStyleSheet(f"color:{C['warn']};font-weight:700;font-size:15px;")
@@ -305,9 +306,14 @@ class SettingsDialog(QDialog):
         self.btn_refresh = _btn("重新整理", None, lambda: self._refresh(manual=True), 132)
         self.btn_save = _btn("儲存", "primary", self._go_confirm, 132)
         self.btn_close = _btn("關閉", None, self.reject, 132)
+        # 儲存鍵停用時說明原因，點擊跳到第一個錯誤
+        self.save_hint = QLabel()
+        self.save_hint.setStyleSheet(f"color:{C['ng']};font-weight:700;font-size:15px;")
+        self.save_hint.setTextFormat(Qt.RichText)
+        self.save_hint.linkActivated.connect(lambda _l: self._show_first_problem())
         outer.addWidget(self._footer(
             [self.btn_import, self.btn_restore, self.btn_download, self.dirty_label],
-            [self.btn_refresh, self.btn_save, self.btn_close]))
+            [self.save_hint, self.btn_refresh, self.btn_save, self.btn_close]))
         return page
 
     def _panel(self) -> tuple[QFrame, QVBoxLayout]:
@@ -782,13 +788,33 @@ class SettingsDialog(QDialog):
         self.ip_note.setText(text)
         self.ip_note.setStyleSheet(f"font-size:13px;color:{color};{'font-weight:700;' if bold else ''}")
 
-    def _render_messages(self):
-        self.msg_list.clear()
+    def _problems(self) -> list:
         bad = list(self.issues)
         for mac, (ip, st, text) in self.ip_checks.items():
             d = self.work.get(mac)
             if st == "taken" and d and d.ipv4 == ip and d.assigns_ip:
                 bad.append(lan.Issue(mac, "ipv4", text, d.label()))
+        return bad
+
+    def _save_blocked_reason(self) -> str:
+        if self.read_only:
+            return "無法連線資料庫，不能儲存"
+        bad = self._problems()
+        if bad:
+            return f'✘ 有 {len(bad)} 項錯誤，修正後才能儲存　<a href="#" style="color:{C["ng"]};">查看</a>'
+        if self._checking():
+            return "檢查 IP 中，完成後才能儲存"
+        return ""
+
+    def _show_first_problem(self):
+        bad = self._problems()
+        if bad and bad[0].mac in self.work:
+            self.select(bad[0].mac)
+        self.edit_scroll.ensureWidgetVisible(self.msg_list)
+
+    def _render_messages(self):
+        self.msg_list.clear()
+        bad = self._problems()
         _set_prop(self.msg_list, "error", bool(bad))
         if bad:
             for i in bad:
@@ -825,6 +851,9 @@ class SettingsDialog(QDialog):
         self.dirty_label.setText("● 有尚未儲存的變更" if dirty else "")
         self.btn_save.setEnabled(dirty and not self.issues and not self._checking()
                                  and not self._blocked_by_probe() and not self.read_only)
+        reason = self._save_blocked_reason() if dirty else ""
+        self.save_hint.setText(reason)
+        self.save_hint.setToolTip("\n".join(i.text() for i in self._problems()))
         o = self.original.get(self.selected)
         can_hide = d is not None and not d.is_dl_en1 and not (o and o.is_dl_en1) and not self.read_only
         self.btn_hide.setEnabled(can_hide)

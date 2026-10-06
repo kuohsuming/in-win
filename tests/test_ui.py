@@ -107,9 +107,12 @@ class SettingsDialogTest(UiBase):
         d.status_box.setCurrentIndex(1)  # DL-EN1 使用中
         self.assertEqual(d.ip_edit.text(), "192.168.10.14")  # DSC-08 預設 IP
         self.assertFalse(d.btn_save.isEnabled())  # key、名稱未填
+        self.assertIn("有 2 項錯誤，修正後才能儲存", d.save_hint.text())  # 說明儲存鍵停用的原因
+        self.assertIn("識別碼 key", d.save_hint.toolTip())
         self.type(d.key_edit, "extra")
         self.type(d.name_edit, "加排")
         pump(self.app, 0.2)
+        self.assertEqual(d.save_hint.text(), "")
         self.assertEqual(self.probes, ["192.168.10.14"])  # 新 IP 已探測
         self.save()
         self.assertEqual(len(self.saved), 1)
