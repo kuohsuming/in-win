@@ -11,9 +11,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from helpers import NET, ROOT, by_mac, sample_devices
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QLabel
 except ImportError:  # 沒有 PySide6 的環境略過
-    QApplication = None
+    QApplication = QLabel = None
 
 
 def pump(app, sec=0.05):
@@ -141,7 +141,7 @@ class SettingsDialogTest(UiBase):
         self.assertFalse(d.btn_save.isEnabled())
         self.assertEqual(self.probes, [])  # 資料表衝突時不探測
 
-    def test_arp_taken_blocks_save(self):  # DSC-10-G1
+    def test_arp_taken_only_warns(self):  # DSC-10-G2：ARP 探測結果只提示，不阻擋儲存
         from flatness import netinfo
         self.dlg.deleteLater()
         from flatness.ui.settings_dialog import SettingsDialog
@@ -151,14 +151,17 @@ class SettingsDialogTest(UiBase):
         d.enter_edit()
         d.select("00:01:FC:DE:3A:77")
         self.type(d.ip_edit, "192.168.10.50")
+        self.assertTrue(d.btn_save.isEnabled())  # 檢查中也可儲存
         d.ip_edit.editingFinished.emit()
         pump(self.app, 0.2)
         self.assertIn("網路上已有設備使用此 IP（MAC 3C:52:82:44:55:66）", d.ip_note.text())
-        self.assertFalse(d.btn_save.isEnabled())
-        self.type(d.ip_edit, "192.168.10.60")
-        d.ip_edit.editingFinished.emit()
-        pump(self.app, 0.2)
         self.assertTrue(d.btn_save.isEnabled())
+        self.assertEqual(d.save_hint.text(), "")
+        warns = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+        self.assertTrue(any(w.startswith("⚠") and "仍可儲存" in w for w in warns), warns)
+        d.btn_save.click()
+        confirm = " ".join(w.text() for w in d.pages.widget(2).findChildren(QLabel))
+        self.assertIn("儲存後可能發生 IP 衝突", confirm)
 
     def test_unchanged_ip_not_probed(self):  # DSC-10-A1
         d = self.dlg

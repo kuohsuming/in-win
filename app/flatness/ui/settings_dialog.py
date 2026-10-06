@@ -614,7 +614,6 @@ class SettingsDialog(QDialog):
 
     def _row_issue_macs(self) -> set:
         macs = {i.mac for i in self.issues if i.mac}
-        macs |= {m for m, (_ip, st, _t) in self.ip_checks.items() if st == "taken"}
         return macs
 
     def _render_list(self):
@@ -761,7 +760,7 @@ class SettingsDialog(QDialog):
         for fld, w in (("key", self.key_edit), ("name", self.name_edit), ("port", self.port_edit),
                        ("max_probes", self.max_spin)):
             _set_prop(w, "error", fld in mine)
-        ip_bad = "ipv4" in mine or self.ip_checks.get(self.selected, ("", "", ""))[1] == "taken"
+        ip_bad = "ipv4" in mine
         _set_prop(self.ip_edit, "error", ip_bad)
         self.probe_table.setStyleSheet(f"QTableWidget {{ border: 2px solid {C['ng']}; }}"
                                        if "probes" in mine else "")
@@ -781,7 +780,7 @@ class SettingsDialog(QDialog):
             text = "使用中的 IP，未變更"
         elif check and check[0] == d.ipv4:
             text = check[2]
-            color = {"checking": C["ink-2"], "ok": C["go"], "taken": C["ng"], "warn": C["warn"]}[check[1]]
+            color = {"checking": C["ink-2"], "ok": C["go"], "taken": C["warn"], "warn": C["warn"]}[check[1]]
             bold = check[1] in ("taken", "warn")
         else:
             text = "尚未檢查網路上是否已有設備使用此 IP（離開欄位後自動檢查）"
@@ -789,12 +788,16 @@ class SettingsDialog(QDialog):
         self.ip_note.setStyleSheet(f"font-size:13px;color:{color};{'font-weight:700;' if bold else ''}")
 
     def _problems(self) -> list:
-        bad = list(self.issues)
+        return list(self.issues)
+
+    def _ip_warnings(self) -> list:
+        """ARP 探測到網路上已有其他設備使用此 IP：只提示，不阻擋儲存（DSC-10）。"""
+        out = []
         for mac, (ip, st, text) in self.ip_checks.items():
             d = self.work.get(mac)
             if st == "taken" and d and d.ipv4 == ip and d.assigns_ip:
-                bad.append(lan.Issue(mac, "ipv4", text, d.label()))
-        return bad
+                out.append(lan.Issue(mac, "ipv4", text, d.label()))
+        return out
 
     def _save_blocked_reason(self) -> str:
         if self.read_only:
@@ -802,8 +805,6 @@ class SettingsDialog(QDialog):
         bad = self._problems()
         if bad:
             return f'✘ 有 {len(bad)} 項錯誤，修正後才能儲存　<a href="#" style="color:{C["ng"]};">查看</a>'
-        if self._checking():
-            return "檢查 IP 中，完成後才能儲存"
         return ""
 
     def _show_first_problem(self):
@@ -822,6 +823,7 @@ class SettingsDialog(QDialog):
                 item.setForeground(self._qcolor(C["ng"]))
                 item.setData(Qt.UserRole, i.mac)
                 self.msg_list.addItem(item)
+            self._add_ip_warnings()
             return
         devs = self._devices()
         cnt = lambda s: sum(1 for d in devs if d.status == s)  # noqa: E731
@@ -829,28 +831,31 @@ class SettingsDialog(QDialog):
         text = (f"✔ 檢查通過：DL-EN1 使用中 {cnt(LIVE)} 台（{probes} 個探頭）、維修中 {cnt(MAINT)} 台、"
                 f"已停用 {cnt(RETIRED)} 台、其他設備 {cnt(OTHER)} 台、不明設備 {cnt(UNCLASSIFIED)} 台，可以儲存。")
         if self._checking():
-            text = "檢查中：確認網路上是否已有設備使用此 IP"
+            text += "（背景檢查 IP 中，不影響儲存）"
         item = QListWidgetItem(text)
         f = item.font()
         f.setBold(True)
         item.setFont(f)
-        item.setForeground(self._qcolor(C["ink-2"] if self._checking() else C["go"]))
+        item.setForeground(self._qcolor(C["go"]))
         self.msg_list.addItem(item)
+        self._add_ip_warnings()
+
+    def _add_ip_warnings(self):
+        for i in self._ip_warnings():
+            item = QListWidgetItem(f"⚠ {i.text()}（仍可儲存）")
+            item.setForeground(self._qcolor(C["warn"]))
+            item.setData(Qt.UserRole, i.mac)
+            self.msg_list.addItem(item)
 
     def _checking(self) -> bool:
         return any(st == "checking" and self.work.get(m) and self.work[m].ipv4 == ip
-                   for m, (ip, st, _t) in self.ip_checks.items())
-
-    def _blocked_by_probe(self) -> bool:
-        return any(st == "taken" and self.work.get(m) and self.work[m].ipv4 == ip and self.work[m].assigns_ip
                    for m, (ip, st, _t) in self.ip_checks.items())
 
     def _update_buttons(self):
         d = self.work.get(self.selected)
         dirty = self.is_dirty()
         self.dirty_label.setText("● 有尚未儲存的變更" if dirty else "")
-        self.btn_save.setEnabled(dirty and not self.issues and not self._checking()
-                                 and not self._blocked_by_probe() and not self.read_only)
+        self.btn_save.setEnabled(dirty and not self.issues and not self.read_only)
         reason = self._save_blocked_reason() if dirty else ""
         self.save_hint.setText(reason)
         self.save_hint.setToolTip("\n".join(i.text() for i in self._problems()))
@@ -1193,6 +1198,9 @@ class SettingsDialog(QDialog):
                               f"padding:10px 14px;font-size:15px;")
             lay.addWidget(box)
         impacts = []
+        conflicts = [i.text() for i in self._ip_warnings()]
+        if conflicts:
+            impacts.append(("網路上已有其他設備使用下列 IP，儲存後可能發生 IP 衝突：", conflicts))
         if p.power_cycle:
             impacts.append(("需將下列設備重新上電才會取得新 IP：", p.power_cycle))
         if p.no_standard:
