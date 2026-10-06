@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "dl_en1": [
+    {
+      "key": "front",
+      "name": "前排",
+      "mac": "00:01:FC:DE:3A:75",
+      "ipv4": "192.168.10.11",
+      "max_probes": 4,
+      "probes": [
+        { "id": 1, "description": "左" },
+        { "id": 2, "description": "左中" },
+        { "id": 3, "description": "右中" },
+        { "id": 4, "description": "右" }
+      ]
+    }
+  ]
+}
