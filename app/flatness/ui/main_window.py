@@ -304,7 +304,13 @@ class DeviceRow(QFrame):
         lay.addLayout(grid, 1)
         self.set_down(False)
 
+    def set_index(self, index: int):
+        """排的位置改變時更新「DL-EN1 #n」，維持目前的偵測狀態顯示。"""
+        self.index = index
+        self.set_down(*self._down_args)
+
     def set_down(self, down: bool, dot="stale", blink=False):
+        self._down_args = (down, dot, blink)
         border = f"4px solid {C['ng']}" if down else f"1px solid {C['line']}"
         self.setStyleSheet(
             f"QFrame#row {{ background:{C['panel']}; border:{border}; border-radius:6px; }}"
@@ -981,7 +987,25 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self.backend, self, pending_serial=self.pending_serial(),
                              before_save=self.flush_result)
         dlg.saved.connect(self._on_settings_saved)
+        dlg.order_saved.connect(self.reorder)
         self._modal(dlg)
+
+    def reorder(self, definition: dict):
+        """設定頁上移／下移後（DSC-17）：只調整排的上下順序，畫面上的量測結果與狀態保留。"""
+        keys = [d["key"] for d in definition.get("dl_en1", [])]
+        if sorted(keys) != sorted(r.dev["key"] for r in self.rows):
+            self.rebuild(definition)
+            return
+        self.definition, self.devices = definition, definition["dl_en1"]
+        by_key = {r.dev["key"]: r for r in self.rows}
+        lay = self.rows_area.widget().layout()
+        self.rows = [by_key[k] for k in keys]
+        for i, row in enumerate(self.rows):
+            lay.removeWidget(row)
+        for i, row in enumerate(self.rows):
+            lay.insertWidget(i, row)
+            row.dev = self.devices[i]
+            row.set_index(i)
 
     def _on_settings_saved(self, result, preview):
         """儲存後：清除編號與重讀次數 → 依新設定重建主畫面 → 自動偵測設備（5.10 儲存後）。"""

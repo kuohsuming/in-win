@@ -146,7 +146,13 @@ def definition_from(devices) -> dict:
 def hosts_from(devices) -> list[dict]:
     """BOOTP 主機對應：使用中 ＋ 維修中 ＋ 設有 IP 的其他設備（DSC-06、DEF-03）。"""
     rows = []
-    for d in sorted(devices, key=lambda d: (STATUS_RANK[d.status], *_sort_key(d))):
+    # 依狀態與 IP 排序，與畫面順序無關：調整順序（DSC-17）不改變主機對應，不需重新啟動 dnsmasq
+    def by_ip(d):
+        try:
+            return int(ipaddress.IPv4Address(d.ipv4))
+        except (ipaddress.AddressValueError, ValueError, TypeError):
+            return 0
+    for d in sorted(devices, key=lambda d: (STATUS_RANK[d.status], by_ip(d), d.mac)):
         if d.assigns_ip:
             rows.append({"mac": d.mac, "ipv4": d.ipv4,
                          "key": (d.config or {}).get("key") if d.is_dl_en1 else None})

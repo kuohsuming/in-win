@@ -208,22 +208,27 @@ class SettingsDialogTest(UiBase):
     def list_macs(self, dlg):
         return [dlg.table.item(r, 3).text() for r in range(dlg.table.rowCount())]
 
-    def test_move_order_persists_after_restart(self):  # DSC-17-G1
-        from flatness import sync
+    def test_move_saves_immediately_and_persists_after_restart(self):  # DSC-17-G1
+        from flatness import lan, sync
         from flatness.backend import Backend
         from flatness.ui.main_window import MainWindow
         from flatness.ui.settings_dialog import SettingsDialog
         d = self.dlg
+        orders = []
+        d.order_saved.connect(lambda defn: orders.append([x["key"] for x in defn["dl_en1"]]))
+        hosts_before = Path(self.tmp.name, "dl-en1.hosts").read_text()
         d.select("00:01:FC:DE:3A:77")              # 後排
         self.assertFalse(d.btn_down.isEnabled())   # 已在最後
         d.btn_up.click()
-        d.btn_up.click()                           # 後排 → 最上
+        d.btn_up.click()                           # 後排 → 最上，每按一次即儲存
         live = ["00:01:FC:DE:3A:77", "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76"]
-        self.assertEqual(self.list_macs(d)[1:4], live)  # 設定頁立即反映
-        self.assertTrue(d.is_dirty())
-        self.save()
-        self.assertEqual([x["key"] for x in self.saved[0][0].definition["dl_en1"]], ["rear", "front", "middle"])
-        self.assertEqual([i.tag for i in self.saved[0][1].items], ["順序"])
+        self.assertEqual(self.list_macs(d)[1:4], live)
+        self.assertEqual(orders, [["front", "rear", "middle"], ["rear", "front", "middle"]])
+        self.assertEqual([x["key"] for x in lan.definition_from(self.store.load())["dl_en1"]],
+                         ["rear", "front", "middle"])  # 已寫入資料庫
+        self.assertEqual(Path(self.tmp.name, "dl-en1.hosts").read_text(), hosts_before)  # 不需重啟 dnsmasq
+        self.assertFalse(d.is_dirty())             # 不需按「儲存」
+        d.reject()
 
         # 模擬 App 重新啟動：同一個資料庫、新的 Backend，檔案由資料庫重新產生
         base = Path(self.tmp.name, "restart")
@@ -239,14 +244,29 @@ class SettingsDialogTest(UiBase):
         win.deleteLater()
         d2.deleteLater()
 
-    def test_move_not_saved_is_discarded(self):  # DSC-17-A2
+    def test_move_keeps_other_unsaved_edits(self):  # DSC-17：只寫入順序
+        from flatness import lan
         d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.type(d.name_edit, "中段")             # 未儲存的編輯
         d.select("00:01:FC:DE:3A:77")
         d.btn_up.click()
-        d.reject()
-        from flatness import lan
-        self.assertEqual([x["key"] for x in lan.definition_from(self.store.load())["dl_en1"]],
-                         ["front", "middle", "rear"])
+        saved = {x["key"]: x for x in lan.definition_from(self.store.load())["dl_en1"]}
+        self.assertEqual(saved["middle"]["name"], "中排")    # 名稱未寫入
+        self.assertEqual(list(saved), ["front", "rear", "middle"])  # 順序已寫入
+        self.assertTrue(d.is_dirty())
+        self.assertEqual(d.work["00:01:FC:DE:3A:76"].config["name"], "中段")
+
+    def test_move_failure_keeps_order(self):
+        d = self.dlg
+
+        def boom(*a, **k):
+            raise RuntimeError("資料庫無法連線")
+        self.be.apply = boom
+        d.select("00:01:FC:DE:3A:77")
+        d.btn_up.click()
+        self.assertIn("無法儲存順序", self.warnings[-1])
+        self.assertEqual(self.list_macs(d)[1:4], ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"])
 
     def test_move_only_for_live(self):  # DSC-17
         d = self.dlg
@@ -423,6 +443,24 @@ class MainWindowTest(UiBase):
         self.assertEqual([r.dev["key"] for r in w.rows], ["front", "rear"])
         self.wait_state("idle")
         self.assertEqual(w.detect_count, 2)
+
+    def test_reorder_keeps_result(self):  # DSC-17：主畫面同步順序，結果保留
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        self.stations[-1].force = "pass"
+        w.next_piece()
+        self.wait_state("pass")
+        values = {r.dev["key"]: [t.m.text() for t in r.tiles.values()] for r in w.rows}
+        defn = dict(self.be.definition)
+        defn["dl_en1"] = [defn["dl_en1"][2], defn["dl_en1"][0], defn["dl_en1"][1]]
+        w.reorder(defn)
+        pump(self.app)
+        lay = w.rows_area.widget().layout()
+        self.assertEqual([lay.itemAt(i).widget().dev["key"] for i in range(3)], ["rear", "front", "middle"])
+        self.assertEqual(w.rows[0].unit_text.text(), "DL-EN1 #1")
+        self.assertEqual(w.banner.state, "pass")
+        self.assertEqual({r.dev["key"]: [t.m.text() for t in r.tiles.values()] for r in w.rows}, values)
 
     def test_flags(self):  # 5.1 系統狀態提示
         w = self.win

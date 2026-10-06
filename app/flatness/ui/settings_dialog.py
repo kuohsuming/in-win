@@ -121,6 +121,7 @@ class _Relay(QObject):
 
 class SettingsDialog(QDialog):
     saved = Signal(object, object)  # (sync.ApplyResult, lan.Preview)
+    order_saved = Signal(object)    # 上移／下移已儲存（DSC-17）：新的定義檔內容
 
     def __init__(self, backend, parent=None, *, pending_serial: str | None = None, before_save=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
@@ -826,10 +827,12 @@ class SettingsDialog(QDialog):
         can_hide = d is not None and not d.is_dl_en1 and not (o and o.is_dl_en1) and not self.read_only
         self.btn_hide.setEnabled(can_hide)
         self.btn_hide.setText("取消隱藏" if d and d.hidden else "隱藏")
-        live = lan.live_devices(self._devices())
+        # 上移／下移只對已儲存為使用中、且未在本次編輯中改變類型的設備（DSC-17：按下即儲存）
+        live = lan.live_devices(self.original.values())
         idx = next((i for i, x in enumerate(live) if d and x.mac == d.mac), None)
-        self.btn_up.setEnabled(idx is not None and idx > 0 and not self.read_only)
-        self.btn_down.setEnabled(idx is not None and idx < len(live) - 1 and not self.read_only)
+        movable = idx is not None and d.status == LIVE and not self.read_only
+        self.btn_up.setEnabled(movable and idx > 0)
+        self.btn_down.setEnabled(movable and idx < len(live) - 1)
         for b in (self.btn_import, self.btn_restore):
             b.setEnabled(not self.read_only)
         self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0)
@@ -952,8 +955,32 @@ class SettingsDialog(QDialog):
         self._update_buttons()
 
     def _move(self, step):
-        if self.selected and lan.move(self._devices(), self.selected, step):
-            self._after_change()
+        """上移／下移：按下即寫入資料庫並更新定義檔，主畫面同步調整順序（DSC-17）。
+
+        只寫入順序（`sort_order`）：以已儲存的內容為準移動，其他尚未儲存的編輯保留在畫面上。
+        """
+        if not self.selected:
+            return
+        old = [d.copy() for d in self.original.values()]
+        new = [d.copy() for d in old]
+        if not lan.move(new, self.selected, step):
+            return
+        try:
+            result = self.backend.apply(old, new, summary="調整 DL-EN1 順序")
+        except Exception as exc:
+            log.error("調整順序失敗：%s", exc)
+            self._warn(f"無法儲存順序，順序未變更。\n\n原因：{exc}")
+            return
+        for d in new:
+            self.original[d.mac].sort_order = d.sort_order
+            w = self.work.get(d.mac)
+            if w is not None and w.status in (LIVE, MAINT) and self.original[d.mac].status in (LIVE, MAINT):
+                w.sort_order = d.sort_order
+        names = "、".join(x["name"] for x in result.definition["dl_en1"])
+        log.info("調整 DL-EN1 順序並儲存：%s", names)
+        self.toast.show_text(f"已儲存順序：{names}")
+        self.order_saved.emit(result.definition)
+        self._after_change()
 
     # ---------------------------------------------------------------- IP 探測（DSC-10）
 
