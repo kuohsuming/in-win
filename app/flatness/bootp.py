@@ -177,7 +177,7 @@ def render_hosts(devices: list[dict]) -> str:
 
 
 def _check_zero(errors, pat: str, probe: dict):
-    """校準偏移量（CAL-06）：zero_offset 為有限數值、zeroed_at 為日期時間，兩者同時存在。"""
+    """歸零基準（CAL-06）：zero_offset 為有限數值、zeroed_at 為日期時間，兩者同時存在。"""
     has_off, has_at = "zero_offset" in probe, "zeroed_at" in probe
     if has_off != has_at:
         errors.append((f"{pat}.{'zeroed_at' if has_off else 'zero_offset'}", "zero_offset 與 zeroed_at 須同時存在"))

@@ -437,7 +437,7 @@ ZERO_FIELDS = ("zero_offset", "zeroed_at")
 
 
 def clear_zero(cfg, ids=None) -> None:
-    """清除探頭的校準偏移量（CAL-06）；ids 為 None 時清除全部。"""
+    """清除探頭的歸零基準（CAL-06）；ids 為 None 時清除全部。"""
     for p in (cfg or {}).get("probes") or []:
         if ids is None or p.get("id") in ids:
             for f in ZERO_FIELDS:

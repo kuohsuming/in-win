@@ -858,12 +858,27 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
     MAC = "00:01:FC:DE:3A:76"
 
     class Station:
+        """模擬放大器：原始值 base，歸零後讀值扣除基準。"""
+
         def __init__(self, base=12.4987, noise=0.0):
-            self.base, self.noise, self.calls = base, noise, []
+            self.base, self.noise, self.calls, self.ops, self.zero = base, noise, [], [], 0.0
+
+        def prepare_preset(self, key, pid):
+            return {}
+
+        def preset(self, key, pid, execute):
+            self.ops.append((pid, "execute" if execute else "reset"))
+            self.zero = self.base if execute else 0.0
+
+        def response_time(self, key, pid):
+            return 0.0
+
+        def zero_base(self, key, pid):
+            return self.zero
 
         def sample(self, key, pid, n, interval, cancel=None):
             self.calls.append((key, pid, n))
-            return [self.base + (self.noise if i % 2 else -self.noise) for i in range(n)]
+            return [self.base - self.zero + (self.noise if i % 2 else -self.noise) for i in range(n)]
 
         def resolution(self, key, pid):
             return 0.0001
@@ -874,7 +889,7 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.be = self.make_backend()
         self.msgs = []
 
-        def answer(origin, text, **kw):  # 「開始校準」「採用」皆按右側主要按鍵
+        def answer(origin, text, **kw):  # 「開始校準」按右側主要按鍵
             self.msgs.append((kw.get("title"), text, kw.get("buttons")))
             return len(kw.get("buttons", ("確定",))) - 1
         orig = settings_dialog.show_message
@@ -898,15 +913,17 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.assertTrue(self.btn(d, 1).isEnabled())
         self.btn(d, 1).click()                                   # 只校準探頭 2（CAL-A7）
         self.assertEqual(st.calls, [("row-2", 2, 20), ("row-2", 2, 5)])
+        self.assertEqual(st.ops, [(2, "reset"), (2, "execute")])  # 先清除之前的歸零
+        self.assertIn("放大器已歸零", self.msgs[-1][1])
         probes = by_mac(self.store.load())[self.MAC].config["probes"]
         self.assertAlmostEqual(probes[1]["zero_offset"], 12.4987)
         self.assertIn("zeroed_at", probes[1])
         self.assertNotIn("zero_offset", probes[0])
-        self.assertEqual(len(self.saved), 1)                     # 主畫面以新偏移量重建
+        self.assertEqual(len(self.saved), 1)                     # 主畫面以新的歸零基準重建
         self.assertNotEqual(d.probe_table.item(1, 2).text(), "未校準")
         (rec,) = self.store.calibrations
         self.assertEqual((rec["probe_id"], rec["result"], rec["adopted"]), (2, "PASS", True))
-        self.assertFalse(d.is_dirty())                           # 採用即寫入，不需儲存
+        self.assertFalse(d.is_dirty())                           # 通過即寫入，不需儲存
         d.probe_table.setCurrentCell(0, 1)                       # 刪除探頭 1：原探頭 2 遞補為 1，偏移量清除
         d.btn_probe_del.click()
         self.assertEqual(d.probe_table.item(0, 2).text(), "未校準")
@@ -915,15 +932,28 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
             self.assertFalse(self.btn(d, r).isEnabled())
         self.assertIn("先儲存", self.btn(d, 0).toolTip())
 
-    def test_failed_calibration_changes_nothing(self):
+    def test_failed_calibration_leaves_uncalibrated(self):  # CAL-05：放大器已清除，資料庫跟著清除
+        st = self.Station()
+        d = self.dialog(st)
+        self.btn(d, 0).click()
+        self.assertIn("zero_offset", by_mac(self.store.load())[self.MAC].config["probes"][0])
+        st.noise = 0.01
+        self.btn(d, 0).click()
+        self.assertEqual(st.ops, [(1, "reset"), (1, "execute"), (1, "reset")])  # 第二次：清除後取樣不穩定
+        self.assertNotIn("zero_offset", by_mac(self.store.load())[self.MAC].config["probes"][0])
+        self.assertIn("讀值不穩定", self.msgs[-1][1])
+        self.assertIn("未校準", self.msgs[-1][1])
+        self.assertEqual(d.probe_table.item(0, 2).text(), "未校準")
+        self.assertEqual(len(self.saved), 2)
+        self.assertEqual([(r["result"], r["adopted"]) for r in self.store.calibrations],
+                         [("PASS", True), ("FAIL", False)])
+
+    def test_failed_uncalibrated_probe_changes_nothing(self):
         d = self.dialog(self.Station(noise=0.01))
         before = by_mac(self.store.load())[self.MAC].config
         self.btn(d, 0).click()
         self.assertEqual(by_mac(self.store.load())[self.MAC].config, before)
-        self.assertIn("讀值不穩定", self.msgs[-1][1])
         self.assertEqual(self.saved, [])
-        (rec,) = self.store.calibrations
-        self.assertEqual((rec["result"], rec["adopted"]), ("FAIL", False))
 
     def test_no_calibrator_or_not_live(self):
         from flatness.ui.settings_dialog import SettingsDialog

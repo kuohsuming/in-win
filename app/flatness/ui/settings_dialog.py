@@ -821,7 +821,7 @@ class SettingsDialog(QDialog):
         return -1
 
     def _set_zero(self, r: int, zero: dict | None):
-        """探頭列的校準偏移量（CAL-06）：存於 ID 欄的資料，顯示於校準欄。"""
+        """探頭列的歸零基準（CAL-06）：存於 ID 欄的資料，顯示於校準欄。"""
         self.probe_table.item(r, 0).setData(Qt.UserRole, dict(zero) if zero else None)
         item = self.probe_table.item(r, 2)
         if zero:
@@ -996,7 +996,7 @@ class SettingsDialog(QDialog):
         return None
 
     def _calibrate(self, row: int):
-        """CAL-01～CAL-05：提示放好標準件 → 取樣與驗證 → 顯示結果 → 採用才寫入。"""
+        """CAL-01～CAL-05：提示放好標準件 → 放大器清除歸零、取樣、歸零、驗證 → 資料庫跟著放大器更新 → 顯示結果。"""
         if row < 0 or self._cannot_calibrate():
             return
         o = self.original[self.selected]
@@ -1008,7 +1008,9 @@ class SettingsDialog(QDialog):
         cs = self.backend.cfg.calibration
         what = f"{cfg.get('name')}（{lan.row_label(cfg.get('key'))}）探頭 {pid}「{probe['description']}」"
         if show_message(self, f"校準 {what}\n\n請將標準件放在治具上，確認放好、不再移動後按「開始校準」。\n"
-                              f"將讀取 {cs.samples} 次取平均作為歸零基準，再讀 {cs.verify} 次驗證。",
+                              f"將先清除放大器原本的歸零，讀取 {cs.samples} 次確認穩定後歸零（放大器斷電後仍記住），"
+                              f"再讀 {cs.verify} 次驗證。\n\n注意：開始後原本的歸零即清除，"
+                              "失敗或取消時此探頭為「未校準」，須重新校準成功才能量測。",
                         title="探頭校準", buttons=("取消", "開始校準"), primary=1, kind="ask") != 1:
             return
         dev = {"key": cfg.get("key"), "name": cfg.get("name"), "mac": o.mac, "probes": cfg.get("probes") or []}
@@ -1020,8 +1022,7 @@ class SettingsDialog(QDialog):
         cs = self.backend.cfg.calibration
         cancel = threading.Event()
         box: dict = {}
-        secs = (cs.samples + cs.verify) * cs.interval_ms / 1000
-        dlg = MessageDialog("探頭校準", f"校準中：{what}\n約 {secs:.1f} 秒，請勿移動標準件…", ("取消校準",), 0, "ask")
+        dlg = MessageDialog("探頭校準", f"校準中：{what}\n約數秒，請勿移動標準件…", ("取消校準",), 0, "ask")
 
         def done(res):
             box["res"] = res
@@ -1055,63 +1056,67 @@ class SettingsDialog(QDialog):
                                                      result=calibrate.CANCEL, reason="工程人員取消")
 
     def _finish_calibration(self, o, pid: int, what: str, res):
-        """CAL-05：顯示結果；通過且按「採用」才寫入資料庫與定義檔。CAL-08：每次皆留紀錄。"""
+        """CAL-05：顯示結果。放大器的歸零已清除時，資料庫跟著更新：通過記下新的歸零基準，否則清除為未校準。
+        CAL-08：每次皆留紀錄。"""
         lines = [what]
         if res.mean is not None:
             lines.append(f"取樣 {len(res.samples)} 次：平均 {res.mean:.4f} mm，標準差 {res.sigma:.4f} mm")
-        if res.new_offset is not None:
-            old = "未校準" if res.old_offset is None else f"{res.old_offset:+.4f}"
-            lines.append(f"偏移量：{old} → {res.new_offset:+.4f}")
         if res.verify:
             lines.append("驗證：" + "、".join(f"{v:+.4f}" for v in res.verify)
-                         + f"（平均 {res.verify_mean:+.4f}，每次須在 ±{res.bound:.4f} 內）")
-        station_id = self.backend.cfg.station_id
-        if res.result == calibrate.CANCEL:
-            self.backend.record_calibration(calibrate.record(res, station_id, False))
-            self.toast.show_text("已取消校準，偏移量不變")
+                         + (f"（平均 {res.verify_mean:+.4f}，每次須在 ±{res.bound:.4f} 內）" if res.bound else ""))
+        if res.new_offset is not None:
+            old = "未校準" if res.old_offset is None else f"{res.old_offset:+.4f}"
+            lines.append(f"歸零基準：{old} → {res.new_offset:+.4f}")
+        saved = self._save_zero(o, pid, res) if res.cleared else False
+        self.backend.record_calibration(calibrate.record(res, self.backend.cfg.station_id, saved and res.ok))
+        if res.ok and saved:
+            lines.append("\n✔ 驗證通過。放大器已歸零（斷電後仍記住），已寫入資料庫。")
+            show_message(self, "\n".join(lines), title="探頭校準", buttons=("關閉",), kind="info")
             return
-        if not res.ok:
-            lines.append(f"\n✘ 校準未通過：{res.reason}\n偏移量不變。")
-            self.backend.record_calibration(calibrate.record(res, station_id, False))
-            show_message(self, "\n".join(lines), title="探頭校準", buttons=("關閉",), kind="warn")
+        if res.ok:
+            lines.append("\n✘ 放大器已歸零，但無法寫入資料庫；偵測時會顯示「歸零已變更」，請重新校準。")
+        elif res.cleared:
+            lines.append(f"\n✘ 校準{'已取消' if res.result == calibrate.CANCEL else '未通過'}：{res.reason}\n"
+                         "放大器原本的歸零已清除，此探頭為「未校準」，請重新校準。")
+        elif res.result == calibrate.CANCEL:
+            self.toast.show_text("已取消校準，放大器與設定不變")
             return
-        lines.append("\n✔ 驗證通過。按「採用」立即寫入（不需再按「儲存」）。")
-        adopt = show_message(self, "\n".join(lines), title="探頭校準", buttons=("取消", "採用"),
-                             primary=1, kind="ask") == 1
-        if adopt:
-            adopt = self._adopt_calibration(o, pid, res)
-        self.backend.record_calibration(calibrate.record(res, station_id, adopt))
-        if not adopt:
-            self.toast.show_text("未採用，偏移量不變")
+        else:
+            lines.append(f"\n✘ 校準未開始：{res.reason}\n放大器原本的歸零未變更。")
+        show_message(self, "\n".join(lines), title="探頭校準", buttons=("關閉",), kind="warn")
 
-    def _adopt_calibration(self, o, pid: int, res) -> bool:
-        """立即寫入資料庫並更新定義檔（同 DSC-18）；本次其他設備尚未儲存的編輯保留。"""
+    def _save_zero(self, o, pid: int, res) -> bool:
+        """立即寫入資料庫並更新定義檔（同 DSC-18）：通過記下歸零基準，否則清除；本次其他設備尚未儲存的編輯保留。"""
+        old = [x.copy() for x in self.original.values()]
+        new = [x.copy() for x in old]
+        nd = next(x for x in new if x.mac == o.mac)
+        probe = next(p for p in nd.config["probes"] if p["id"] == pid)
+        if res.ok:
+            probe["zero_offset"] = round(res.new_offset, 6)
+            probe["zeroed_at"] = res.at.isoformat(timespec="seconds")
+        elif "zero_offset" in probe:
+            lan.clear_zero(nd.config, {pid})
+        else:
+            return True  # 原本就是未校準：不需改變
         if self.before_save:
             try:
                 self.before_save()  # 主畫面將重建：先寫入畫面上未寫入的結果（UPL-02）
             except Exception as exc:
-                log.exception("採用校準前寫入量測結果失敗")
-                self._warn(f"畫面上的量測結果寫入失敗，未採用：{exc}")
+                log.exception("寫入校準結果前寫入量測結果失敗")
+                self._warn(f"畫面上的量測結果寫入失敗，校準結果未寫入資料庫：{exc}")
                 return False
             self.pending_serial = None
-        old = [x.copy() for x in self.original.values()]
-        new = [x.copy() for x in old]
-        nd = next(x for x in new if x.mac == o.mac)
-        for p in nd.config["probes"]:
-            if p["id"] == pid:
-                p["zero_offset"] = round(res.new_offset, 6)
-                p["zeroed_at"] = res.at.isoformat(timespec="seconds")
         try:
             result = self.backend.apply(old, new, summary=f"校準 {o.label()} 探頭 {pid}")
         except Exception as exc:
-            log.error("採用校準失敗：%s", exc)
+            log.error("寫入校準結果失敗：%s", exc)
             self._warn(f"無法寫入校準結果，資料庫與檔案維持原狀。\n\n原因：{exc}")
             return False
-        log.info("校準採用：%s 探頭 %d 偏移量 %s → %.6f", o.label(), pid, res.old_offset, res.new_offset)
+        log.info("校準：%s 探頭 %d 歸零基準 %s → %s", o.label(), pid, res.old_offset,
+                 res.new_offset if res.ok else "未校準")
         self.original[o.mac] = nd.copy()
         self.work[o.mac] = nd.copy()
-        self.saved.emit(result, lan.Preview())  # 主畫面以新偏移量重建
-        self.toast.show_text(f"已採用校準：探頭 {pid} 偏移量 {res.new_offset:+.4f}")
+        self.saved.emit(result, lan.Preview())  # 主畫面以新的歸零基準重建
         self._render_all()
         return True
 

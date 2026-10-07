@@ -1,8 +1,14 @@
-"""探頭校準：軟體歸零（CAL-01～CAL-08）。
+"""探頭校準：放大器歸零（CAL-01～CAL-10）。
 
-以標準件為基準：讀取該探頭 N 次（間隔固定）取平均為偏移量，之後顯示值 ＝ 原始值 − 偏移量；再讀 M 次
-驗證扣除後接近 0。不送任何寫入命令到放大器（NFR-11）。取樣經由量測用的 Station（DL-EN1 同一時間只
-接受 1 條連線，校準與量測共用同一條）。
+以標準件為基準，只對選取的探頭（放大器）：
+    1. 確認放大器的歸零設定（預設記憶 YES 等），不符合才寫入
+    2. 清除之前的歸零（預設重置）
+    3. 讀取 N 次判斷是否穩定（間隔不小於放大器響應時間）
+    4. 執行歸零（預設），放大器記住，斷電後仍保留
+    5. 再讀 M 次驗證接近 0
+    6. 失敗或取消時再清除一次，探頭為未校準
+之後量測直接使用放大器的值；資料庫記錄歸零基準（R.V. − P.V.），供偵測時比對（CAL-10）。
+寫入命令只用於此流程（NFR-11）。經由量測用的 Station（DL-EN1 同一時間只接受 1 條連線，校準與量測共用）。
 
 驗證條件（CAL-04）：M 次平均在 0 ± 容許值內，且每次在 0 ± max(3σ, 解析度) 內。
 原本提出的「M 次皆在 1σ 內」正常探頭約 85% 會失敗（0.68^5 ≈ 0.15），σ 為 0 時任何晃動也會失敗。
@@ -31,17 +37,20 @@ class CalResult:
     key: str
     probe_id: int
     device_mac: str | None
-    old_offset: float | None
-    samples: list = field(default_factory=list)       # 原始值
+    old_offset: float | None                          # 原本記錄的歸零基準
+    samples: list = field(default_factory=list)       # 清除歸零後的讀值（＝原始值）
     mean: float | None = None
     sigma: float | None = None
-    new_offset: float | None = None
-    verify: list = field(default_factory=list)        # 扣除新偏移量後的值
+    new_offset: float | None = None                   # 歸零後從放大器讀回的歸零基準
+    verify: list = field(default_factory=list)        # 歸零後的讀值
     verify_mean: float | None = None
     verify_max_dev: float | None = None
     bound: float | None = None                        # 每次驗證值的上限 max(3σ, 解析度)
     result: str = FAIL
     reason: str | None = None
+    cleared: bool = False                             # 已清除放大器原本的歸零（資料庫須跟著更新）
+    zeroed: bool = False                              # 放大器目前為本次的歸零
+    interval: float | None = None                     # 實際取樣間隔（秒）
     at: datetime = field(default_factory=datetime.now)
 
     @property
@@ -60,7 +69,7 @@ def check_samples(samples, tolerance: float) -> tuple[float, float, str | None]:
 
 
 def check_verify(values, sigma: float, resolution: float, tolerance: float) -> tuple[float, float, float, str | None]:
-    """CAL-04：驗證值（已扣偏移量）平均在 ±容許值內，每次在 ±max(3σ, 解析度) 內。"""
+    """CAL-04：驗證值（歸零後）平均在 ±容許值內，每次在 ±max(3σ, 解析度) 內。"""
     mean = statistics.fmean(values)
     max_dev = max(abs(v) for v in values)
     bound = max(3 * sigma, resolution)
@@ -72,38 +81,58 @@ def check_verify(values, sigma: float, resolution: float, tolerance: float) -> t
 
 
 def run(station, dev: dict, probe_id: int, settings, cancel: threading.Event | None = None) -> CalResult:
-    """校準一個探頭（阻斷約 (samples + verify) × interval 秒，須在背景執行緒呼叫）。
+    """校準一個探頭（阻斷數秒，須在背景執行緒呼叫）。
 
-    station 須提供 sample(key, probe_id, n, interval_s, cancel) → 原始值 list[float]（失敗拋出 SampleError、
-    取消拋出 Cancelled）與 resolution(key, probe_id) → 解析度。
+    station 須提供：prepare_preset(key, id)、preset(key, id, execute)、response_time(key, id)、
+    zero_base(key, id)、sample(key, id, n, interval_s, cancel)、resolution(key, id)；
+    失敗拋出 SampleError，取樣時取消拋出 Cancelled。
     """
+    key = dev["key"]
     probe = next(p for p in dev["probes"] if p["id"] == probe_id)
-    res = CalResult(dev["key"], probe_id, dev.get("mac"), probe.get("zero_offset"))
-    interval = settings.interval_ms / 1000
+    res = CalResult(key, probe_id, dev.get("mac"), probe.get("zero_offset"))
     try:
-        res.samples = station.sample(dev["key"], probe_id, settings.samples, interval, cancel)
+        station.prepare_preset(key, probe_id)
+        _check_cancel(cancel)
+        station.preset(key, probe_id, False)          # 第一步：清除之前的歸零
+        res.cleared = True
+        res.interval = max(settings.interval_ms / 1000, station.response_time(key, probe_id))
+        res.samples = station.sample(key, probe_id, settings.samples, res.interval, cancel)
         res.mean, res.sigma, why = check_samples(res.samples, settings.tolerance)
         if why:
             res.reason = why
             return res
-        res.new_offset = res.mean
-        raw = station.sample(dev["key"], probe_id, settings.verify, interval, cancel)
-        res.verify = [v - res.new_offset for v in raw]
+        _check_cancel(cancel)
+        station.preset(key, probe_id, True)           # 歸零，放大器記住
+        res.zeroed = True
+        res.verify = station.sample(key, probe_id, settings.verify, res.interval, cancel)
         res.verify_mean, res.verify_max_dev, res.bound, why = check_verify(
-            res.verify, res.sigma, station.resolution(dev["key"], probe_id), settings.tolerance)
+            res.verify, res.sigma, station.resolution(key, probe_id), settings.tolerance)
         if why:
             res.reason = why
             return res
+        res.new_offset = station.zero_base(key, probe_id)
         res.result = PASS
     except Cancelled:
         res.result, res.reason = CANCEL, "工程人員取消"
     except SampleError as exc:
-        res.reason = f"取樣失敗：{exc}"
+        res.reason = f"取樣失敗：{exc}" if res.cleared else f"放大器設定失敗：{exc}"
+    finally:
+        if res.zeroed and not res.ok:  # 失敗或取消：不留下未通過驗證的歸零
+            try:
+                station.preset(key, probe_id, False)
+                res.zeroed = False
+            except SampleError as exc:
+                res.reason = f"{res.reason}；清除歸零失敗：{exc}"
     return res
 
 
+def _check_cancel(cancel):
+    if cancel is not None and cancel.is_set():
+        raise Cancelled()
+
+
 def record(res: CalResult, station_id: str, adopted: bool) -> dict:
-    """CAL-08：校準紀錄。"""
+    """CAL-08：校準紀錄；adopted 為歸零基準已寫入資料庫。"""
     return {"calibrated_at": res.at, "station_id": station_id, "device_key": res.key, "probe_id": res.probe_id,
             "device_mac": res.device_mac, "samples": len(res.samples), "mean": res.mean, "sigma": res.sigma,
             "old_offset": res.old_offset, "new_offset": res.new_offset, "verify_mean": res.verify_mean,

@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass, field
 
 OK, HI, LO, ERR = "ok", "hi", "lo", "err"
+UNCALIBRATED, ZERO_LOST, ZERO_CHANGED = "未校準", "歸零遺失", "歸零已變更"  # 不可量測的探頭（CAL-07、CAL-10）
+ZERO_ERRORS = {UNCALIBRATED, ZERO_LOST, ZERO_CHANGED}
 
 
 @dataclass
@@ -20,7 +22,7 @@ class ProbeReading:
     value: float | None = None        # 完整精度（JDG-03）；無有效數據為 None
     raw: str = ""                     # DL-EN1 原始回傳（DAT-03）
     error: str | None = None          # 設備異常原因，例：探頭無回應（感測頭錯誤（ErH））
-    offset: float | None = None       # 使用的校準偏移量（CAL-03、CAL-09）；value 已扣除
+    offset: float | None = None       # 量測時放大器的歸零基準（CAL-09）；value 為放大器歸零後的值
 
 
 @dataclass
@@ -30,7 +32,7 @@ class DeviceStatus:
     probe_errors: dict = field(default_factory=dict)  # probe_id → 原因（探頭無回應等）
     booting: bool = False             # ER,**,031／254：設備啟動中（DEV-07）
     error: str | None = None          # 整台設備異常：本機錯誤、探頭台數超出定義（DEF-06）等
-    uncalibrated: set = field(default_factory=set)    # 未校準的探頭 id（CAL-07）
+    uncalibrated: dict = field(default_factory=dict)  # 不可量測的探頭 id → 未校準／歸零遺失／歸零已變更（CAL-07、CAL-10）
 
 
 def judge(value: float | None, std) -> str:
@@ -63,19 +65,32 @@ class DemoStation:
         self.delay = delay
         self.rng = random.Random(seed)
         self.force: str | None = None  # 測試用："pass"／"fail"／"error"
+        self.zero: dict = {}           # 示範用放大器的歸零基準（校準）
 
     def detect(self) -> list[DeviceStatus]:
         time.sleep(self.delay * 2)
         return [DeviceStatus(d["key"]) for d in self.definition["dl_en1"]]
 
+    # 校準（CAL-02）：示範用放大器，原始值約 12.5 mm 加上小幅雜訊，歸零後扣除歸零基準
+    def prepare_preset(self, key, probe_id) -> dict:
+        return {}
+
+    def preset(self, key, probe_id, execute: bool) -> None:
+        self.zero[(key, probe_id)] = round(12.5 + self.rng.gauss(0, 0.0002), 4) if execute else 0.0
+
+    def response_time(self, key, probe_id) -> float:
+        return 0.0
+
+    def zero_base(self, key, probe_id) -> float:
+        return self.zero.get((key, probe_id), 0.0)
+
     def sample(self, key, probe_id, n, interval, cancel=None) -> list[float]:
-        """校準取樣（CAL-02）：示範用原始值約 12.5 mm 加上小幅雜訊。"""
         out = []
         for _ in range(n):
             if cancel is not None and cancel.is_set():
                 from .calibrate import Cancelled
                 raise Cancelled()
-            out.append(round(12.5 + self.rng.gauss(0, 0.0002), 4))
+            out.append(round(12.5 + self.rng.gauss(0, 0.0002) - self.zero_base(key, probe_id), 4))
             time.sleep(interval)
         return out
 

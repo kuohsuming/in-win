@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS flatness.inspection_point (
   raw_response       VARCHAR(64)           NULL COMMENT 'DL-EN1 原始回傳字串（DAT-03）',
   error_text         VARCHAR(255)          NULL COMMENT '設備異常原因（3.0.6）',
   device_mac         CHAR(17)              NULL COMMENT '量測當時該排 DL-EN1 的 MAC（DAT-06）',
-  zero_offset        DECIMAL(12,6)         NULL COMMENT '量測當時的校準偏移量（CAL-09）；測量值 ＝ 原始值 − 偏移量',
+  zero_offset        DECIMAL(12,6)         NULL COMMENT '量測當時放大器的歸零基準（CAL-09）；測量值為放大器歸零後的值，加上此值為原始值',
   PRIMARY KEY (serial, device_key, probe_id),
   CONSTRAINT fk_point_inspection
     FOREIGN KEY (serial) REFERENCES flatness.inspection (serial)
@@ -91,7 +91,7 @@ SET @col_missing := (
   WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'zero_offset'
 );
 SET @sql := IF(@col_missing,
-  'ALTER TABLE flatness.inspection_point ADD COLUMN zero_offset DECIMAL(12,6) NULL COMMENT ''量測當時的校準偏移量（CAL-09）；測量值 ＝ 原始值 − 偏移量'' AFTER device_mac',
+  'ALTER TABLE flatness.inspection_point ADD COLUMN zero_offset DECIMAL(12,6) NULL COMMENT ''量測當時放大器的歸零基準（CAL-09）；測量值為放大器歸零後的值，加上此值為原始值'' AFTER device_mac',
   'DO 0');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
@@ -106,15 +106,15 @@ CREATE TABLE IF NOT EXISTS flatness.calibration (
   probe_id         TINYINT UNSIGNED  NOT NULL COMMENT '探頭 id（放大器 ID）',
   device_mac       CHAR(17)              NULL COMMENT 'DL-EN1 MAC',
   samples          SMALLINT UNSIGNED NOT NULL COMMENT '取樣次數（實際讀到的筆數）',
-  mean             DECIMAL(12,6)         NULL COMMENT '取樣平均（原始值）',
+  mean             DECIMAL(12,6)         NULL COMMENT '取樣平均（清除歸零後的原始值）',
   sigma            DECIMAL(12,6)         NULL COMMENT '取樣標準差',
-  old_offset       DECIMAL(12,6)         NULL COMMENT '校準前的偏移量；未校準為 NULL',
-  new_offset       DECIMAL(12,6)         NULL COMMENT '新偏移量（＝ 取樣平均）',
-  verify_mean      DECIMAL(12,6)         NULL COMMENT '驗證平均（扣除新偏移量）',
+  old_offset       DECIMAL(12,6)         NULL COMMENT '校準前的歸零基準；未校準為 NULL',
+  new_offset       DECIMAL(12,6)         NULL COMMENT '放大器歸零後讀回的歸零基準（R.V. − P.V.）；未通過為 NULL',
+  verify_mean      DECIMAL(12,6)         NULL COMMENT '驗證平均（放大器歸零後的值）',
   verify_max_dev   DECIMAL(12,6)         NULL COMMENT '驗證讀值與 0 的最大偏差',
   result           ENUM('PASS','FAIL','CANCEL') NOT NULL COMMENT '校準結果',
   reason           VARCHAR(255)          NULL COMMENT '失敗或取消原因',
-  adopted          TINYINT(1)        NOT NULL DEFAULT 0 COMMENT '工程人員是否採用（CAL-05）',
+  adopted          TINYINT(1)        NOT NULL DEFAULT 0 COMMENT '新的歸零基準是否已寫入資料庫（CAL-05）',
   PRIMARY KEY (id),
   KEY idx_calibration_probe (device_key, probe_id, calibrated_at)
 ) ENGINE=InnoDB

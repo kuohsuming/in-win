@@ -11,7 +11,7 @@ from flatness.dlen1 import DlEn1Station
 
 
 class FakeDlEn1:
-    """一問一答的假 DL-EN1：replies 為 命令 → 回應（不含 CR LF）；None 表示不回應。"""
+    """一問一答的假 DL-EN1：replies 為 命令 → 回應（不含 CR LF）的 dict，或以命令回傳回應的函式。"""
 
     def __init__(self, replies: dict):
         self.replies = replies
@@ -47,7 +47,8 @@ class FakeDlEn1:
                     line, buf = buf.split(b"\r\n", 1)
                     cmd = line.decode()
                     self.received.append(cmd)
-                    reply = self.replies.get(cmd, f"ER,{cmd.split(',')[0]},255")
+                    reply = (self.replies(cmd) if callable(self.replies) else
+                             self.replies.get(cmd, f"ER,{cmd.split(',')[0]},255"))
                     if reply == "CLOSE":
                         return
                     c.sendall(reply.encode() + b"\r\n")
@@ -63,6 +64,43 @@ REAL = {  # 真機回應（2 台放大器、4 位小數）
     "FR,02,037": "FR,02,037,+000000004",
     "MS": "MS,02,-000002971,02,+000000358",
 }
+
+
+class Gt2:
+    """假 DL-EN1 加上放大器 ID 2 的歸零狀態：R.V. 固定 +0.0358，P.V. ＝ R.V. − 歸零基準。"""
+
+    RV = 358
+
+    def __init__(self, zero=0, settings=None):
+        self.zero = zero
+        self.mem = {148: 0, 149: 0, 150: 0, 67: 0, 72: 0, 77: 0, 82: 0, 132: 3, **(settings or {})}
+
+    def __call__(self, cmd):
+        f = cmd.split(",")
+        if f[0] == "SW" and f[1] == "02":
+            no, v = int(f[2]), int(f[3])
+            if no == 1:
+                self.zero = self.RV
+            elif no == 2:
+                self.zero = 0
+            elif no in self.mem:
+                self.mem[no] = v
+            else:
+                return f"ER,SW,255"
+            return ",".join(f[:3])
+        if f[0] == "SR" and f[1] == "02":
+            no = int(f[2])
+            v = {37: self.RV - self.zero, 38: self.RV}.get(no, self.mem.get(no))
+            return f"SR,02,{f[2]},{v:+010d}" if v is not None else "ER,SR,255"
+        if f[0] == "SR" and f[1] == "01" and f[2] in ("037", "038"):
+            return f"SR,01,{f[2]},-000002971"
+        if cmd == "MS":
+            return f"MS,02,-000002971,02,{self.RV - self.zero:+010d}"
+        return REAL.get(cmd, f"ER,{f[0]},255")
+
+
+def sw(dev):
+    return [c for c in dev.received if c.startswith("SW")]
 
 
 def definition(port, probes=(1, 2), max_probes=None, ip="127.0.0.1", offsets=None):
@@ -138,14 +176,80 @@ class DlEn1StationTest(unittest.TestCase):
         (s,) = st.detect()
         self.assertIn("錯誤代碼 51", s.error)
 
-    def test_offset_applied_and_uncalibrated(self):  # CAL-03、CAL-07、CAL-09
+    def test_amplifier_value_and_uncalibrated(self):  # CAL-03、CAL-07、CAL-09
         _, st = self.station(REAL, offsets={1: -0.3, 2: None})
-        (s,) = st.detect()
-        self.assertEqual(s.uncalibrated, {2})
+        (s,) = st.detect()                                # 讀不到 P.V.／R.V.（ER）：不判定歸零
+        self.assertEqual(s.uncalibrated, {2: "未校準"})
         r1, r2 = st.read()
-        self.assertAlmostEqual(r1.value, 0.0029)          # −0.2971 − (−0.3)
+        self.assertEqual(r1.value, -0.2971)               # 放大器已歸零：直接使用，不扣偏移量
         self.assertEqual((r1.offset, r1.raw), (-0.3, "-000002971"))
         self.assertEqual((r2.value, r2.error, r2.raw), (None, "未校準", "+000000358"))
+
+    def test_zero_matches_record(self):  # CAL-10：歸零基準與紀錄相符
+        dev, st = self.station(Gt2(zero=358), offsets={1: 0.0, 2: 0.0358})
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {})
+        r1, r2 = st.read()
+        self.assertEqual((r2.value, r2.offset), (0.0, 0.0358))
+        self.assertEqual(sw(dev), [])                     # 偵測與量測不寫入（NFR-11）
+
+    def test_zero_lost_or_changed(self):  # CAL-10、CAL-A9
+        amp = Gt2(zero=0)                                 # 放大器被重設：歸零遺失
+        _, st = self.station(amp, offsets={1: 0.0, 2: 0.0358})
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {2: "歸零遺失"})
+        self.assertEqual((st.read()[1].value, st.read()[1].error), (None, "歸零遺失"))
+        amp.zero = 100                                    # 面板上重新歸零
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {2: "歸零已變更"})
+        amp.zero = 358 + 10                               # 差 0.001，在容許值 0.002 內
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {})
+        self.assertIsNone(st.read()[1].error)
+
+    def test_zero_check_skipped_on_invalid_value(self):  # SR 特殊值：不判定
+        amp = Gt2(zero=0)
+        replies = lambda cmd: "SR,02,038,-009999998" if cmd == "SR,02,038" else amp(cmd)  # noqa: E731
+        _, st = self.station(replies, offsets={1: 0.0, 2: 0.0358})
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {})
+
+    def test_preset_commands(self):  # CAL-02、NFR-11：只寫選取的放大器、只寫必要的資料編號
+        amp = Gt2(settings={149: 1, 72: 50})
+        dev, st = self.station(amp)
+        st.detect()
+        before = st.prepare_preset("row-1", 2)
+        self.assertEqual((before[149], before[72], before[148]), (1, 50, 0))
+        self.assertEqual(sw(dev), ["SW,02,149,+000000000", "SW,02,072,+000000000"])
+        self.assertEqual(st.prepare_preset("row-1", 2)[149], 0)  # 已符合：不再寫入
+        self.assertEqual(len(sw(dev)), 2)
+        st.preset("row-1", 2, True)
+        self.assertEqual((st.zero_base("row-1", 2), st.sample("row-1", 2, 2, 0.0)), (0.0358, [0.0, 0.0]))
+        st.preset("row-1", 2, False)
+        self.assertEqual((st.zero_base("row-1", 2), st.sample("row-1", 2, 1, 0.0)), (0.0, [0.0358]))
+        self.assertEqual(sw(dev)[2:], ["SW,02,001,+000000001", "SW,02,002,+000000001"])
+        self.assertEqual(st.response_time("row-1", 2), 0.1)
+
+    def test_calibrate_end_to_end(self):  # CAL-G1：清除 → 取樣 → 歸零 → 驗證，從不送 003／005
+        from flatness import calibrate
+        from flatness.config import Calibration
+        amp = Gt2(zero=100, settings={150: 1})
+        dev, st = self.station(amp, offsets={1: 0.0, 2: 0.01})
+        st.detect()
+        d = definition(0, offsets={1: 0.0, 2: 0.01})["dl_en1"][0]
+        res = calibrate.run(st, d, 2, Calibration(samples=3, interval_ms=0, verify=2, tolerance=0.002))
+        self.assertTrue(res.ok, res.reason)
+        self.assertEqual((res.samples, res.verify, res.new_offset, res.interval), ([0.0358] * 3, [0.0, 0.0], 0.0358, 0.1))
+        self.assertEqual(sw(dev), ["SW,02,150,+000000000", "SW,02,002,+000000001", "SW,02,001,+000000001"])
+        self.assertTrue(all(c.split(",")[1] == "02" for c in sw(dev)))
+
+    def test_preset_error(self):  # 寫入被拒（例：按鍵鎖定）→ SampleError
+        from flatness.calibrate import SampleError
+        amp = Gt2()
+        replies = lambda cmd: "ER,SW,012" if cmd.startswith("SW") else amp(cmd)  # noqa: E731
+        _, st = self.station(replies)
+        with self.assertRaises(SampleError):
+            st.preset("row-1", 2, False)
 
     def test_sample_raw_values(self):  # CAL-02：原始值、不扣偏移量、間隔
         import time
