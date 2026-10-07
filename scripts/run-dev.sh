@@ -3,7 +3,7 @@
 #   - 資料庫：拋棄式 MySQL（scripts/dev-mysql.sh），第一次以 installer/dl-en1.json 匯入（DEF-10）
 #   - dnsmasq：改用 scripts/fake-dnsmasq.py，輸出示範的 BOOTP／DHCP 請求（探索 DSC-01）；不監聽 ARP（DSC-19）
 #   - 設定檔：.dev/config.toml（由 installer/config.toml 產生；工程人員密碼 1234）
-#   - 量測：示範量測來源（DL-EN1 連線尚未實作）
+#   - 量測：示範量測來源（--demo，數值隨機產生）；--real 時連線 DL-EN1 實機
 #
 #   ./scripts/run-dev.sh                 全螢幕（與產線相同，UI-10）
 #   ./scripts/run-dev.sh --windowed      一般視窗
@@ -47,5 +47,5 @@ fi
 PYTHONPATH=app exec .venv/bin/python -m flatness \
   --config .dev/config.toml --db-env .dev/db.env \
   --def .dev/dl-en1.json --hosts .dev/bootp/dl-en1.hosts \
-  --dnsmasq-cmd "$PWD/.venv/bin/python $PWD/scripts/fake-dnsmasq.py --hosts $PWD/.dev/bootp/dl-en1.hosts" --no-arp \
+  --dnsmasq-cmd "$PWD/.venv/bin/python $PWD/scripts/fake-dnsmasq.py --hosts $PWD/.dev/bootp/dl-en1.hosts" --no-arp --demo \
   --log-file .dev/flatness.log "${ARGS[@]}"

@@ -1,7 +1,7 @@
 """量測資料模型與判定（JDG-01～JDG-05、DEF-09），以及示範用的量測來源。
 
 畫面只依賴 Station 介面：detect() 偵測設備、read() 讀取一次；兩者皆阻斷，由畫面在背景執行緒呼叫。
-DemoStation 在沒有 DL-EN1 時產生合理的數值，供畫面開發與展示；之後由 DL-EN1 連線（DEV、MEA）取代。
+DemoStation 在沒有 DL-EN1 時產生合理的數值，供畫面開發與展示（--demo）；實機為 dlen1.DlEn1Station。
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ class DeviceStatus:
     reachable: bool = True            # False：DL-EN1 偵測不到（DEV-04）
     probe_errors: dict = field(default_factory=dict)  # probe_id → 原因（探頭無回應等）
     booting: bool = False             # ER,**,031／254：設備啟動中（DEV-07）
+    error: str | None = None          # 整台設備異常：本機錯誤、探頭台數超出定義（DEF-06）等
 
 
 def judge(value: float | None, std) -> str:

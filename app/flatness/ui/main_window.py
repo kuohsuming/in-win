@@ -887,6 +887,9 @@ class MainWindow(QMainWindow):
         self.layout = layout
         self.devices = [d for d in layout.get("dl_en1", []) if not d.get("maint")]
         self.definition = {"version": 1, "dl_en1": self.devices}
+        old = getattr(self, "station", None)
+        if old is not None and hasattr(old, "close"):
+            old.close()  # 關閉舊設定的 DL-EN1 連線（DEV-09）
         self.station = self.station_factory(self.definition)
         holder = QWidget()
         holder.setStyleSheet("background: transparent;")
@@ -1004,6 +1007,13 @@ class MainWindow(QMainWindow):
                 row.set_down(True)
                 for t in row.tiles.values():
                     t.set_result(ERR, device_text="DL-EN1 偵測不到", device_error=True)
+                    n_err += 1
+                continue
+            if s.error:  # 整台設備異常：連得上，但不能量測（本機錯誤、探頭台數超出定義 DEF-06）
+                errs.append(f"{d['name']} {s.error}")
+                row.set_down(False, "ng")
+                for t in row.tiles.values():
+                    t.set_result(ERR, note=s.error, device_text="設備異常", device_error=True)
                     n_err += 1
                 continue
             row.set_down(False, "go")

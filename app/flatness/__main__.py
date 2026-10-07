@@ -32,6 +32,8 @@ def parse_args(argv=None):
     p.add_argument("--arp-cmd", default=shlex.join(arpwatch.COMMAND),
                    help="啟動 ARP 監聽的命令（DSC-19）")
     p.add_argument("--no-arp", action="store_true", help="不監聽 ARP 位址偵測封包（開發機沒有安裝監聽程式時）")
+    p.add_argument("--demo", action="store_true",
+                   help="示範量測來源：不連線 DL-EN1，數值隨機產生（開發機沒有 DL-EN1 時）")
     p.add_argument("--simulate", action="store_true", help="模擬模式：不啟動 dnsmasq、不探索（SIM、DSC-07-A6）")
     p.add_argument("--equip-net", type=ipaddress.IPv4Interface,
                    help="指定設備網段（預設取設備網卡目前位址，沒有時用 config.toml 的 pc_ip／net_prefix）")
@@ -74,6 +76,7 @@ def main(argv=None) -> int:
     from PySide6.QtWidgets import QApplication
 
     from .backend import Backend
+    from .dlen1 import DlEn1Station
     from .measure import DemoStation
     from .ui import theme
     from .ui.main_window import MainWindow
@@ -93,9 +96,13 @@ def main(argv=None) -> int:
     if result.problem:
         log.warning("啟動：%s", result.problem)
 
-    # DL-EN1 連線（DEV、MEA）尚未實作：目前以示範量測來源驅動畫面
-    log.warning("量測來源：示範模式（DL-EN1 連線尚未實作，數值為隨機產生）")
-    win = MainWindow(backend, lambda definition: DemoStation(definition, cfg.standards))
+    if args.demo:
+        log.warning("量測來源：示範模式（不連線 DL-EN1，數值為隨機產生）")
+        factory = lambda definition: DemoStation(definition, cfg.standards)  # noqa: E731
+    else:
+        log.info("量測來源：DL-EN1 實機")
+        factory = lambda definition: DlEn1Station(definition)  # noqa: E731
+    win = MainWindow(backend, factory)
     if args.on_top:
         from PySide6.QtCore import Qt
         win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
