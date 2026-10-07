@@ -68,6 +68,20 @@ class ValidateTest(unittest.TestCase):
         self.assertEqual(d.config["key"], "row-2")
         self.assertEqual(lan.row_label("row-10"), "第 10 排")
 
+    def test_new_device_keeps_its_seen_ip(self):  # DSC-08、DSC-19：沿用設備實際使用的 IP，不必重設
+        devs = sample_devices()
+        by_mac(devs)["00:01:FC:12:39:A0"].seen_ip = "192.168.10.57"
+        self.assertEqual(lan.set_status(devs, "00:01:FC:12:39:A0", LIVE, NET).ipv4, "192.168.10.57")
+        devs = sample_devices()  # 實際 IP 已被其他設備使用 → 改取預設範圍的空位
+        front = by_mac(devs)["00:01:FC:DE:3A:75"]
+        by_mac(devs)["00:01:FC:12:39:A0"].seen_ip = front.ipv4
+        d = lan.set_status(devs, "00:01:FC:12:39:A0", LIVE, NET)
+        self.assertNotEqual(d.ipv4, front.ipv4)
+        self.assertTrue(d.ipv4)
+        devs = sample_devices()  # 不在設備網段 → 不沿用
+        by_mac(devs)["3C:52:82:11:22:33"].seen_ip = "10.0.0.5"
+        self.assertNotEqual(lan.set_status(devs, "3C:52:82:11:22:33", OTHER, NET).ipv4, "10.0.0.5")
+
     def issues(self, devs):
         return [(i.mac, i.field, i.message) for i in lan.validate(devs, NET)]
 

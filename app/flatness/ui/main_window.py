@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from .. import measure
+from .. import lan, measure
 from ..measure import ERR, HI, LO, OK
 from . import icons
 from .theme import C, num_font, text_font
@@ -301,6 +301,7 @@ class DeviceRow(QFrame):
         super().__init__()
         self.index, self.dev = index, dev
         self.maint = bool(dev.get("maint"))  # 維修中：顯示但不連線、不量測（DSC-15）
+        self.seen_ip: str | None = None      # 實際使用 IP 與設定不同時為實際 IP（DSC-20）
         self.setObjectName("row")
         lay = self._lay = QHBoxLayout(self)
         left = self._left = QFrame()
@@ -371,14 +372,27 @@ class DeviceRow(QFrame):
         self.index = index
         self.set_down(*self._down_args)
 
+    def set_ip_mismatch(self, seen_ip: str | None):
+        """DSC-20：DL-EN1 實際使用的 IP 與設定不同時，以警告色框與「IP 不符」標示這一排。"""
+        if seen_ip != self.seen_ip:
+            self.seen_ip = seen_ip
+            self.set_down(*self._down_args)
+
     def set_down(self, down: bool, dot="stale", blink=False):
         self._down_args = (down, dot, blink)
-        border = f"4px solid {C['ng']}" if down else f"1px solid {C['line']}"
+        border = (f"4px solid {C['ng']}" if down else f"4px solid {C['warn']}" if self.seen_ip
+                  else f"1px solid {C['line']}")
         self.setStyleSheet(
             f"QFrame#row {{ background:{C['panel']}; border:{border}; border-radius:6px; }}"
             f"QFrame#rowname {{ background:{C['ng-soft'] if down else C['panel-2']}; border-radius:4px; border:none; }}")
         self.name.setStyleSheet(f"color:{C['ng'] if down else (C['ink-2'] if self.maint else C['ink'])};"
                                 f" background:transparent;")
+        if self.seen_ip and not down:
+            self.unit_dot.hide()
+            self.unit_text.setText(f"DL-EN1 #{self.index + 1}\nIP 不符" + ("・維修中" if self.maint else ""))
+            self.unit_text.setStyleSheet(f"background:{C['warn']};color:white;font-weight:700;"
+                                         f"padding:2px 8px;border-radius:3px;")
+            return
         if self.maint:
             self.unit_dot.hide()
             self.unit_text.setText(f"DL-EN1 #{self.index + 1}\n維修中")
@@ -596,7 +610,8 @@ class MainWindow(QMainWindow):
         self.result: InspectionResult | None = None
         self.detect_count = 0
         self.busy = False                           # 倒數、讀取、偵測中
-        self.flags = {"sim": backend.simulate, "bootp": None, "db": None}
+        self.flags = {"sim": backend.simulate, "bootp": None, "db": None, "ip": None}
+        self.seen_ips: dict[str, str] = {}  # MAC → 實際使用 IP（ARP 位址偵測封包，DSC-19）
         self._relay = _Relay()
         self._relay.detected.connect(self._on_detected)
         self._relay.read_done.connect(self._on_read)
@@ -641,6 +656,7 @@ class MainWindow(QMainWindow):
         self._retry_left = 0
 
         backend.bootp_state.connect(self._on_bootp)
+        backend.devices_seen.connect(self._on_seen)
         backend.db_state.connect(lambda ok: self.set_flag("db", None if ok else "無法讀取資料庫，使用上次的設定"))
         r = backend.startup_result
         if r is not None and r.problem:
@@ -810,15 +826,46 @@ class MainWindow(QMainWindow):
             lb.setStyleSheet(f"background:{C['ink']};color:{C['panel']};font-size:17px;font-weight:700;"
                              f"padding:5px 10px;border-radius:4px;letter-spacing:0.15em;")
             self.flag_box.addWidget(lb)
-        for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"])):
+        for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"]),
+                            ("ip", "white", C["warn"])):
             text = self.flags.get(key)
             if text:
                 lb = QLabel(f'<span style="color:{fg}">●</span> {html.escape(text)}')
                 lb.setStyleSheet(f"background:{bg};color:{fg};font-size:15px;font-weight:700;padding:5px 10px;"
                                  f"border-radius:4px;")
-                lb.setMaximumWidth(520)
+                lb.setMaximumWidth(900 if key == "ip" else 520)
+                lb.setWordWrap(key == "ip")
                 lb.setToolTip(text)
                 self.flag_box.addWidget(lb)
+
+    def _on_seen(self, events):
+        """探索事件：更新設備實際使用的 IP（DSC-19），檢查與設定是否不同（DSC-20）。"""
+        changed = False
+        for e in events:
+            if e.ip and self.seen_ips.get(e.mac) != e.ip:
+                self.seen_ips[e.mac] = e.ip
+                changed = True
+        if changed:
+            self._check_ips()
+
+    def _check_ips(self):
+        """DSC-20：使用中／維修中 DL-EN1 實際使用的 IP 與設定不同時，該排以警告色標示，
+        頂端提示按住 DL-EN1 的 RST 鍵 3 秒重設，使其重新以 BOOTP 取得設定的 IP。"""
+        notes = []
+        for row in self.rows:
+            try:
+                mac = lan.normalize_mac(row.dev.get("mac", ""))
+            except ValueError:
+                mac = ""
+            seen, want = self.seen_ips.get(mac), row.dev.get("ipv4")
+            bad = lan.ip_mismatch(seen, want)
+            row.set_ip_mismatch(seen if bad else None)
+            if bad:
+                notes.append(f"{row.dev.get('name') or mac}（DL-EN1 #{row.index + 1}）實際 IP {seen}，設定為 {want}")
+        self.set_flag("ip", ("IP 不符：" + "；".join(notes) + "。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，"
+                             "使其重新取得設定的 IP") if notes else None)
+        if notes:
+            log.warning("DL-EN1 IP 不符：%s", "；".join(notes))
 
     def _on_bootp(self, running: bool, reason: str):
         self.set_flag("bootp", None if running or not reason else "BOOTP 服務停止，自動重新啟動中")
@@ -851,6 +898,8 @@ class MainWindow(QMainWindow):
             lay.addWidget(hint)
         lay.addStretch()
         self.rows_area.setWidget(holder)
+        self.seen_ips.update({d.mac: d.seen_ip for d in self.backend.cached_devices() if d.seen_ip})
+        self._check_ips()
         self._apply_scale(getattr(self, "scale_k", 1.0))
         self._fit_later()
 

@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -568,6 +569,23 @@ class MainWindowTest(UiBase):
     def test_layout_from_definition(self):  # DEF-04
         self.assertEqual([r.dev["key"] for r in self.win.rows], ["row-1", "row-2", "row-3"])
         self.assertEqual(sum(len(r.tiles) for r in self.win.rows), 12)
+
+    def test_ip_mismatch_highlights_row_and_asks_for_reset(self):  # DSC-20
+        from flatness.store import SeenEvent
+        w, row = self.win, self.win.rows[0]
+        mac, want = row.dev["mac"], row.dev["ipv4"]
+        w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 相同：不提示
+        self.assertIsNone(w.flags["ip"])
+        self.assertIsNone(row.seen_ip)
+        w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="192.168.10.99")])
+        self.assertEqual(row.seen_ip, "192.168.10.99")
+        self.assertIn("IP 不符", row.unit_text.text())
+        self.assertIn("RST 鍵 3 秒", w.flags["ip"])
+        self.assertIn("192.168.10.99", w.flags["ip"])
+        self.assertIsNone(w.rows[1].seen_ip)                                       # 其他排不受影響
+        w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 重設後取得設定的 IP
+        self.assertIsNone(w.flags["ip"])
+        self.assertNotIn("IP 不符", row.unit_text.text())
 
     def test_detect_then_measure_pass_and_next_writes(self):  # DEV-01、MEA-01～MEA-06
         w = self.win

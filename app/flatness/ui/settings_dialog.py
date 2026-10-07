@@ -703,7 +703,7 @@ class SettingsDialog(QDialog):
                  if d.last_seen else "—")]
         if d.seen_ip:  # DSC-19：ARP 位址偵測封包中設備自己使用的 IP
             seen = d.seen_ip
-            if d.assigns_ip and d.ipv4 and d.ipv4 != d.seen_ip:
+            if d.assigns_ip and lan.ip_mismatch(d.seen_ip, d.ipv4):
                 seen += f'　<span style="color:{C["warn"]}">⚠ 與設定的 {d.ipv4} 不同</span>'
             rows.append(("實際使用 IP", seen))
         if d.hostname:

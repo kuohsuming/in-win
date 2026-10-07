@@ -343,6 +343,20 @@ def out_of_net(devices, equip_net) -> list[LanDevice]:
     return out
 
 
+def usable_seen_ip(devices, d: LanDevice, equip_net: ipaddress.IPv4Interface) -> str | None:
+    """設備實際使用的 IP（DSC-19）可直接沿用時回傳：在網段內、不是網路／廣播位址或量測 PC、
+    未被其他設備佔用（DSC-08）。沿用它，設備不必重設即可使用。"""
+    ip = d.seen_ip
+    if not ip or ip_problem(ip, equip_net) or occupant(devices, ip, exclude_mac=d.mac):
+        return None
+    return ip
+
+
+def ip_mismatch(seen_ip: str | None, ipv4: str | None) -> bool:
+    """設備實際使用的 IP 與設定（配發）的 IP 不同（DSC-19、DSC-20）。"""
+    return bool(seen_ip and ipv4 and seen_ip != ipv4)
+
+
 def default_ip(devices, kind: str, equip_net: ipaddress.IPv4Interface,
                ranges: dict | None = None, exclude_mac: str | None = None) -> str | None:
     """依設備類型的預設範圍取最小未佔用位址；範圍滿了改取網段內其他最小未佔用位址（DSC-08）。
@@ -398,12 +412,14 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
         if d.sort_order is None:
             d.sort_order = next_sort_order([x for x in devices if x is not d])
         d.hidden, d.hidden_at = False, None  # DSC-13：設為使用中或維修中時自動取消隱藏
-        if not d.ipv4:
-            d.ipv4 = default_ip(devices, "dl_en1", equip_net, ranges, exclude_mac=mac)
+        if not d.ipv4:  # 優先沿用設備實際使用的 IP（DSC-08、DSC-19），設備不必重設
+            d.ipv4 = (usable_seen_ip(devices, d, equip_net)
+                      or default_ip(devices, "dl_en1", equip_net, ranges, exclude_mac=mac))
     elif status == OTHER:
         d.config = None  # 其他設備只能設定 IP（DSC-04）
         if not d.ipv4:
-            d.ipv4 = default_ip(devices, "other", equip_net, ranges, exclude_mac=mac)
+            d.ipv4 = (usable_seen_ip(devices, d, equip_net)
+                      or default_ip(devices, "other", equip_net, ranges, exclude_mac=mac))
     elif status == RETIRED:
         pass  # 保留最後的設定與 IP 供查詢，但不配發、不佔用（DSC-09）
     elif status == UNCLASSIFIED:

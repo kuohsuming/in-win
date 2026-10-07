@@ -120,6 +120,7 @@ class Backend(QObject):
                 d.last_seen, d.last_request = e.at, e.kind
                 d.seen_count += e.count
             d.hostname = e.hostname or d.hostname
+            d.seen_ip = e.ip or d.seen_ip
         return list(out.values())
 
     def set_hidden(self, mac: str, hidden: bool):
