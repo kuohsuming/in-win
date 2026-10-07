@@ -11,9 +11,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from helpers import NET, ROOT, by_mac, sample_devices
 
 try:
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QLabel
 except ImportError:  # 沒有 PySide6 的環境略過
-    QApplication = QLabel = None
+    QApplication = QLabel = Qt = None
 
 
 def pump(app, sec=0.05):
@@ -132,6 +133,28 @@ class SettingsDialogTest(UiBase):
         self.assertIn("row-5", Path(self.tmp.name, "dl-en1.hosts").read_text())
         self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].config["name"], "加排")
         self.assertIn("加排 左", preview.no_standard)  # 第 5 排沒有允收標準
+
+    def test_probe_count_drives_list_and_saves(self):  # EDT-06
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        d.max_spin.setValue(6)                                  # 增加：末端新增「探頭 5」「探頭 6」
+        rows = [(d.probe_table.item(r, 0).text(), d.probe_table.item(r, 1).text())
+                for r in range(d.probe_table.rowCount())]
+        self.assertEqual(rows[-2:], [("5", "探頭 5"), ("6", "探頭 6")])
+        self.assertTrue(d.btn_save.isEnabled())
+        self.assertEqual(d.issues, [])
+        d.max_spin.setValue(5)                                  # 減少：移除末端
+        self.assertEqual(d.probe_table.rowCount(), 5)
+        d.probe_table.setCurrentCell(1, 1)                      # 刪除第 2 個（左中）：後面的 ID 往前遞補
+        d.btn_probe_del.click()
+        self.assertEqual(d.max_spin.value(), 4)
+        self.assertEqual([d.probe_table.item(r, 0).text() for r in range(4)], ["1", "2", "3", "4"])
+        self.assertEqual(d.probe_table.item(1, 1).text(), "右中")
+        self.assertFalse(d.probe_table.item(0, 0).flags() & Qt.ItemIsEditable)  # ID 不可手動修改
+        self.save()
+        cfg = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config
+        self.assertEqual(cfg["max_probes"], 4)
+        self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "右中", "右", "探頭 5"])
 
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg

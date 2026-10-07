@@ -430,8 +430,8 @@ class SettingsDialog(QDialog):
         self.max_spin.setProperty("num", True)
         self.max_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.max_spin.setMaximumWidth(120)
-        self.max_spin.valueChanged.connect(self._on_field_edited)
-        self._form_row("最多探頭數", self.max_spin)
+        self.max_spin.valueChanged.connect(self._on_probe_count)  # 探頭清單跟著增減（EDT-06）
+        self._form_row("探頭數量", self.max_spin)
         d.addLayout(form)
 
         self.note_box = _label("", None, True)
@@ -443,7 +443,7 @@ class SettingsDialog(QDialog):
         pb = QVBoxLayout(self.probe_box)
         pb.setContentsMargins(0, 0, 0, 0)
         pb.setSpacing(6)
-        pb.addWidget(_label("已安裝的探頭", "label"))
+        pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N）", "label"))
         pt = self.probe_table = QTableWidget(0, 2)
         pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱"))
         pt.verticalHeader().hide()
@@ -455,6 +455,7 @@ class SettingsDialog(QDialog):
         pt.setColumnWidth(0, 110)
         pt.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         pt.itemChanged.connect(lambda _item: self._on_field_edited())
+        pt.itemSelectionChanged.connect(self._update_probe_buttons)
         pb.addWidget(pt)
         prow = QHBoxLayout()
         self.btn_probe_add = _btn("新增探頭", "small", self._add_probe)
@@ -727,8 +728,8 @@ class SettingsDialog(QDialog):
         self.name_edit.setText(cfg.get("name") or "")
         self.ip_edit.setText(d.ipv4 or "" if (dl or d.status == OTHER) else "")
         self.port_edit.setText("" if cfg.get("port") is None else str(cfg.get("port")))
-        mp = cfg.get("max_probes")
-        self.max_spin.setValue(mp if isinstance(mp, int) and 1 <= mp <= 15 else 4)
+        n = len(cfg.get("probes") or [])  # 探頭數量即清單筆數（EDT-06）
+        self.max_spin.setValue(n if 1 <= n <= 15 else 4)
         self.probe_box.setVisible(dl)
         self.probe_table.setRowCount(0)
         for p in cfg.get("probes") or []:
@@ -779,6 +780,7 @@ class SettingsDialog(QDialog):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
         id_item = QTableWidgetItem("" if pid is None else str(pid))
+        id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # ID 自動編號，不可手動修改
         id_item.setFont(self._num_font())
         self.probe_table.setItem(r, 0, id_item)
         self.probe_table.setItem(r, 1, QTableWidgetItem(desc))
@@ -908,7 +910,13 @@ class SettingsDialog(QDialog):
         self.move_hint.setText(hint)
         for b in (self.btn_import, self.btn_restore):
             b.setEnabled(not self.read_only)
-        self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0)
+        self._update_probe_buttons()
+
+    def _update_probe_buttons(self):
+        """選取探頭列時即更新「刪除探頭」可用狀態；數量 1～15（EDT-06）。"""
+        self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0 and self.probe_table.rowCount() > 1
+                                      and not self.read_only)
+        self.btn_probe_add.setEnabled(self.probe_table.rowCount() < 15 and not self.read_only)
 
     # ================================================================ 操作
 
@@ -958,13 +966,12 @@ class SettingsDialog(QDialog):
                 cfg["port"] = int(port) if port.isdigit() else port
             else:
                 cfg.pop("port", None)
-            cfg["max_probes"] = self.max_spin.value()
             probes = []
-            for r in range(self.probe_table.rowCount()):
-                pid = (self.probe_table.item(r, 0).text() if self.probe_table.item(r, 0) else "").strip()
+            for r in range(self.probe_table.rowCount()):  # ID 依串接順序 1～N（EDT-06）
                 desc = (self.probe_table.item(r, 1).text() if self.probe_table.item(r, 1) else "").strip()
-                probes.append({"id": int(pid) if pid.isdigit() else pid, "description": desc})
+                probes.append({"id": r + 1, "description": desc})
             cfg["probes"] = probes
+            cfg["max_probes"] = len(probes)
             # 保持 3.7.1 欄位順序
             d.config = {k: cfg[k] for k in ("key", "name", "port", "max_probes", "probes") if k in cfg}
         if d.is_dl_en1 or d.status == OTHER:
@@ -983,26 +990,44 @@ class SettingsDialog(QDialog):
         self._render_messages()
         self._update_buttons()
 
-    def _add_probe(self):
-        used = set()
-        for r in range(self.probe_table.rowCount()):
-            item = self.probe_table.item(r, 0)
-            if item and item.text().strip().isdigit():
-                used.add(int(item.text()))
-        pid = next((i for i in range(1, 16) if i not in used), None)
+    def _on_probe_count(self, n: int):
+        """探頭數量改變：清單在末端新增（預設位置名稱「探頭 N」）或移除探頭，使筆數等於數量（EDT-06）。"""
+        if self._filling:
+            return
+        t = self.probe_table
         self._filling = True
-        self._append_probe_row(pid, "")
+        while t.rowCount() < n:
+            pid = t.rowCount() + 1
+            self._append_probe_row(pid, f"探頭 {pid}")
+        while t.rowCount() > n:
+            t.removeRow(t.rowCount() - 1)
         self._filling = False
-        if pid and pid > self.max_spin.value():
-            self.max_spin.setValue(min(pid, 15))
-        self.probe_table.setCurrentCell(self.probe_table.rowCount() - 1, 1)
         self._on_field_edited()
 
+    def _renumber_probes(self):
+        """呼叫端須已設定 _filling，避免逐格觸發重新檢查。"""
+        for r in range(self.probe_table.rowCount()):
+            item = self.probe_table.item(r, 0)
+            if item is not None:
+                item.setText(str(r + 1))
+
+    def _add_probe(self):
+        if self.probe_table.rowCount() >= 15:
+            return
+        self.max_spin.setValue(self.probe_table.rowCount() + 1)  # 經 _on_probe_count 新增一列
+        self.probe_table.setCurrentCell(self.probe_table.rowCount() - 1, 1)
+
     def _del_probe(self):
+        """刪除選取的探頭：後面的探頭 ID 往前遞補（放大器拆除後 ID 依串接順序重排），數量減 1。"""
         r = self.probe_table.currentRow()
-        if r >= 0:
-            self.probe_table.removeRow(r)
-            self._on_field_edited()
+        if r < 0 or self.probe_table.rowCount() <= 1:
+            return
+        self._filling = True
+        self.probe_table.removeRow(r)
+        self._renumber_probes()
+        self.max_spin.setValue(self.probe_table.rowCount())
+        self._filling = False
+        self._on_field_edited()
 
     def _toggle_hidden(self):
         """隱藏：只影響清單顯示，按下即寫入資料庫、不需儲存（DSC-13）。"""
