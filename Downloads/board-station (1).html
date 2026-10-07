@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>表面平整檢查 作業員畫面</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#dfe3e1; --panel:#f7f8f6; --panel-2:#eceeec; --ink:#1c2326; --ink-2:#56616a; --line:#c3c9c7;
+  --go:#1f8a4c; --go-soft:#dcefe3; --ng:#c8322b; --ng-soft:#f8dedb; --warn:#b87400; --warn-soft:#f6ead2; --stale:#8a9296; --focus:#1f5fbf;
+  --num:"Barlow Semi Condensed","Noto Sans TC","Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --txt:"Noto Sans TC","Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#171c1f; --panel:#222a2e; --panel-2:#1c2327; --ink:#e7ecee; --ink-2:#9aa6ad; --line:#38434a;
+    --go:#3fbf74; --go-soft:#173a27; --ng:#ff6259; --ng-soft:#46201e; --warn:#f0a93a; --warn-soft:#3d3018; --stale:#7c878d; --focus:#6aa2ff;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171c1f; --panel:#222a2e; --panel-2:#1c2327; --ink:#e7ecee; --ink-2:#9aa6ad; --line:#38434a;
+  --go:#3fbf74; --go-soft:#173a27; --ng:#ff6259; --ng-soft:#46201e; --warn:#f0a93a; --warn-soft:#3d3018; --stale:#7c878d; --focus:#6aa2ff;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--txt)}
+button{font:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* 示範用切換列（正式版不需要） */
+.demo{display:flex;justify-content:center;gap:8px;padding:10px;font-size:14px;color:var(--ink-2);align-items:center;flex-wrap:wrap}
+.demo button{padding:6px 16px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:4px;cursor:pointer}
+.demo button[aria-pressed="true"]{background:var(--ink);color:var(--panel);font-weight:700}
+
+.screen{max-width:1600px;margin:0 auto;padding:0 16px 16px;display:grid;gap:14px}
+
+/* 板號列 */
+.idbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 28px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 18px}
+.qr{display:flex;align-items:center;gap:12px}
+.qr svg{width:40px;height:40px;color:var(--ink)}
+.qr .k{font-size:14px;color:var(--ink-2)}
+.qr .v{font-family:var(--num);font-weight:700;font-size:32px;letter-spacing:.03em;line-height:1}
+.idbar .time{margin-left:auto;font-family:var(--num);font-size:20px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* 結果橫幅 */
+.result{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px 36px;border-radius:8px;padding:22px 32px;border:4px solid}
+.result .big{display:flex;align-items:center;gap:20px}
+.result .big svg{width:clamp(64px,8vw,110px);height:clamp(64px,8vw,110px)}
+.result .word{font-size:clamp(56px,8vw,112px);font-weight:900;line-height:1;letter-spacing:.05em}
+.result .word small{display:block;font-family:var(--num);font-size:.36em;letter-spacing:.12em;margin-top:6px}
+.result .say{font-size:clamp(20px,1.9vw,28px);line-height:1.5;font-weight:500}
+.result .say b{font-weight:900}
+.result .act{font-size:24px;font-weight:700;padding:18px 30px;border-radius:8px;border:0;color:#fff;cursor:pointer}
+.result.pass{background:var(--go-soft);border-color:var(--go)} .result.pass .word,.result.pass .big svg{color:var(--go)}
+.result.fail{background:var(--ng-soft);border-color:var(--ng)} .result.fail .word,.result.fail .big svg{color:var(--ng)}
+.result.fail .act{background:var(--ng)}
+.result.pass .act{background:var(--go)}
+.acts{display:flex;gap:12px;flex-wrap:wrap}
+.result .act.re{background:var(--panel);color:var(--ink);border:3px solid var(--ink-2)}
+.result .act.re:hover{border-color:var(--ink)}
+.screen.busy .rows,.screen.busy .say{opacity:.35}
+
+/* 排與探頭 */
+.rows{display:grid;gap:12px}
+.row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:stretch;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px}
+.row h2{margin:0;font-size:26px;font-weight:900;display:flex;align-items:center;justify-content:center;background:var(--panel-2);border-radius:4px;writing-mode:horizontal-tb}
+.probes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.probe{border:3px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:8px;background:var(--panel-2);min-width:0}
+.probe .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.probe .pos{font-size:20px;font-weight:700}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:22px;font-weight:900}
+.badge svg{width:36px;height:36px}
+.vals{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:baseline}
+.vals .k{font-size:15px;color:var(--ink-2)}
+.vals .m{font-family:var(--num);font-weight:700;font-size:clamp(32px,2.8vw,44px);line-height:1.05;font-variant-numeric:tabular-nums}
+.vals .m small{font-size:.42em;font-weight:500;color:var(--ink-2);margin-left:3px}
+.vals .s{font-family:var(--num);font-size:22px;font-variant-numeric:tabular-nums}
+.vals .rg{font-family:var(--num);font-size:18px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.gauge{position:relative;height:34px}
+.gauge .track{position:absolute;left:0;right:0;top:14px;height:6px;background:var(--line);border-radius:3px}
+.gauge .ok{position:absolute;left:20%;right:20%;top:10px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
+.gauge .nom{position:absolute;left:50%;top:7px;height:20px;width:2px;background:var(--ink-2)}
+.gauge .mk{position:absolute;top:0;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:13px solid var(--ink);margin-left:-9px}
+.note{font-size:18px;font-weight:700;color:var(--ng)}
+
+.probe.ok{border-color:var(--go)} .probe.ok .badge{color:var(--go)}
+.probe.hi,.probe.lo{border-color:var(--ng);border-width:5px;background:var(--ng-soft)}
+.probe.hi .badge,.probe.lo .badge,.probe.hi .m,.probe.lo .m{color:var(--ng)}
+.probe.hi .mk,.probe.lo .mk{border-top-color:var(--ng)}
+/* 不合格畫面中，合格的點淡化，讓眼睛直接找到問題點 */
+.screen.is-fail .probe.ok{opacity:.55}
+
+@media (max-width:1150px){.result{grid-template-columns:1fr}.row{grid-template-columns:1fr}.row h2{justify-content:flex-start;background:none;font-size:22px}}
+@media (max-width:680px){.probes{grid-template-columns:1fr 1fr}}
+
+.idbar .tools{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.idbar .tools label{font-size:14px;color:var(--ink-2)}
+.idbar .tools input{font-family:var(--num);font-size:17px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);color:var(--ink)}
+.idbar .tools button{font-size:15px;padding:7px 14px;border-radius:4px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.reread-n{font-size:15px;color:var(--ink-2);margin-left:6px}
+.result.idle,.result.wait{background:var(--panel);border-color:var(--line)}
+.result.idle .word,.result.wait .word{color:var(--ink-2)}
+.result.idle .act.go,.result.wait .act.go{background:var(--ink)}
+.result .act:disabled{opacity:.35;cursor:not-allowed}
+.cd{font-family:var(--num);font-weight:700;font-size:clamp(64px,8vw,112px);line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;min-width:1.2ch;text-align:center}
+.probe.blank .badge{visibility:hidden}
+.probe.blank .mk{display:none}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:12px 20px;border-radius:6px;font-size:16px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+.toast.on{opacity:1}
+
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 16px}
+.topbar h1{margin:0;font-size:20px;margin-right:auto}
+.tbtn{display:inline-flex;align-items:center;gap:8px;font-size:17px;font-weight:700;padding:10px 18px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.tbtn:disabled{opacity:.35;cursor:not-allowed}
+.tbtn svg{width:20px;height:20px}
+.devsum{font-size:15px;color:var(--ink-2);display:inline-flex;align-items:center;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--stale);display:inline-block;flex:none}
+.dot.ok{background:var(--go)} .dot.bad{background:var(--warn)} .dot.busy{background:var(--ink-2);animation:bl 1s infinite}
+@keyframes bl{50%{opacity:.2}}
+.row h2{flex-direction:column;gap:6px;text-align:center}
+.row h2 .unit{font-size:12px;font-weight:500;color:var(--ink-2);font-family:var(--num);display:flex;align-items:center;gap:5px}
+.devst{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:6px}
+.probe.err{border-color:var(--ng)!important;border-width:5px;background:var(--ng-soft)!important;opacity:1!important}
+.probe.err .badge{color:var(--ng)} .probe.err .m{color:var(--ng);font-family:var(--txt);font-size:26px;font-weight:900}
+.probe.err .gauge{visibility:hidden} .probe.err .devst{color:var(--ng);font-weight:700}
+.dot.err{background:var(--ng)}
+.row.down{border:4px solid var(--ng)}
+.row.down h2{background:var(--ng-soft);color:var(--ng)}
+.row h2 .unit.down{color:#fff;background:var(--ng);padding:2px 8px;border-radius:3px;font-weight:700}
+.result.device{background:var(--ng-soft);border-color:var(--ng)} .result.device .word,.result.device .big svg{color:var(--ng)}
+.result.device .act.go{background:var(--ng)}
+dialog{border:1px solid var(--line);border-radius:8px;padding:0;background:var(--panel);color:var(--ink);width:min(460px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg{padding:20px 22px;display:grid;gap:14px}
+.dlg h3{margin:0;font-size:20px}
+.dlg label{font-size:15px;color:var(--ink-2);display:grid;gap:6px}
+.dlg input{font-family:var(--num);font-size:20px;padding:8px 10px;border:2px solid var(--line);border-radius:4px;background:var(--panel-2);color:var(--ink)}
+.dlg .info{font-size:16px;line-height:1.6;background:var(--panel-2);border-radius:4px;padding:10px 12px}
+.dlg .info code{font-family:var(--num);font-size:16px}
+.dlg .btns{display:flex;justify-content:flex-end;gap:10px}
+.dlg .btns button{font-size:17px;padding:10px 18px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.dlg .btns .primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.dlg .btns .primary:disabled{opacity:.35;cursor:not-allowed}
+
+.samples{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--panel);border:2px dashed var(--line);border-radius:6px;padding:10px 16px;font-size:15px}
+.samples b{margin-right:4px}
+.samples button{font-size:15px;padding:7px 14px;border-radius:4px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.samples button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:700}
+.samples .hint{color:var(--ink-2);font-size:13px;margin-left:auto}
+.result .word.sm{font-size:clamp(48px,6vw,84px)}
+.result .big svg.spin{animation:rot 1.6s linear infinite;color:var(--ink-2)}
+@keyframes rot{to{transform:rotate(360deg)}}
+.retry{display:inline-block;margin-top:4px;font-size:.9em;color:var(--ink-2)}
+
+/* 編輯 BOOTP 設備 */
+.editbtn{width:46px;height:46px;display:grid;place-items:center;border:2px solid var(--ink-2);border-radius:6px;background:var(--panel-2);color:var(--ink);cursor:pointer;padding:0}
+.editbtn svg{width:22px;height:22px}
+.editbtn:disabled{opacity:.35;cursor:not-allowed}
+dialog.ed{width:min(1120px,96vw);max-height:92vh}
+.ed{display:grid;grid-template-rows:auto minmax(0,1fr) auto;max-height:92vh}
+.ed-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--line)}
+.ed-head h3{margin:0;font-size:20px}
+.ed-head .x{font-size:22px;line-height:1;padding:6px 10px;border:0;background:none;color:var(--ink-2);cursor:pointer}
+.ed-body{overflow:auto;padding:16px 22px;display:grid;gap:18px;align-content:start}
+.ed-foot{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:14px 22px;border-top:1px solid var(--line)}
+.ed-foot .left{margin-right:auto;display:flex;gap:10px;flex-wrap:wrap}
+.ed h4{margin:0 0 8px;font-size:17px;display:flex;align-items:center;gap:10px}
+.ed h4 .sub{font-size:13px;font-weight:400;color:var(--ink-2)}
+.ed .btn{font-size:16px;padding:9px 16px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer;white-space:nowrap}
+.ed .btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.ed .btn.danger{border-color:var(--ng);color:var(--ng);background:var(--panel)}
+.ed .btn.sm{font-size:14px;padding:5px 10px;border-width:1px}
+.ed .btn:disabled{opacity:.35;cursor:not-allowed}
+.ed input{font:inherit;font-size:16px;padding:6px 8px;border:2px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
+.ed input.mono{font-family:var(--num);font-size:17px}
+.ed input.bad{border-color:var(--ng);background:var(--ng-soft)}
+.pw{display:grid;gap:10px;max-width:360px}
+.pw label{display:grid;gap:6px;font-size:15px;color:var(--ink-2)}
+.pw .hint{font-size:13px;color:var(--ink-2)}
+.tblwrap{overflow-x:auto}
+table.det{width:100%;border-collapse:collapse;font-size:15px}
+table.det th,table.det td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.det th{font-size:13px;font-weight:500;color:var(--ink-2)}
+table.det td.mono{font-family:var(--num);font-size:16px}
+.tag{display:inline-block;font-size:13px;font-weight:700;padding:2px 8px;border-radius:3px}
+.tag.def{background:var(--go-soft);color:var(--go)}
+.tag.new{background:var(--ng-soft);color:var(--ng)}
+.devlist{display:grid;gap:12px}
+.dev-card{border:2px solid var(--line);border-radius:6px;padding:12px 14px;background:var(--panel-2);display:grid;gap:10px}
+.dev-card.badcard{border-color:var(--ng)}
+.dev-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dev-head b{font-size:18px;margin-right:auto}
+.dev-head .ord{font-family:var(--num);color:var(--ink-2);font-size:15px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr 1.4fr 1.3fr .8fr .8fr;gap:8px 12px}
+.fgrid label{display:grid;gap:4px;font-size:13px;color:var(--ink-2)}
+.probe-ed{display:grid;gap:6px}
+.probe-ed .ph{display:grid;grid-template-columns:90px minmax(0,1fr) 60px;gap:8px;font-size:13px;color:var(--ink-2)}
+.probe-ed .pr{display:grid;grid-template-columns:90px minmax(0,1fr) 60px;gap:8px;align-items:center}
+.errs{border:2px solid var(--ng);background:var(--ng-soft);border-radius:6px;padding:10px 14px;color:var(--ng);font-size:15px}
+.errs ul{margin:6px 0 0;padding-left:20px}
+.okmsg{border:2px solid var(--go);background:var(--go-soft);border-radius:6px;padding:10px 14px;color:var(--go);font-size:15px;font-weight:700}
+.diff{display:grid;gap:8px}
+.diff .item{border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--panel-2);font-size:15px;line-height:1.6}
+.diff .item b.k-add{color:var(--go)} .diff .item b.k-rm{color:var(--ng)} .diff .item b.k-mod{color:var(--ink)}
+.diff .hl{background:var(--ng-soft);color:var(--ng);font-weight:700;padding:0 4px;border-radius:3px}
+.impact{border:2px solid var(--ng);background:var(--ng-soft);border-radius:6px;padding:10px 14px;font-size:15px;line-height:1.6}
+@media (max-width:900px){.fgrid{grid-template-columns:1fr 1fr}}
+
+/* 清單 + 內容 兩欄式編輯器 */
+dialog.ed.wide{width:min(1240px,97vw)}
+.md{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px}
+.pane{border:1px solid var(--line);border-radius:6px;background:var(--panel-2);padding:12px 14px;display:grid;gap:10px;align-content:start;min-width:0}
+.pane h4{margin:0}
+.ed h4.sub2{margin-top:4px}
+.listwrap{border:1px solid var(--line);border-radius:4px;background:var(--panel);overflow:auto;height:270px}
+.listwrap.short{height:180px}
+table.lst{width:100%;border-collapse:collapse;font-size:15px}
+table.lst th{position:sticky;top:0;background:var(--panel-2);font-size:13px;font-weight:500;color:var(--ink-2);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.lst td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.lst td.mono{font-family:var(--num);font-size:16px}
+table.lst td.mk{width:18px;color:var(--ng);font-weight:900;padding-right:0}
+table.lst tbody tr[data-row]{cursor:pointer}
+table.lst tbody tr[data-row]:hover{background:var(--panel-2)}
+table.lst tbody tr.on{background:var(--ink);color:var(--panel)}
+table.lst tbody tr.on td.mk{color:#ffb4ae}
+table.lst tbody tr.err:not(.on) td{color:var(--ng)}
+table.lst td.empty,.pane .empty{color:var(--ink-2);font-size:14px;white-space:normal}
+table.ptbl td{padding:4px 6px}
+table.ptbl tbody tr.on{background:var(--panel-2);color:var(--ink)}
+table.ptbl tbody tr.on td{box-shadow:inset 0 0 0 9999px rgba(31,95,191,.08)}
+.ed input.cell{border-color:transparent;background:transparent;padding:5px 6px}
+.ed input.cell:focus{border-color:var(--focus);background:var(--panel)}
+.ed input.cell.bad{border-color:var(--ng);background:var(--ng-soft)}
+.form{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px 12px;align-items:center}
+.form label{font-size:15px;color:var(--ink-2)}
+.form input::placeholder{color:var(--stale)}
+.macrow{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.macrow select{font:inherit;font-size:14px;padding:5px 8px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--ink-2);width:100%}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.msgs{border:2px solid var(--line);border-radius:6px;background:var(--panel);min-height:72px;max-height:140px;overflow:auto;padding:8px 14px;font-size:15px}
+.msgs.has{border-color:var(--ng)}
+.msgs ul{margin:0;padding:0;list-style:none}
+.msgs li{color:var(--ng);padding:3px 0;cursor:pointer}
+.msgs li:hover{text-decoration:underline}
+.msgs .x{font-weight:900;margin-right:6px}
+.msgs .okline{color:var(--go);font-weight:700;padding:3px 0}
+.newnote{font-size:14px;color:var(--ink);background:var(--ng-soft);border-left:4px solid var(--ng);padding:6px 10px;border-radius:3px}
+.ed-foot .eq{display:grid;grid-template-columns:repeat(3,132px);gap:10px}
+.ed-foot .eq .btn{width:100%;text-align:center}
+
+.stwrap{display:grid;gap:4px}
+.stwrap select{font:inherit;font-size:16px;font-weight:700;padding:6px 8px;border:2px solid var(--ink-2);border-radius:4px;background:var(--panel);color:var(--ink)}
+.stdesc{font-size:13px;color:var(--ink-2);line-height:1.5}
+.stag{display:inline-block;font-size:13px;font-weight:700;padding:2px 8px;border-radius:3px;white-space:nowrap}
+.stag.st-on{background:var(--go-soft);color:var(--go)}
+.stag.st-off{background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line)}
+.stag.st-unk{background:var(--ng-soft);color:var(--ng)}
+table.lst tbody tr.dim:not(.on) td{color:var(--ink-2)}
+.infobox{font-size:15px;line-height:1.7;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px 12px;color:var(--ink-2)}
+.dirty{display:inline-flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--warn)}
+.dot.warn{background:var(--warn)}
+@media (max-width:900px){.md{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-ok" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="currentColor"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-ng" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="currentColor"/><path d="M10.5 10.5l11 11M21.5 10.5l-11 11" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-hi" viewBox="0 0 32 32"><path d="M16 2L31 29H1z" fill="currentColor"/><path d="M16 23V12M11 16.5l5-5 5 5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-lo" viewBox="0 0 32 32"><path d="M16 30L1 3h30z" fill="currentColor"/><path d="M16 9v11M11 15.5l5 5 5-5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 32 32" fill="currentColor"><path d="M3 3h11v11H3zm3 3v5h5V6zM18 3h11v11H18zm3 3v5h5V6zM3 18h11v11H3zm3 3v5h5v-5zM18 18h4v4h-4zm7 0h4v4h-4zm-3.5 3.5h4v4h-4zM18 25h4v4h-4zm7 0h4v4h-4z"/></symbol>
+</svg>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"/></symbol>
+<symbol id="i-xls" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13l6 6M15 13l-6 6"/></symbol>
+<symbol id="i-warn" viewBox="0 0 32 32"><path d="M16 2L31 29H1z" fill="currentColor"/><path d="M16 11v8" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/><circle cx="16" cy="24" r="2" fill="#fff"/></symbol>
+</svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"/></symbol>
+<symbol id="i-xls" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13l6 6M15 13l-6 6"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+<symbol id="i-err" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="5" fill="currentColor"/><path d="M16 8v10" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/><circle cx="16" cy="24" r="2.3" fill="#fff"/></symbol>
+</svg>
+<div class="screen" id="screen">
+  <div class="samples" role="group" aria-label="樣本畫面">
+    <b>樣本畫面</b>
+    <button type="button" data-sc="detecting" aria-pressed="false">偵測設備中</button>
+    <button type="button" data-sc="pass" aria-pressed="true">合格</button>
+    <button type="button" data-sc="fail" aria-pressed="false">不合格</button>
+    <button type="button" data-sc="nodl" aria-pressed="false">偵測不到 DL-EN1</button>
+    <button type="button" data-sc="noprobe" aria-pressed="false">探頭無回應</button>
+    <button type="button" data-sc="mix" aria-pressed="false">不合格＋探頭無回應</button>
+    <span class="hint">規格溝通用，正式版不顯示</span>
+  </div>
+
+  <div class="topbar">
+    <h1>表面平整檢查</h1>
+    <span class="devsum" id="devsum"></span>
+    <button class="tbtn" type="button" id="detect"><svg><use href="#i-scan"/></svg>偵測設備</button>
+    <button class="tbtn" type="button" id="export"><svg><use href="#i-xls"/></svg>取出測試數據</button>
+    <button class="editbtn" type="button" id="editBtn" title="編輯 BOOTP 設備" aria-label="編輯 BOOTP 設備"><svg><use href="#i-edit"/></svg></button>
+  </div>
+
+  <div class="idbar">
+    <div class="qr"><div><div class="k">編號（按下一片自動產生）</div><div class="v"><span id="serial">—</span><span class="reread-n" id="rr"></span></div></div></div>
+    <div class="time" id="clock"></div>
+  </div>
+
+  <section class="result idle" id="result" aria-live="assertive">
+    <div class="big" id="big"></div>
+    <div class="say" id="say"></div>
+    <div class="acts">
+      <button class="act re" type="button" id="reread">重讀</button>
+      <button class="act go" type="button" id="next">下一片</button>
+    </div>
+  </section>
+
+  <main class="rows" id="rows"></main>
+</div>
+
+<dialog id="dlg">
+  <form class="dlg" method="dialog">
+    <h3>取出測試數據</h3>
+    <label>日期<input type="date" id="day" required></label>
+    <div class="info" id="dlgInfo"></div>
+    <div class="btns">
+      <button type="button" id="dlgCancel">取消</button>
+      <button type="button" class="primary" id="dlgSave">選擇位置並儲存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="edDlg" class="ed" aria-labelledby="edTitle">
+  <div class="ed">
+    <div class="ed-head"><h3 id="edTitle">編輯 BOOTP 設備（DL-EN1 定義檔）</h3><button class="x" type="button" id="edClose" aria-label="關閉">✕</button></div>
+    <div class="ed-body" id="edBody"></div>
+    <div class="ed-foot" id="edFoot"></div>
+  </div>
+</dialog>
+<input type="file" id="edFile" accept=".json,application/json" hidden>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+window.CFG=window.CFG||{wait:5};
+/* ================= DL-EN1 定義檔（畫面與 BOOTP 的唯一來源） ================= */
+const PC_IP="192.168.10.1", NET="192.168.10.";
+let DEF={version:1,other_devices:[],dl_en1:[
+  {key:"front", name:"前排",mac:"00:01:FC:12:34:56",ipv4:"192.168.10.11",port:64000,max_probes:4,
+   probes:[{id:1,description:"左"},{id:2,description:"左中"},{id:3,description:"右中"},{id:4,description:"右"}]},
+  {key:"middle",name:"中排",mac:"00:01:FC:12:34:57",ipv4:"192.168.10.12",port:64000,max_probes:4,
+   probes:[{id:1,description:"左"},{id:2,description:"左中"},{id:3,description:"右中"},{id:4,description:"右"}]},
+  {key:"rear",  name:"後排",mac:"00:01:FC:12:34:58",ipv4:"192.168.10.13",max_probes:4,
+   probes:[{id:1,description:"左"},{id:2,description:"左中"},{id:3,description:"右中"},{id:4,description:"右"}]}
+]};
+/* 允收標準 TBD：假設值（mm），以 DL-EN1 key 對應 */
+const STDS={front:{nom:12.500,lo:12.450,hi:12.550},middle:{nom:12.480,lo:12.440,hi:12.520},rear:{nom:12.520,lo:12.470,hi:12.570}};
+/* 網路上送出 BOOTP 請求的設備（示範資料；正式版取自 dnsmasq 紀錄） */
+const DETECTED=[
+  {mac:"00:01:FC:12:34:56",ip:"192.168.10.11",last:"14:31:05"},
+  {mac:"00:01:FC:12:34:57",ip:"192.168.10.12",last:"14:31:06"},
+  {mac:"00:01:FC:12:34:58",ip:"192.168.10.13",last:"14:31:06"},
+  {mac:"00:01:FC:12:39:A0",ip:"",last:"14:32:40"}
+];
+
+const f=v=>v.toFixed(3), $=s=>document.querySelector(s);
+const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const judge=(s,m)=>m>s.hi?"hi":m<s.lo?"lo":"ok";
+const WORD={ok:"合格",hi:"偏高",lo:"偏低",err:"異常"};
+const ERRTXT={down:"DL-EN1 偵測不到",ErH:"感測頭錯誤（ErH）",FFFF:"超出檢測範圍（FFFF）",nostd:"未設定允收標準"};
+const devs=()=>DEF.dl_en1.filter(d=>d.enabled!==false);   // 主畫面只顯示「DL-EN1 使用中」
+const nProbes=()=>devs().reduce((n,d)=>n+d.probes.length,0);
+const sortedProbes=d=>[...d.probes].sort((a,b)=>a.id-b.id);
+
+/* ================= 樣本情境（依定義檔動態產生） ================= */
+const OFFS=[.003,-.002,.012,-.009,-.004,.009,.015,-.010,-.002,-.005,.009,.004];
+function baseVals(){ let k=0; return devs().map(d=>{const s=STDS[d.key]||{nom:12.5,hi:12.55};
+  return sortedProbes(d).map(()=>+(s.nom+OFFS[k++%OFFS.length]*(s.hi-s.nom)/0.05).toFixed(3));}); }
+function at(v,ri,i){ return v[ri] && i<v[ri].length; }
+const SC={
+  pass:   ()=>({vals:baseVals(),err:{}}),
+  fail:   ()=>{const v=baseVals(),D=devs();
+    if(at(v,1,2)) v[1][2]=+(STDS[D[1].key]?.hi+0.017||12.6).toFixed(3); else v[0][0]=+((STDS[D[0].key]?.hi||12.55)+0.017).toFixed(3);
+    if(at(v,2,0)) v[2][0]=+(STDS[D[2].key]?.lo-0.012||12.4).toFixed(3);
+    return {vals:v,err:{}};},
+  nodl:   ()=>{const v=baseVals(), ri=devs().length>1?1:0, err={};
+    v[ri]=v[ri].map(()=>null); v[ri].forEach((_,i)=>err[`${ri}-${i}`]="down"); return {vals:v,err,down:[ri]};},
+  noprobe:()=>{const v=baseVals(), ri=v.length-1, i=v[ri].length-1; v[ri][i]=null; return {vals:v,err:{[`${ri}-${i}`]:"ErH"}};},
+  mix:    ()=>{const v=baseVals(),err={};
+    if(at(v,1,2)) v[1][2]=+((STDS[devs()[1].key]?.hi||12.55)+0.017).toFixed(3);
+    if(at(v,0,1)){ v[0][1]=null; err["0-1"]="FFFF"; } return {vals:v,err};}
+};
+/* 未設定允收標準的探頭一律視為設備異常（DEF-09） */
+function scene_(){ const d=SC[scene](); devs().forEach((dv,ri)=>{ if(!STDS[dv.key]) dv.probes.forEach((_,i)=>{ if(!d.err[`${ri}-${i}`]){ d.err[`${ri}-${i}`]="nostd"; d.vals[ri][i]=null; } }); }); return d; }
+let scene="pass", serial=null, rereads=0, busy=false;
+
+function makeSerial(d=new Date()){const p=(n,w=2)=>String(n).padStart(w,"0");
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${p(d.getMilliseconds(),3)}`;}
+
+/* ================= 主畫面 ================= */
+function buildRows(){
+  $("#rows").innerHTML=devs().map((d,ri)=>{const s=STDS[d.key]; return `<section class="row" id="row${ri}"><h2>${esc(d.name)}<span class="unit" id="u${ri}"><i class="dot"></i>DL-EN1 #${ri+1}</span></h2>
+    <div class="probes" style="grid-template-columns:repeat(${Math.min(Math.max(d.probes.length,4),6)},minmax(0,1fr))">${sortedProbes(d).map((p,i)=>`
+    <div class="probe blank" id="p${ri}-${i}">
+      <div class="top"><span class="pos">${esc(p.description)}</span><span class="badge"><svg><use href="#i-ok"/></svg><span class="bw"></span></span></div>
+      <div class="vals">
+        <span class="k">測量值</span><span class="m">—</span>
+        <span class="k">標準值</span><span class="s">${s?f(s.nom):"—"}</span>
+        <span class="k">允收</span><span class="rg">${s?`${f(s.lo)} ～ ${f(s.hi)}`:"未設定"}</span>
+      </div>
+      <div class="gauge" aria-hidden="true"><div class="track"></div><div class="ok"></div><div class="nom"></div><div class="mk"></div></div>
+      <div class="note"></div>
+      <div class="devst"><i class="dot"></i><span></span></div>
+    </div>`).join("")}</div></section>`;}).join("");
+}
+function clearRows(){
+  document.querySelectorAll(".probe").forEach(el=>{el.className="probe blank";el.querySelector(".m").textContent="—";el.querySelector(".note").textContent="";});
+  $("#screen").classList.remove("is-fail");
+}
+function paint(data){
+  const out=[], errs=[];
+  devs().forEach((d,ri)=>{
+    const s=STDS[d.key], down=(data.down||[]).includes(ri), P=sortedProbes(d);
+    $(`#row${ri}`).classList.toggle("down",down);
+    const u=$(`#u${ri}`); u.className="unit"+(down?" down":"");
+    u.innerHTML=down?`DL-EN1 #${ri+1}<br>偵測不到`:`<i class="dot ok"></i>DL-EN1 #${ri+1}`;
+    if(down) errs.push(`${esc(d.name)} DL-EN1 偵測不到`);
+    P.forEach((p,i)=>{
+      const el=$(`#p${ri}-${i}`), e=data.err[`${ri}-${i}`], m=data.vals[ri][i], dv=el.querySelector(".devst");
+      if(e){
+        el.className="probe err";
+        el.querySelector(".badge use").setAttribute("href","#i-err");
+        el.querySelector(".bw").textContent="異常";
+        el.querySelector(".m").textContent="無數據";
+        el.querySelector(".note").textContent=e==="down"?"":ERRTXT[e];
+        dv.querySelector(".dot").className="dot err";
+        dv.querySelector("span").textContent=e==="down"?ERRTXT.down:e==="nostd"?"未設定允收標準":"探頭無回應";
+        if(e==="nostd"){ const n=P.filter((_,k)=>data.err[`${ri}-${k}`]==="nostd").length, msg=`${esc(d.name)} 有 ${n} 個探頭未設定允收標準`; if(!errs.includes(msg)) errs.push(msg); }
+        else if(e!=="down") errs.push(`${esc(d.name)} ${esc(p.description)}探頭無回應（${ERRTXT[e]}）`);
+        return;
+      }
+      const st=judge(s,m);
+      if(st!=="ok") out.push(`${esc(d.name)} ${esc(p.description)}${WORD[st]}`);
+      el.className="probe "+st;
+      el.querySelector(".badge use").setAttribute("href","#i-"+st);
+      el.querySelector(".bw").textContent=WORD[st];
+      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;
+      const span=(s.hi-s.lo)/0.6, min=s.lo-span*0.2;
+      el.querySelector(".mk").style.left=Math.max(2,Math.min(98,(m-min)/span*100))+"%";
+      el.querySelector(".note").textContent=st==="hi"?`超出上限 ${f(m-s.hi)}`:st==="lo"?`低於下限 ${f(s.lo-m)}`:"";
+      dv.querySelector(".dot").className="dot ok"; dv.querySelector("span").textContent="設備正常";
+    });
+  });
+  const nErr=Object.keys(data.err).length;
+  $("#devsum").innerHTML=nErr?`<i class="dot err"></i><span style="color:var(--ng);font-weight:700">${nErr} 個量測點異常</span>`:`<i class="dot ok"></i>${devs().length} 台 DL-EN1、${nProbes()} 個探頭正常`;
+  $("#screen").classList.toggle("is-fail", out.length>0||nErr>0);
+  if(errs.length){
+    banner("device",`<svg><use href="#i-err"/></svg><div class="word sm">設備異常<small>FAIL</small></div>`,
+      `<b>${errs.join("、")}</b>${out.length?`<br>另有：<b>${out.join("、")}</b>`:""}<br>請通知工程人員；排除後自動恢復。<br><span id="retry" class="retry"></span>`);
+  } else if(out.length){
+    banner("fail",`<svg><use href="#i-ng"/></svg><div class="word">不合格<small>FAIL</small></div>`,
+      `<b>${out.join("、")}</b><br>懷疑沒放好可重新放置後按「重讀」；<br>確認不良請放到不良品區，放上新的一片後按「下一片」。`);
+  } else {
+    banner("pass",`<svg><use href="#i-ok"/></svg><div class="word">合格<small>PASS</small></div>`,
+      `${nProbes()} 個量測點都在標準範圍內。<br>送往下一站，放上新的一片後按「下一片」。`);
+  }
+  $("#next").disabled=nErr>0; $("#reread").disabled=nErr>0;
+}
+function banner(state,big,say){$("#result").className="result "+state;$("#big").innerHTML=big;$("#say").innerHTML=say;}
+function setMeta(){ $("#serial").textContent=serial||"—"; $("#rr").textContent=rereads?`重讀 ${rereads} 次`:""; }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function lockTools(on){ ["#detect","#export","#editBtn"].forEach(k=>$(k).disabled=on); }
+async function measure(){
+  busy=true; $("#next").disabled=true; $("#reread").disabled=true; lockTools(true); clearRows();
+  for(let t=CFG.wait;t>0;t--){ banner("wait",`<div class="cd">${t}</div>`,`請勿移動表面<br>${t} 秒後自動讀取探頭數值`); await sleep(1000); }
+  banner("wait",`<div class="word">讀取中</div>`,`正在讀取 ${nProbes()} 個探頭…`); await sleep(300);
+  lockTools(false); busy=false;
+  const d=scene_(); paint(d); if(hasDevErr(d)) startRetry();
+}
+let detectCount=0, retryT=null, detecting=false;
+function stopRetry(){ if(retryT){clearInterval(retryT); retryT=null;} }
+function detectingView(){
+  clearRows();
+  document.querySelectorAll(".row").forEach(r=>r.classList.remove("down"));
+  devs().forEach((d,ri)=>{const u=$(`#u${ri}`);u.className="unit";u.innerHTML=`<i class="dot busy"></i>DL-EN1 #${ri+1}`;});
+  document.querySelectorAll(".probe").forEach(el=>{el.querySelector(".devst .dot").className="dot busy";el.querySelector(".devst span").textContent="偵測中…";});
+  $("#devsum").innerHTML=`<i class="dot busy"></i>偵測設備中（第 ${detectCount} 次）`;
+  banner("wait",`<svg class="spin"><use href="#i-scan"/></svg><div class="word sm">偵測設備中</div>`,
+    `第 <b>${detectCount}</b> 次偵測<br>正在檢查 ${devs().length} 台 DL-EN1 與 ${nProbes()} 個探頭…<br>全部正常後即可開始工作。`);
+  $("#next").disabled=true; $("#reread").disabled=true;
+}
+function hasDevErr(d){ return Object.keys(d.err).length>0; }
+async function runDetect(){
+  if(detecting) return; detecting=true; stopRetry(); lockTools(true);
+  detectCount++; detectingView(); await sleep(1200); detecting=false; lockTools(false);
+  if(scene==="detecting") return;
+  const d=scene_();
+  if(hasDevErr(d)){ paint(d); startRetry(); return; }
+  if(!serial){
+    clearRows(); devs().forEach((dv,ri)=>{const u=$(`#u${ri}`);u.className="unit";u.innerHTML=`<i class="dot ok"></i>DL-EN1 #${ri+1}`;});
+    document.querySelectorAll(".probe").forEach(el=>{el.querySelector(".devst .dot").className="dot ok";el.querySelector(".devst span").textContent="設備正常";});
+    $("#devsum").innerHTML=`<i class="dot ok"></i>${devs().length} 台 DL-EN1、${nProbes()} 個探頭正常`;
+    banner("idle",`<div class="word">待放置</div>`,`設備正常（第 ${detectCount} 次偵測），可以開始工作。<br>請將表面放到治具上，再按「下一片」。`);
+    $("#next").disabled=false; $("#reread").disabled=true; return;
+  }
+  paint(d);
+}
+function startRetry(){
+  let t=10; const upd=()=>{const e=$("#retry"); if(e) e.innerHTML=`已偵測 <b>${detectCount}</b> 次，<b>${t}</b> 秒後自動重新偵測`;};
+  upd(); retryT=setInterval(()=>{ t--; if(t<=0){ stopRetry(); runDetect(); } else upd(); },1000);
+}
+function show(){
+  stopRetry();
+  if(scene==="detecting"){ if(!detectCount) detectCount=2; detectingView(); return; }
+  if(!serial) serial=makeSerial(); setMeta();
+  const d=scene_(); paint(d); if(hasDevErr(d)) startRetry();
+}
+
+/* ================= 編輯 BOOTP 設備（偵測到的設備：清單 + 設定 兩欄式） ================= */
+let draft=null, edStep="pw", sel=0, selP=-1, dirty=false;
+const clone=o=>JSON.parse(JSON.stringify(o));
+const KEY_RE=/^[a-z0-9][a-z0-9-]{0,29}$/;
+const STATUS={
+  active:  {label:"DL-EN1 使用中", tag:"使用中",   cls:"st-on",  desc:"配發固定 IP，連線讀取探頭，並顯示在主畫面。"},
+  disabled:{label:"DL-EN1 停用",   tag:"停用",     cls:"st-off", desc:"保留設定與 IP 配發，但不連線、不顯示在主畫面，例如維修中。"},
+  other:   {label:"協同合作設備",     tag:"協同合作",cls:"st-off", desc:"網路上一起協同合作的設備。配發固定 IP，但不連線讀取、不顯示在主畫面；之後偵測也不再列為新設備。"},
+  unknown: {label:"不明設備",      tag:"不明",     cls:"st-unk", desc:"尚未確認身分。不配發 IP、不顯示在主畫面，也不會被儲存。"}
+};
+const isDL=d=>d.status==="active"||d.status==="disabled";
+const hasIp=d=>isDL(d)||d.status==="other";   // 會配發 IP 的設備
+const FLD={key:"識別碼",name:"排名稱",ipv4:"IPv4",port:"TCP 埠",max_probes:"最多探頭數",probes:"已安裝的探頭"};
+function ipErr(ip){
+  const m=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip||""); if(!m||m.slice(1).some(x=>+x>255)) return "格式錯誤，例：192.168.10.11";
+  if(!ip.startsWith(NET)) return `須在設備網段 ${NET}0/24 內`;
+  if(+m[4]===0||+m[4]===255) return "不可為網路或廣播位址";
+  if(ip===PC_IP) return "不可與量測 PC 的 IP 相同"; return "";
+}
+const devLabel=(d,i)=>d.name||d.key||d.mac||`第 ${i+1} 台`;
+/* 只檢查 DL-EN1（使用中、停用）；回傳 [{di,f,pi,msg}] */
+function validate(list){
+  const E=[], seen={key:{},name:{},ipv4:{}};
+  if(!list.some(d=>d.status==="active")) E.push({di:-1,f:"",msg:"至少需要 1 台「DL-EN1 使用中」"});
+  if(list.filter(d=>d.status==="active").length>8) E.push({di:-1,f:"",msg:"「DL-EN1 使用中」最多 8 台"});
+  list.forEach((d,di)=>{
+    const add=(f,msg,pi)=>E.push({di,f,pi,msg});
+    if(d.status==="other"){ const ie=ipErr(d.ipv4); if(ie) add("ipv4",ie);
+      else if(seen.ipv4[d.ipv4]!==undefined) add("ipv4",`與「${devLabel(list[seen.ipv4[d.ipv4]],seen.ipv4[d.ipv4])}」重複`); else seen.ipv4[d.ipv4]=di; return; }
+    if(!isDL(d)) return;
+    if(!KEY_RE.test(d.key||"")) add("key","限小寫英文、數字、連字號，1～30 字，不可以連字號開頭");
+    if(!d.name||d.name.length>10) add("name","長度須為 1～10 字");
+    const ie=ipErr(d.ipv4); if(ie) add("ipv4",ie);
+    if(d.port!==undefined&&d.port!==""&&!(Number.isInteger(+d.port)&&+d.port>=1&&+d.port<=65535)) add("port","須為 1～65535，或留空使用 64000");
+    const mp=+d.max_probes; if(!(Number.isInteger(mp)&&mp>=1&&mp<=15)) add("max_probes","須為 1～15");
+    if(!d.probes.length) add("probes","至少需安裝 1 個探頭");
+    else if(d.probes.length>mp) add("probes",`已安裝 ${d.probes.length} 個，超過最多探頭數 ${mp}`);
+    const ids={};
+    d.probes.forEach((p,pi)=>{ const id=+p.id;
+      if(!(Number.isInteger(id)&&id>=1&&id<=mp)) add("probe-id",`探頭 ID 須為 1～${mp||"最多探頭數"}`,pi);
+      else if(ids[id]) add("probe-id",`探頭 ID ${id} 重複`,pi);
+      ids[id]=1;
+      if(!p.description||p.description.length>10) add("probe-desc",`探頭 ${p.id||"?"} 位置名稱長度須為 1～10 字`,pi); });
+    for(const k of ["key","name","ipv4"]){ const v=d[k]; if(!v) continue;
+      if(seen[k][v]!==undefined) add(k,`與「${devLabel(list[seen[k][v]],seen[k][v])}」重複`); else seen[k][v]=di; }
+  });
+  return E;
+}
+/* 草稿 → 定義檔：DL-EN1 寫入 dl_en1（含 enabled），協同合作設備 寫入 other_devices，不明設備不儲存 */
+function normalize(list){
+  return {version:1,
+    dl_en1:list.filter(isDL).map(d=>{const o={key:d.key.trim(),name:d.name.trim(),mac:d.mac.toUpperCase(),ipv4:d.ipv4.trim()};
+      if(d.port!==undefined&&d.port!=="") o.port=+d.port; o.max_probes=+d.max_probes; o.enabled=d.status==="active";
+      o.probes=d.probes.map(p=>({id:+p.id,description:String(p.description).trim()})).sort((a,b)=>a.id-b.id); return o;}),
+    other_devices:list.filter(d=>d.status==="other").map(d=>({mac:d.mac.toUpperCase(),type:"cooperative",ipv4:d.ipv4.trim()}))};
+}
+const defaultProbes=()=>[1,2,3,4].map(i=>({id:i,description:["左","左中","右中","右"][i-1]}));
+function blankEntry(x){ return {status:"unknown",key:"",name:"",mac:x.mac,ipv4:x.ip||"",port:"",max_probes:4,probes:defaultProbes(),_new:true}; }
+function addNewDetected(){ const known=new Set(draft.map(d=>(d.mac||"").toUpperCase())); let n=0;
+  DETECTED.filter(x=>!known.has(x.mac)).forEach(x=>{ draft.push(blankEntry(x)); n++; }); return n; }
+
+function openEditor(){ if(busy||detecting) return;
+  draft=DEF.dl_en1.map(d=>({...clone(d),status:d.enabled===false?"disabled":"active",port:d.port??""}))
+    .concat((DEF.other_devices||[]).map(o=>({status:"other",key:"",name:"",mac:o.mac,ipv4:o.ipv4||"",port:"",max_probes:4,probes:defaultProbes()})));
+  const n=addNewDetected();
+  sel=n?draft.length-n:0; selP=-1; dirty=false; edStep="pw"; renderEd(); $("#edDlg").showModal(); }
+function closeEditor(){ if(edStep!=="pw"&&dirty&&!confirm("有尚未儲存的變更，確定要關閉並放棄這些變更嗎？")) return; $("#edDlg").close(); }
+
+function renderEd(){
+  const body=$("#edBody"), foot=$("#edFoot"); $("#edDlg").classList.toggle("wide",edStep==="edit");
+  if(edStep==="pw"){
+    body.innerHTML=`<div class="pw"><label>工程人員密碼<input type="password" id="edPw" autocomplete="off"></label>
+      <span class="hint">此功能會變更 DL-EN1 的 IP 配發與畫面配置，限工程人員使用。（示範：輸入任意密碼）</span></div>`;
+    foot.innerHTML=`<button class="btn" type="button" data-ed="close">取消</button><button class="btn primary" type="button" data-ed="pwok">確認</button>`;
+    setTimeout(()=>$("#edPw")?.focus(),50); return;
+  }
+  if(edStep==="edit"){
+    const unk=draft.filter(d=>d.status==="unknown").length;
+    body.innerHTML=`
+      <div class="md">
+        <section class="pane">
+          <h4>偵測到的設備清單<span class="sub">DL-EN1 使用中者，畫面由上而下依此順序排列</span></h4>
+          ${unk?`<div class="newnote">有 ${unk} 台不明設備，請選擇設備類型；維持「不明設備」則不會儲存。</div>`:""}
+          <div class="listwrap"><table class="lst"><thead><tr><th></th><th>設備</th><th>排名稱</th><th>識別碼</th><th>MAC</th><th>IPv4</th><th>探頭</th></tr></thead><tbody id="lstBody"></tbody></table></div>
+          <div class="btnrow">
+            <button class="btn sm danger" type="button" data-ed="rmdev" id="bRm">刪除</button>
+            <button class="btn sm" type="button" data-ed="up" id="bUp">上移</button>
+            <button class="btn sm" type="button" data-ed="down" id="bDown">下移</button>
+          </div>
+        </section>
+        <section class="pane" id="detail"></section>
+      </div>
+      <section class="msgs" id="msgs" aria-live="polite"></section>`;
+    foot.innerHTML=`<div class="left"><span class="dirty" id="dirtyInd"></span></div>
+      <div class="eq">
+        <button class="btn" type="button" data-ed="rescan">偵測設備</button>
+        <button class="btn primary" type="button" data-ed="apply1" id="bApply">儲存</button>
+        <button class="btn" type="button" data-ed="close">關閉</button>
+      </div>`;
+    renderList(); renderDetail(); renderMsgs(); return;
+  }
+  if(edStep==="preview"){
+    const nd=normalize(draft), {items,power,nostd,removed}=diff(DEF,nd);
+    body.innerHTML=`<section><h4>確認儲存以下變更</h4><div class="diff">${items.length?items.map(x=>`<div class="item">${x}</div>`).join(""):`<div class="item">沒有任何變更。</div>`}</div></section>
+      ${(power.length||nostd.length||removed.length)?`<div class="impact"><b>儲存後的影響</b><br>
+        ${power.length?`需將下列設備重新上電才會取得新 IP：<b>${power.join("、")}</b><br>`:""}
+        ${nostd.length?`下列探頭尚未設定允收標準，量測時將顯示設備異常：<b>${nostd.join("、")}</b><br>`:""}
+        ${removed.length?`下列量測點將從主畫面移除：<b>${removed.join("、")}</b>`:""}</div>`:""}`;
+    foot.innerHTML=`<button class="btn" type="button" data-ed="back">返回修改</button><button class="btn primary" type="button" data-ed="apply" ${items.length?"":"disabled"}>確認儲存</button>`;
+  }
+}
+const probeSummary=d=>{const ids=[...d.probes].map(p=>p.id).filter(x=>x!=="").sort((a,b)=>a-b); return `${d.probes.length}/${d.max_probes||"?"}（${ids.join(", ")}）`;};
+function renderList(){
+  const E=validate(draft), bad=new Set(E.map(e=>e.di));
+  $("#lstBody").innerHTML=draft.map((d,i)=>{const dl=isDL(d), st=STATUS[d.status];
+    return `<tr data-row="${i}" class="${i===sel?"on":""}${bad.has(i)?" err":""}${dl?"":" dim"}">
+    <td class="mk">${bad.has(i)?"✘":""}</td><td><span class="stag ${st.cls}">${st.tag}</span>${d._new?` <span class="tag new">新偵測</span>`:""}</td>
+    <td>${dl?esc(d.name):"—"}</td><td class="mono">${dl?esc(d.key):"—"}</td><td class="mono">${esc(d.mac)}</td>
+    <td class="mono">${hasIp(d)?esc(d.ipv4):"不配發"}</td><td class="mono">${dl?esc(probeSummary(d)):"—"}</td></tr>`;}).join("")
+    || `<tr><td colspan="7" class="empty">尚無偵測到的設備；DL-EN1 上電並送出 BOOTP 請求後會自動出現在清單中。</td></tr>`;
+  const n=draft.length;
+  $("#bRm").disabled=!n; $("#bUp").disabled=sel<=0; $("#bDown").disabled=sel>=n-1;
+}
+function renderDetail(){
+  const box=$("#detail"), d=draft[sel];
+  if(!d){ box.innerHTML=`<h4>偵測到的設備</h4><p class="empty">請在左側選擇一台設備。</p>`; return; }
+  const E=validate(draft).filter(e=>e.di===sel), bf=f=>E.some(e=>e.f===f)?" bad":"", dl=isDL(d);
+  box.innerHTML=`<h4>偵測到的設備</h4>
+    <div class="form">
+      <label for="fSt">設備</label>
+      <div class="stwrap"><select id="fSt" data-st="1">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${d.status===k?"selected":""} title="${v.desc}">${v.label}</option>`).join("")}</select>
+        <span class="stdesc">${STATUS[d.status].desc}</span></div>
+      ${dl?`
+      <label for="fKey">識別碼 key</label><input id="fKey" class="mono${bf("key")}" data-f="key" value="${esc(d.key)}" placeholder="小寫英數，例：front">
+      <label for="fName">排名稱 name</label><input id="fName" class="${bf("name").trim()}" data-f="name" value="${esc(d.name)}" placeholder="畫面顯示的排名稱，例：前排">
+      <label for="fIp">IPv4</label><input id="fIp" class="mono${bf("ipv4")}" data-f="ipv4" value="${esc(d.ipv4)}" placeholder="例：192.168.10.11">
+      <label for="fPort">TCP 埠 port</label><input id="fPort" class="mono${bf("port")}" data-f="port" value="${esc(d.port??"")}" placeholder="64000（未填寫時）">
+      <label for="fMax">最多探頭數</label><input id="fMax" type="number" min="1" max="15" class="mono${bf("max_probes")}" data-f="max_probes" value="${esc(d.max_probes)}">`:""}
+    </div>
+    ${d.status==="other"?`<div class="form" style="margin-top:2px"><label for="fIp">IPv4</label><input id="fIp" class="mono${bf("ipv4")}" data-f="ipv4" value="${esc(d.ipv4)}" placeholder="例：192.168.10.30"></div>
+      <div class="infobox">若它其實是 DL-EN1，請將「設備」改為「DL-EN1 使用中」或「DL-EN1 停用」，再填寫設定。</div>`:""}
+    ${dl?`<h4 class="sub2">已安裝的探頭<span class="sub">畫面由左至右依 ID 排列</span></h4>
+    <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:110px">探頭 ID</th><th>位置名稱</th></tr></thead><tbody id="pBody">
+      ${d.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi);return `<tr data-prow="${pi}" class="${pi===selP?"on":""}">
+        <td><input class="cell mono${pe.some(e=>e.f==="probe-id")?" bad":""}" data-pf="id" data-p="${pi}" value="${esc(p.id)}"></td>
+        <td><input class="cell${pe.some(e=>e.f==="probe-desc")?" bad":""}" data-pf="description" data-p="${pi}" value="${esc(p.description)}"></td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP<0?"disabled":""}>刪除探頭</button></div>`
+    :d.status==="unknown"?`<div class="infobox">此設備尚未確認身分，不配發 IP，也不會被儲存。<br>確認後請將「設備」改為「DL-EN1 使用中」「DL-EN1 停用」或「協同合作設備」。</div>`:""}`;
+}
+function renderMsgs(){
+  const E=validate(draft), box=$("#msgs");
+  box.className="msgs "+(E.length?"has":"ok");
+  const act=draft.filter(d=>d.status==="active");
+  box.innerHTML=E.length?`<ul>${E.map(e=>{const d=draft[e.di];
+      const where=e.di<0?"":`${esc(devLabel(d,e.di))} › ${e.f==="probe-id"||e.f==="probe-desc"?"已安裝的探頭":FLD[e.f]}：`;
+      return `<li data-goto="${e.di}"><span class="x">✘</span>${where}${esc(e.msg)}</li>`;}).join("")}</ul>`
+    :`<div class="okline">✔ 檢查通過：DL-EN1 使用中 ${act.length} 台（${act.reduce((n,d)=>n+d.probes.length,0)} 個探頭）、停用 ${draft.filter(d=>d.status==="disabled").length} 台、協同合作設備 ${draft.filter(d=>d.status==="other").length} 台、不明 ${draft.filter(d=>d.status==="unknown").length} 台，可以儲存。</div>`;
+  $("#bApply").disabled=E.length>0;
+  $("#dirtyInd").innerHTML=dirty?`<i class="dot warn"></i>有尚未儲存的變更`:"";
+}
+function touch(){ dirty=true; renderList(); renderMsgs(); }
+function refreshBad(){
+  const E=validate(draft).filter(e=>e.di===sel);
+  document.querySelectorAll("#detail [data-f]").forEach(el=>el.classList.toggle("bad",E.some(e=>e.f===el.dataset.f)));
+  document.querySelectorAll("#detail [data-pf]").forEach(el=>{const pi=+el.dataset.p,f=el.dataset.pf==="id"?"probe-id":"probe-desc"; el.classList.toggle("bad",E.some(e=>e.pi===pi&&e.f===f));});
+}
+function diff(oldD,newD){
+  const items=[],power=[],nostd=[],removed=[];
+  const O={},N={}; oldD.dl_en1.forEach(d=>O[d.key]=d); newD.dl_en1.forEach(d=>N[d.key]=d);
+  const on=d=>d.enabled!==false, pd=d=>Object.fromEntries(d.probes.map(p=>[p.id,p.description]));
+  newD.dl_en1.forEach(d=>{
+    const o=O[d.key];
+    if(!o){ items.push(`<b class="k-add">新增</b>　${esc(d.name)}（${d.key}）${on(d)?"":"〔停用〕"}　MAC <span class="hl">${d.mac}</span>　IP <span class="hl">${d.ipv4}</span>　探頭 ${d.probes.length} 個`); power.push(esc(d.name));
+      if(on(d)&&!STDS[d.key]) d.probes.forEach(p=>nostd.push(`${esc(d.name)} ${esc(p.description)}`)); return; }
+    const ch=[];
+    if(on(o)!==on(d)){ ch.push(on(d)?`<span class="hl">停用 → 使用中</span>`:`<span class="hl">使用中 → 停用</span>`); if(!on(d)) o.probes.forEach(p=>removed.push(`${esc(o.name)} ${esc(p.description)}`)); }
+    if(o.name!==d.name) ch.push(`排名稱 ${esc(o.name)} → ${esc(d.name)}`);
+    if(o.ipv4!==d.ipv4){ ch.push(`IP <span class="hl">${o.ipv4} → ${d.ipv4}</span>`); power.push(esc(d.name)); }
+    if((o.port??64000)!==(d.port??64000)) ch.push(`TCP 埠 ${o.port??64000} → ${d.port??64000}`);
+    if(o.max_probes!==d.max_probes) ch.push(`最多探頭數 ${o.max_probes} → ${d.max_probes}`);
+    const op=pd(o), np=pd(d);
+    Object.keys(np).forEach(id=>{ if(!(id in op)) ch.push(`新增探頭 ${id}「${esc(np[id])}」`); else if(op[id]!==np[id]) ch.push(`探頭 ${id} 位置名稱「${esc(op[id])}」→「${esc(np[id])}」`); });
+    Object.keys(op).forEach(id=>{ if(!(id in np)){ ch.push(`移除探頭 ${id}「${esc(op[id])}」`); if(on(d)) removed.push(`${esc(o.name)} ${esc(op[id])}`);} });
+    if(ch.length) items.push(`<b class="k-mod">變更</b>　${esc(o.name)}（${d.key}）：${ch.join("；")}`);
+  });
+  oldD.dl_en1.forEach(o=>{ if(!N[o.key]){ items.push(`<b class="k-rm">移除</b>　${esc(o.name)}（${o.key}）　MAC ${o.mac}　IP ${o.ipv4}（不再配發 IP）`); if(on(o)) o.probes.forEach(p=>removed.push(`${esc(o.name)} ${esc(p.description)}`)); } });
+  const OO={},NO={}; (oldD.other_devices||[]).forEach(x=>OO[x.mac]=x); (newD.other_devices||[]).forEach(x=>NO[x.mac]=x);
+  Object.values(NO).forEach(x=>{ const o=OO[x.mac];
+    if(!o){ items.push(`<b class="k-add">新增</b>　協同合作設備　MAC <span class="hl">${x.mac}</span>　IP <span class="hl">${x.ipv4}</span>`); power.push(x.mac); }
+    else if(o.ipv4!==x.ipv4){ items.push(`<b class="k-mod">變更</b>　協同合作設備 ${x.mac}：IP <span class="hl">${o.ipv4||"—"} → ${x.ipv4}</span>`); power.push(x.mac); } });
+  Object.values(OO).forEach(o=>{ if(!NO[o.mac]) items.push(`<b class="k-rm">移除</b>　協同合作設備 ${o.mac}${o.ipv4?`　IP ${o.ipv4}（不再配發）`:""}`); });
+  const oo=oldD.dl_en1.filter(on).map(d=>d.key).filter(k=>N[k]&&on(N[k])).join(), no=newD.dl_en1.filter(on).map(d=>d.key).filter(k=>O[k]&&on(O[k])).join();
+  if(oo!==no) items.push(`<b class="k-mod">順序</b>　主畫面排列順序調整為：${newD.dl_en1.filter(on).map(d=>esc(d.name)).join(" → ")}`);
+  return {items,power,nostd,removed};
+}
+function nextFreeIp(){ const used=new Set(draft.filter(hasIp).map(d=>d.ipv4)); for(let n=11;n<255;n++){const ip=NET+n; if(!used.has(ip)) return ip;} return ""; }
+
+/* ---- 事件 ---- */
+const edBody=$("#edBody");
+edBody.addEventListener("input",e=>{
+  const t=e.target, d=draft?.[sel]; if(!d) return;
+  if(t.dataset.f){ d[t.dataset.f]=t.value; touch(); refreshBad(); }
+  if(t.dataset.pf){ d.probes[+t.dataset.p][t.dataset.pf]=t.value; touch(); refreshBad(); }
+});
+edBody.addEventListener("change",e=>{
+  if(e.target.dataset.st){ const d=draft[sel]; d.status=e.target.value;
+    if(hasIp(d)&&!d.ipv4) d.ipv4=nextFreeIp(); touch(); renderEd(); return; }
+  if(e.target.id==="fMax"){ renderDetail(); $("#fMax")?.focus(); }
+});
+edBody.addEventListener("focusin",e=>{ const tr=e.target.closest("[data-prow]"); if(tr&&+tr.dataset.prow!==selP){ selP=+tr.dataset.prow;
+  document.querySelectorAll("#pBody tr").forEach(r=>r.classList.toggle("on",+r.dataset.prow===selP));
+  const b=document.querySelector('[data-ed="rmp"]'); if(b) b.disabled=false; }});
+edBody.addEventListener("click",e=>{
+  const tr=e.target.closest("[data-row]"); if(tr){ sel=+tr.dataset.row; selP=-1; renderList(); renderDetail(); return; }
+  const li=e.target.closest("[data-goto]"); if(li&&+li.dataset.goto>=0){ sel=+li.dataset.goto; selP=-1; renderList(); renderDetail(); }
+});
+$("#edDlg").addEventListener("click",e=>{
+  const b=e.target.closest("[data-ed]"); if(!b||b.disabled) return; const a=b.dataset.ed, L=draft;
+  if(a==="close"){ closeEditor(); return; }
+  if(a==="pwok"){ if(!$("#edPw").value){ $("#edPw").classList.add("bad"); return;} edStep="edit"; renderEd(); return; }
+  if(a==="rmdev"&&L[sel]){ if(!confirm(`確定從清單刪除「${devLabel(L[sel],sel)}」？\n若該設備仍在網路上，下次偵測會再以「不明設備」出現。`)) return; L.splice(sel,1); sel=Math.min(sel,L.length-1); selP=-1; dirty=true; renderEd(); return; }
+  if(a==="up"&&sel>0){ [L[sel-1],L[sel]]=[L[sel],L[sel-1]]; sel--; dirty=true; renderList(); renderMsgs(); return; }
+  if(a==="down"&&sel<L.length-1){ [L[sel+1],L[sel]]=[L[sel],L[sel+1]]; sel++; dirty=true; renderList(); renderMsgs(); return; }
+  if(a==="addp"){ const d=L[sel], used=new Set(d.probes.map(p=>+p.id)); let id=1; while(used.has(id)) id++; d.probes.push({id,description:""}); selP=d.probes.length-1; touch(); renderDetail();
+    document.querySelector(`[data-pf="description"][data-p="${selP}"]`)?.focus(); return; }
+  if(a==="rmp"&&selP>=0){ L[sel].probes.splice(selP,1); selP=-1; touch(); renderDetail(); return; }
+  if(a==="rescan"){ rescan(); return; }
+  if(a==="apply1"){ if(validate(draft).length){ renderMsgs(); return; } edStep="preview"; renderEd(); return; }
+  if(a==="back"){ edStep="edit"; renderEd(); return; }
+  if(a==="apply"){ applyDef(); return; }
+});
+$("#edDlg").addEventListener("cancel",e=>{ e.preventDefault(); closeEditor(); });
+$("#edClose").addEventListener("click",closeEditor);
+/* 示範：第一次重新偵測時，網路上多出一台送出 BOOTP 請求的設備 */
+let LATER=[{mac:"00:01:FC:12:3B:11",ip:""}];
+async function rescan(){
+  const b=document.querySelector('[data-ed="rescan"]'); b.disabled=true; b.textContent="偵測中…";
+  await sleep(900);
+  const now=new Date().toLocaleTimeString("zh-TW",{hour12:false});
+  LATER.forEach(x=>DETECTED.push({...x,last:now})); LATER=[];
+  const n=addNewDetected(); if(n){ sel=draft.length-n; selP=-1; dirty=true; }
+  renderEd(); toast(n?`偵測完成：發現 ${n} 台新設備，請選擇設備類型`:"偵測完成：沒有新的設備");
+}
+function applyDef(){
+  const nd=normalize(draft), {power}=diff(DEF,nd);
+  DEF=nd; dirty=false; $("#edDlg").close();
+  stopRetry(); serial=null; rereads=0; setMeta(); buildRows(); runDetect();
+  toast(`已儲存定義檔並更新 BOOTP 對應${power.length?`；請將 ${power.join("、")} 重新上電`:""}`);
+}
+$("#editBtn").addEventListener("click",openEditor);
+
+/* ================= 其他按鍵 ================= */
+document.querySelectorAll("[data-sc]").forEach(b=>b.addEventListener("click",()=>{
+  if(busy) return; scene=b.dataset.sc;
+  document.querySelectorAll("[data-sc]").forEach(x=>x.setAttribute("aria-pressed",x===b)); show();
+}));
+$("#next").addEventListener("click",async()=>{ if(busy) return; if(serial) toast(`編號 ${serial} 已寫入資料庫`); serial=makeSerial(); rereads=0; setMeta(); await measure(); });
+$("#reread").addEventListener("click",async()=>{ if(busy) return; rereads++; setMeta(); await measure(); });
+$("#detect").addEventListener("click",()=>{ if(busy||scene==="detecting") return; runDetect(); });
+function refreshDlg(){ const day=$("#day").value;
+  $("#dlgInfo").innerHTML=!day?"請選擇日期。":`該日共 <b>36</b> 筆紀錄（示範數字）<br>預設檔名：<code>平整檢查_${day}.xlsx</code>`; $("#dlgSave").disabled=!day; }
+$("#export").addEventListener("click",()=>{ if(!$("#day").value){const d=new Date();$("#day").value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;} refreshDlg(); $("#dlg").showModal(); });
+$("#day").addEventListener("input",refreshDlg);
+$("#dlgCancel").addEventListener("click",()=>$("#dlg").close());
+$("#dlgSave").addEventListener("click",()=>{ $("#dlg").close(); toast("示範版不實際儲存：正式版會開啟「另存新檔」視窗選擇位置"); });
+let tt; function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),3600);}
+function tick(){$("#clock").textContent=new Date().toLocaleString("zh-TW",{hour12:false});}
+setInterval(tick,1000); tick();
+buildRows(); runDetect();   // 開機自動偵測
+
+</script>
+</body>
+</html>
