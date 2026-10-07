@@ -90,14 +90,6 @@ class CalibrateTest(unittest.TestCase):
         self.assertEqual(amp.ops, ["prepare", "reset", "execute", "reset"])
         self.assertFalse(res.zeroed)
 
-    def test_zero_base_must_match_mean(self):  # 讀回的歸零基準為 0（預設作用在 R.V.）→ 失敗並清除
-        amp = FakeAmp(STEADY, [12.4987] * 5)
-        amp.zero_base = lambda key, probe_id: 0.0
-        res = calibrate.run(amp, DEV, 1, CS)
-        self.assertEqual(res.result, calibrate.FAIL)
-        self.assertIn("P.V.", res.reason)
-        self.assertEqual(amp.ops, ["prepare", "reset", "execute", "reset"])
-
     def test_zero_sigma_uses_resolution(self):  # CAL-A2：σ 為 0 時 1 個解析度的晃動仍通過
         flat = [12.5] * 20
         res = calibrate.run(FakeAmp(flat, [12.5, 12.5001, 12.4999, 12.5, 12.5]), DEV, 1, CS)

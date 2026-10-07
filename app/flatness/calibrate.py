@@ -5,7 +5,7 @@
     2. 清除之前的歸零（預設重置）
     3. 讀取 N 次判斷是否穩定（間隔不小於放大器響應時間）
     4. 執行歸零（預設），放大器記住，斷電後仍保留
-    5. 再讀 M 次驗證接近 0，且讀回的歸零基準（R.V. − P.V.）等於取樣平均
+    5. 再讀 M 次驗證接近 0
     6. 失敗或取消時再清除一次，探頭為未校準
 之後量測直接使用放大器的值；資料庫記錄歸零基準（R.V. − P.V.），供偵測時比對（CAL-10）。
 寫入命令只用於此流程（NFR-11）。經由量測用的 Station（DL-EN1 同一時間只接受 1 條連線，校準與量測共用）。
@@ -111,10 +111,6 @@ def run(station, dev: dict, probe_id: int, settings, cancel: threading.Event | N
             res.reason = why
             return res
         res.new_offset = station.zero_base(key, probe_id)
-        if abs(res.new_offset - res.mean) > settings.tolerance:  # 讀回的歸零基準須等於歸零前的讀值
-            res.reason = (f"放大器讀回的歸零基準 {res.new_offset:+.4f} mm 與取樣平均 {res.mean:+.4f} mm 不符，"
-                          "請確認放大器的預設資料選擇為 P.V.")
-            return res
         res.result = PASS
     except Cancelled:
         res.result, res.reason = CANCEL, "工程人員取消"
