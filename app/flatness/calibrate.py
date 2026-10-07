@@ -10,7 +10,8 @@
 之後量測直接使用放大器的值；資料庫記錄歸零基準（取樣平均，即歸零前的原始值）供紀錄與追溯。
 寫入命令只用於此流程（NFR-11）。經由量測用的 Station（DL-EN1 同一時間只接受 1 條連線，校準與量測共用）。
 
-驗證條件（CAL-04）：M 次平均在 0 ± 容許值內，且每次在 0 ± max(3σ, 解析度) 內。
+驗證條件（CAL-04）：M 次平均在 0 ± 容許值內，且每次在 0 ± max(3σ, 2 × 解析度) 內
+（真機讀值靜置時仍會跳 1～2 個最小單位，2026-10-07）。
 原本提出的「M 次皆在 1σ 內」正常探頭約 85% 會失敗（0.68^5 ≈ 0.15），σ 為 0 時任何晃動也會失敗。
 """
 
@@ -45,7 +46,7 @@ class CalResult:
     verify: list = field(default_factory=list)        # 歸零後的讀值
     verify_mean: float | None = None
     verify_max_dev: float | None = None
-    bound: float | None = None                        # 每次驗證值的上限 max(3σ, 解析度)
+    bound: float | None = None                        # 每次驗證值的上限 max(3σ, 2 × 解析度)
     result: str = FAIL
     reason: str | None = None
     cleared: bool = False                             # 已清除放大器原本的歸零（資料庫須跟著更新）
@@ -69,10 +70,10 @@ def check_samples(samples, tolerance: float) -> tuple[float, float, str | None]:
 
 
 def check_verify(values, sigma: float, resolution: float, tolerance: float) -> tuple[float, float, float, str | None]:
-    """CAL-04：驗證值（歸零後）平均在 ±容許值內，每次在 ±max(3σ, 解析度) 內。"""
+    """CAL-04：驗證值（歸零後）平均在 ±容許值內，每次在 ±max(3σ, 2 × 解析度) 內。"""
     mean = statistics.fmean(values)
     max_dev = max(abs(v) for v in values)
-    bound = max(3 * sigma, resolution)
+    bound = max(3 * sigma, 2 * resolution)
     if abs(mean) > tolerance:
         return mean, max_dev, bound, f"驗證平均 {mean:+.4f} mm 超出容許值 ±{tolerance:.4f} mm"
     if max_dev > bound + 1e-12:

@@ -86,12 +86,19 @@ class CalibrateTest(unittest.TestCase):
         self.assertEqual(amp.ops, ["prepare", "reset", "execute", "reset"])
         self.assertFalse(res.zeroed)
 
-    def test_zero_sigma_uses_resolution(self):  # CAL-A2：σ 為 0 時 1 個解析度的晃動仍通過
+    def test_zero_sigma_uses_resolution(self):  # CAL-A2：σ 為 0 時 2 個最小單位的跳動仍通過
         flat = [12.5] * 20
-        res = calibrate.run(FakeAmp(flat, [12.5, 12.5001, 12.4999, 12.5, 12.5]), DEV, 1, CS)
+        res = calibrate.run(FakeAmp(flat, [12.5, 12.5002, 12.4998, 12.5001, 12.5]), DEV, 1, CS)
         self.assertTrue(res.ok, res.reason)
         self.assertEqual(res.sigma, 0.0)
-        self.assertEqual(res.bound, 0.0001)
+        self.assertEqual(res.bound, 0.0002)
+        res = calibrate.run(FakeAmp(flat, [12.5, 12.5003, 12.5, 12.5, 12.5]), DEV, 1, CS)  # 3 個最小單位
+        self.assertEqual(res.result, calibrate.FAIL)
+
+    def test_real_device_jitter_passes(self):  # 2026-10-07 真機：σ = 0.00005，驗證跳 2 個最小單位曾失敗
+        steady = [0.0322, 0.0323] * 10
+        res = calibrate.run(FakeAmp(steady, [0.0323, 0.0321, 0.0325, 0.0323, 0.0322]), DEV, 1, CS)
+        self.assertTrue(res.ok, res.reason)
 
     def test_old_one_sigma_rule_would_fail_normal_probe(self):  # 說明：舊規則 5 次皆在 1σ 內過嚴
         import random
