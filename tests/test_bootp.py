@@ -41,6 +41,15 @@ class ValidateTest(unittest.TestCase):
         ]}
         self.assertEqual(len(bootp.validate(spec, NET)), 2)
 
+    def test_tolerance_field(self):  # JDG-06
+        def defn(tol):
+            return {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
+                {"id": 1, "description": "左", "tolerance": tol}])]}
+        self.assertEqual(len(bootp.validate(defn(20), NET)), 1)
+        for bad in (7, "5", True, 5.0):
+            with self.assertRaises(bootp.DefinitionError, msg=bad):
+                bootp.validate(defn(bad), NET)
+
     def test_zero_offset_fields(self):  # CAL-06、3.7.1
         ok = {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
             {"id": 1, "description": "左", "zero_offset": 12.4987, "zeroed_at": "2026-10-07T15:30:00"}])]}

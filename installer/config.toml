@@ -23,23 +23,5 @@ verify = 5                   # 驗證次數
 tolerance = 0.002            # 驗證容許值（mm）：驗證平均須在 0 ± 此值內；取樣標準差上限為其一半
                              # ⚠ 假設值（TBD-01）
 
-# 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id，單位 mm
-# 探頭以標準件校準歸零後讀值為 0（CAL-03），標準值為 0、上下限為 ± 公差
-# ⚠ 以下公差為假設值（TBD-01，待品保提供）；未設定的探頭量測時顯示「未設定允收標準」
-[standards.row-1]
-1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-
-[standards.row-2]
-1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-
-[standards.row-3]
-1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
-4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+# 允收標準：改在「設備設定」各探頭的「允許誤差」選擇（JDG-06，標準值 0 ± 允許誤差，預設 5 mm）。
+# 原本的 [standards.*] 不再使用，App 會忽略。

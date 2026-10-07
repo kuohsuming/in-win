@@ -37,6 +37,9 @@ class DefinitionError(ValueError):
         super().__init__("\n".join(f"{where}: {why}" for where, why in errors))
 
 
+TOLERANCES = (5, 10, 20, 50, 100, 200)  # 探頭允許誤差（mm）的選項（JDG-06）
+
+
 def _is_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -128,9 +131,11 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                     if not isinstance(probe, dict):
                         errors.append((pat, "必須是物件"))
                         continue
-                    for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at"}):
+                    for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at", "tolerance"}):
                         errors.append((f"{pat}.{extra}", "不允許的欄位"))
                     _check_zero(errors, pat, probe)
+                    if "tolerance" in probe and not (_is_int(probe["tolerance"]) and probe["tolerance"] in TOLERANCES):
+                        errors.append((f"{pat}.tolerance", "須為 5、10、20、50、100、200（mm）"))  # JDG-06
                     pid = probe.get("id")
                     if not (_is_int(pid) and 1 <= pid <= 15):
                         errors.append((f"{pat}.id", "須為 1～15 的整數"))

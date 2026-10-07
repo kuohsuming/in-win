@@ -452,8 +452,8 @@ class SettingsDialog(QDialog):
         pb.setContentsMargins(0, 0, 0, 0)
         pb.setSpacing(6)
         pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N）", "label"))
-        pt = self.probe_table = QTableWidget(0, 4)
-        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "校準", ""))
+        pt = self.probe_table = QTableWidget(0, 5)
+        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "校準", "", "允許誤差"))
         pt.verticalHeader().hide()
         pt.setSelectionBehavior(QAbstractItemView.SelectRows)
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -466,6 +466,8 @@ class SettingsDialog(QDialog):
         pt.setColumnWidth(2, 200)
         pt.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
         pt.setColumnWidth(3, 90)
+        pt.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+        pt.setColumnWidth(4, 120)
         pt.itemChanged.connect(lambda _item: self._on_field_edited())
         pt.itemSelectionChanged.connect(self._update_probe_buttons)
         pb.addWidget(pt)
@@ -757,7 +759,7 @@ class SettingsDialog(QDialog):
         self.probe_table.setRowCount(0)
         for p in cfg.get("probes") or []:
             zero = {f: p[f] for f in lan.ZERO_FIELDS if f in p} or None
-            self._append_probe_row(p.get("id"), p.get("description", ""), zero)
+            self._append_probe_row(p.get("id"), p.get("description", ""), zero, lan.probe_tolerance(p))
         self.replace_row.setVisible(d.status == LIVE and self.original.get(d.mac) is not None
                                     and self.original[d.mac].status == LIVE)
         for w in (self.name_edit, self.ip_edit, self.port_edit):
@@ -800,7 +802,7 @@ class SettingsDialog(QDialog):
         idx = self.row_box.findData(key)
         self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
-    def _append_probe_row(self, pid, desc, zero=None):
+    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
         id_item = QTableWidgetItem("" if pid is None else str(pid))
@@ -817,6 +819,16 @@ class SettingsDialog(QDialog):
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda _=False, b=btn: self._calibrate(self._button_row(b)))
         self.probe_table.setCellWidget(r, 3, btn)
+        tol = QComboBox()  # JDG-06：允許誤差，判定為 |讀值| ≤ 允許誤差
+        for v in lan.TOLERANCES:
+            tol.addItem(f"{v} mm", v)
+        tol.setCurrentIndex(max(0, tol.findData(tolerance)))
+        tol.setEnabled(not self.read_only)
+        tol.setToolTip("允許誤差：讀值在 ± 此值內為合格")
+        tol.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
+        tol.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)  # 不超出列高
+        tol.currentIndexChanged.connect(lambda _i: self._on_field_edited())
+        self.probe_table.setCellWidget(r, 4, tol)
 
     def _button_row(self, btn) -> int:
         for r in range(self.probe_table.rowCount()):
@@ -1176,7 +1188,11 @@ class SettingsDialog(QDialog):
             for r in range(self.probe_table.rowCount()):  # ID 依串接順序 1～N（EDT-06）
                 desc = (self.probe_table.item(r, 1).text() if self.probe_table.item(r, 1) else "").strip()
                 zero = self.probe_table.item(r, 0).data(Qt.UserRole) if self.probe_table.item(r, 0) else None
-                probes.append({"id": r + 1, "description": desc, **(zero or {})})
+                probe = {"id": r + 1, "description": desc, **(zero or {})}
+                tol = self.probe_table.cellWidget(r, 4)
+                if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設 5 mm 不寫入
+                    probe["tolerance"] = tol.currentData()
+                probes.append(probe)
             cfg["probes"] = probes
             cfg["max_probes"] = len(probes)
             # 保持 3.7.1 欄位順序
@@ -1309,7 +1325,7 @@ class SettingsDialog(QDialog):
         del self.original[d.mac]
         del self.work[d.mac]
         if o.status in lan.DL_STATUSES or o.assigns_ip:
-            self.saved.emit(result, lan.diff(old, new, self.backend.standards()))  # 主畫面依新設定重建
+            self.saved.emit(result, lan.diff(old, new))  # 主畫面依新設定重建；每個探頭都有允許誤差（JDG-06）
         self._after_delete(d.mac, f"已刪除 {o.label()}")
 
     def _after_delete(self, mac: str, message: str):
@@ -1499,7 +1515,7 @@ class SettingsDialog(QDialog):
             more = f"\n…另有 {len(bad) - 8} 項" if len(bad) > 8 else ""
             self._warn(f"設定有 {len(bad)} 項錯誤，請修正後再儲存：\n{lines}{more}")
             return
-        self.preview = lan.diff(self.original.values(), self._devices(), self.backend.standards())
+        self.preview = lan.diff(self.original.values(), self._devices())
         self._render_confirm()
         self.pages.setCurrentIndex(2)
 

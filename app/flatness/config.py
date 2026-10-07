@@ -21,8 +21,8 @@
     verify = 5                        # 驗證次數
     tolerance = 0.002                 # 驗證容許值（mm）；取樣標準差上限為其一半
 
-    [standards.row-1]                 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id；校準後以 0 為基準（CAL-03）
-    1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+允收標準不在此檔：改由設備設定各探頭的「允許誤差」決定（JDG-06，lan.standards）。舊版的 [standards.*] 仍可讀入
+但判定不使用。
 """
 
 from __future__ import annotations

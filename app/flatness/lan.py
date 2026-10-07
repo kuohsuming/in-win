@@ -434,6 +434,20 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
 
 
 ZERO_FIELDS = ("zero_offset", "zeroed_at")
+TOLERANCES = bootp.TOLERANCES          # 探頭允許誤差（mm）的選項（JDG-06）
+DEFAULT_TOLERANCE = 5                   # 未設定時的允許誤差；等於預設值時設定中不寫此欄
+
+
+def probe_tolerance(probe: dict) -> int:
+    return probe.get("tolerance") or DEFAULT_TOLERANCE
+
+
+def standards(definition: dict) -> dict:
+    """JDG-06：允收標準由各探頭的允許誤差決定：標準值 0、上下限 ± 允許誤差 → {key: {探頭 id: Standard}}。"""
+    from .config import Standard
+    return {d["key"]: {p["id"]: Standard(0.0, -float(probe_tolerance(p)), float(probe_tolerance(p)))
+                       for p in d.get("probes") or []}
+            for d in (definition or {}).get("dl_en1") or []}
 
 
 def clear_zero(cfg, ids=None) -> None:
@@ -558,6 +572,10 @@ def _probes(cfg) -> dict:
     return {p["id"]: p["description"] for p in (cfg or {}).get("probes") or []}
 
 
+def _tolerances(cfg) -> dict:
+    return {p["id"]: probe_tolerance(p) for p in (cfg or {}).get("probes") or []}
+
+
 def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
     """以 MAC 對應新舊資料，列出要確認的變更與影響（5.10 步驟三、UPL-05）。
 
@@ -623,6 +641,10 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
             for pid in sorted(pa.keys() & pb.keys()):
                 if pa[pid] != pb[pid]:
                     lines.append((f"探頭 ID {pid} 名稱：{pa[pid]} → {pb[pid]}", False))
+            ta, tb = _tolerances(co), _tolerances(cn)  # JDG-06
+            for pid in sorted(ta.keys() & tb.keys()):
+                if ta[pid] != tb[pid]:
+                    lines.append((f"探頭 ID {pid}「{pb[pid]}」允許誤差：{ta[pid]} mm → {tb[pid]} mm", False))
         elif n.is_dl_en1 and not o.is_dl_en1 and mac not in handled:
             cn = n.config or {}
             lines.append((f"識別碼 {cn.get('key')}、排名稱 {cn.get('name')}、"

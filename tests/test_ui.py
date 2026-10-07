@@ -144,7 +144,7 @@ class SettingsDialogTest(UiBase):
         self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["row-1", "row-2", "row-3", "row-5"])
         self.assertIn("row-5", Path(self.tmp.name, "dl-en1.hosts").read_text())
         self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].config["name"], "加排")
-        self.assertIn("加排 左", preview.no_standard)  # 第 5 排沒有允收標準
+        self.assertEqual(preview.no_standard, [])  # JDG-06：每個探頭都有允許誤差（預設 5 mm）
 
     def test_probe_count_drives_list_and_saves(self):  # EDT-06
         d = self.dlg
@@ -167,6 +167,28 @@ class SettingsDialogTest(UiBase):
         cfg = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config
         self.assertEqual(cfg["max_probes"], 4)
         self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "右中", "右", "探頭 5"])
+
+    def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 5 mm
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.assertEqual(d.probe_table.horizontalHeaderItem(4).text(), "允許誤差")
+        box = d.probe_table.cellWidget(1, 4)
+        self.assertEqual([box.itemText(i) for i in range(box.count())],
+                         ["5 mm", "10 mm", "20 mm", "50 mm", "100 mm", "200 mm"])
+        self.assertEqual(box.currentData(), 5)
+        self.assertFalse(d.is_dirty())                          # 未設定視為 5 mm，開啟時不算變更
+        box.setCurrentIndex(box.findData(20))
+        self.assertTrue(d.is_dirty())
+        d.btn_save.click()
+        self.assertIn("探頭 ID 2「左中」允許誤差：5 mm → 20 mm", d.preview.summary() + str(d.preview.items[0].lines))
+        d.btn_commit.click()
+        probes = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"]
+        self.assertEqual(probes[1]["tolerance"], 20)
+        self.assertNotIn("tolerance", probes[0])               # 預設 5 mm 不寫入
+        std = self.be.standards()["row-2"]
+        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-5, 5), (-20, 20)))
+        d.select("00:01:FC:DE:3A:76")
+        self.assertEqual(d.probe_table.cellWidget(1, 4).currentData(), 20)  # 重新開啟仍為 20 mm
 
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg
@@ -606,7 +628,8 @@ class MainWindowTest(UiBase):
         self.stations = []
 
         def factory(defn):
-            s = measure.DemoStation(defn, self.be.cfg.standards, seed=1, delay=0)
+            from flatness import lan
+            s = measure.DemoStation(defn, lan.standards(defn), seed=1, delay=0)
             self.stations.append(s)
             return s
         self.win = MainWindow(self.be, factory, countdown=1, redetect=10)
@@ -787,12 +810,17 @@ class MainWindowTest(UiBase):
         self.assertIn("中排 DL-EN1 偵測不到", w.banner.say.text())
         self.assertIn("偵測不到", w.rows[1].unit_text.text())
 
-    def test_missing_standard_is_device_error(self):  # DEF-09
-        self.be.cfg.standards.pop("row-3")
+    def test_standard_from_probe_tolerance(self):  # JDG-06：允收標準為 0 ± 探頭的允許誤差，取代 config.toml
+        from flatness import measure
+        self.be.cfg.standards.clear()                     # config.toml 的 [standards] 不再使用
+        std = self.be.standards()
+        self.assertEqual((std["row-1"][1].nominal, std["row-1"][1].lower, std["row-1"][1].upper), (0.0, -5.0, 5.0))
         self.win.rebuild(self.be.definition)
         self.win.detect()
-        self.wait_state("error")
-        self.assertIn("後排 有 4 個探頭未設定允收標準", self.win.banner.say.text())
+        self.wait_state("idle")                           # 沒有「未設定允收標準」
+        s = std["row-1"][1]
+        self.assertEqual((measure.judge(4.999, s), measure.judge(5.001, s), measure.judge(-5.001, s)),
+                         (measure.OK, measure.HI, measure.LO))
 
     def test_settings_saved_rebuilds_and_detects(self):  # 5.10 儲存後
         from flatness import lan, sync

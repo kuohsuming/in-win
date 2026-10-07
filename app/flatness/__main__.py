@@ -15,7 +15,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 from . import config as config_mod
-from . import arpwatch, dnsmasq, instance, sync
+from . import arpwatch, dnsmasq, instance, lan, sync
 
 
 def parse_args(argv=None):
@@ -102,7 +102,7 @@ def main(argv=None) -> int:
 
     if args.demo:
         log.warning("量測來源：示範模式（不連線 DL-EN1，數值為隨機產生；結果不寫入資料庫）")
-        factory = lambda definition: DemoStation(definition, cfg.standards)  # noqa: E731
+        factory = lambda definition: DemoStation(definition, lan.standards(definition))  # noqa: E731
         sink = None
     else:
         log.info("量測來源：DL-EN1 實機；結果寫入資料庫（本機暫存 %s）", args.buffer)

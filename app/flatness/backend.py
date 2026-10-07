@@ -164,7 +164,8 @@ class Backend(QObject):
         return self.cfg.check_password(password)
 
     def standards(self) -> dict:
-        return self.cfg.standards
+        """JDG-06：依目前定義檔各探頭的允許誤差（取代 config.toml 的 [standards]）。"""
+        return lan.standards(self.definition)
 
     def backups(self):
         return sync.backups(self.files)
