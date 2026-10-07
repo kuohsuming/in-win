@@ -32,7 +32,7 @@ class StoreContract:
         front = "00:01:FC:DE:3A:75"
         s.record([SeenEvent(front, "BOOTP", T0 + timedelta(hours=1))])
         d = by_mac(s.load())[front]
-        self.assertEqual((d.status, d.seen_count, d.config["key"]), (LIVE, 4, "front"))
+        self.assertEqual((d.status, d.seen_count, d.config["key"]), (LIVE, 4, "row-1"))
         self.assertEqual(d.last_seen, T0 + timedelta(hours=1))
         self.assertEqual(len(s.load()), 6)  # 每個 MAC 只有一筆（DSC-01-A2）
 
@@ -63,12 +63,13 @@ class StoreContract:
         m.config["probes"].append({"id": 5, "description": "中央"})
         m.config["max_probes"] = 5
         lan.move(new, m.mac, -1)
+        m.config["key"], by_mac(new)["00:01:FC:DE:3A:75"].config["key"] = "row-1", "row-2"
         with s.transaction() as tx:
             n = tx.save(old, new)
         self.assertEqual(n, 6)  # 第一次調整順序時全部設備重新編號（DSC-17）
         back = by_mac(s.load())["00:01:FC:DE:3A:76"]
         self.assertEqual(back.config, m.config)
-        self.assertEqual([d["key"] for d in lan.definition_from(s.load())["dl_en1"]], ["middle", "front", "rear"])
+        self.assertEqual([d["name"] for d in lan.definition_from(s.load())["dl_en1"]], ["中段", "前排", "後排"])
 
     def test_transaction_rolls_back(self):
         s = self.make_store(sample_devices())

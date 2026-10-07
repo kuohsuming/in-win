@@ -29,7 +29,7 @@
 
 ![主畫面：合格](images/app-main-pass.png)
 
-由上而下：頂端工具列 → 編號列 → 結果橫幅 → 每台「DL-EN1 使用中」或「維修中」一排，依同一個順序（`Backend.layout`；只有排與探頭區可捲動）。連線與量測只用使用中的設備（`Backend.definition`，即 `dl-en1.json`）。
+由上而下：頂端工具列 → 編號列 → 結果橫幅 → 每台「DL-EN1 使用中」或「維修中」一排，依位置標籤第 1～10 排（`lan.screen_layout`，EDT-05；只有排與探頭區可捲動）。連線與量測只用使用中的設備（`Backend.definition`，即 `dl-en1.json`）。
 
 | 部位 | 類別 | 說明 |
 | --- | --- | --- |
@@ -67,7 +67,8 @@
 | 部位 | 說明 |
 | --- | --- |
 | 偵測到的設備清單 | `QTableWidget`，依共用順序 `sort_order` 排列（`lan.list_order`，DSC-02、DSC-17）；「設備」欄由 `HtmlDelegate` 繪製類型標籤；探索到新設備時自動更新（`Backend.devices_seen` → 300 ms 合併後重讀資料庫） |
-| 清單按鍵 | 隱藏／取消隱藏、上移、下移（三者皆按下即寫入資料庫；上移／下移發出 `order_saved`，主畫面以 `reorder()` 只調整排的順序）、「顯示已隱藏（N）」 |
+| 清單按鍵 | 隱藏／取消隱藏、上移、下移（三者皆按下即寫入資料庫；上移／下移只影響本清單，主畫面依位置標籤）、「顯示已隱藏（N）」 |
+| 位置 | `row_box` 下拉選單第 1～10 排（`lan.ROW_KEYS`，存為 `row-1`～`row-10`）；佔用的排停用（`_fill_rows`）；預設 `lan.free_row` |
 | 偵測到的設備 | 唯讀資訊框（MAC、KEYENCE 提示、首次／最後出現、主機名稱、廠商識別）＋ 表單；依設備類型顯示欄位（`QFormLayout.setRowVisible`） |
 | IPv4 檢查 | 先比對資料表（顯示佔用者），再於離開欄位時在背景做 ARP 探測（`Backend.probe_async`） |
 | 替換 | 只對「DL-EN1 使用中」；候選為不明、其他、已停用設備 |

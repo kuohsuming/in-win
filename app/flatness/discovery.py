@@ -1,7 +1,7 @@
 """設備網路探索（DSC-01、DSC-05）：解析 dnsmasq 的 log-dhcp 輸出，記錄到資料表 lan_device。
 
 dnsmasq（--log-facility=- 與 log-dhcp）每收到一個請求輸出一行，例：
-    dnsmasq-dhcp: 3911 BOOTP(eno2) 192.168.10.11 00:01:fc:de:3a:75 front
+    dnsmasq-dhcp: 3911 BOOTP(eno2) 192.168.10.11 00:01:fc:de:3a:75 row-1
     dnsmasq-dhcp: 3911 BOOTP(eno2) 00:01:fc:12:39:a0 no address configured
     dnsmasq-dhcp: 2716 DHCPDISCOVER(eno2) 3c:52:82:11:22:33
     dnsmasq-dhcp: 2716 client provides name: eng-laptop

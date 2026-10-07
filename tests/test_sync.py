@@ -29,7 +29,7 @@ class SyncTest(unittest.TestCase):
     def test_startup_generates_both_files(self):  # DSC-06-G1
         r = sync.startup(self.store, self.files, NET)
         self.assertTrue(r.changed and r.db_ok and r.problem is None)
-        self.assertEqual([d["key"] for d in self.defn()["dl_en1"]], ["front", "middle", "rear"])
+        self.assertEqual([d["key"] for d in self.defn()["dl_en1"]], ["row-1", "row-2", "row-3"])
         hosts = [l for l in self.files.hosts_path.read_text().splitlines() if not l.startswith("#")]
         self.assertEqual(len(hosts), 4)
 
@@ -80,7 +80,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(restarts, [1])
         self.assertTrue(r.restarted)
         self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].status, RETIRED)
-        self.assertEqual([d["key"] for d in self.defn()["dl_en1"]], ["front", "rear"])
+        self.assertEqual([d["key"] for d in self.defn()["dl_en1"]], ["row-1", "row-3"])
         self.assertNotIn("3a:76", self.files.hosts_path.read_text())
         self.assertEqual(len(sync.backups(self.files)), 1)
 
@@ -117,11 +117,11 @@ class SyncTest(unittest.TestCase):
         before = self.files.def_path.read_text()
         old = self.store.load()
         new = [d.copy() for d in old]
-        by_mac(new)["00:01:FC:DE:3A:76"].config["key"] = "front"
+        by_mac(new)["00:01:FC:DE:3A:76"].config["key"] = "row-1"
         with self.assertRaises(sync.SyncError):
             sync.apply(self.store, self.files, NET, old, new)
         self.assertEqual(self.files.def_path.read_text(), before)
-        self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["key"], "middle")
+        self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["key"], "row-2")
 
     def test_read_definition_file_rules(self):  # UPL-03、UPL-04
         base = Path(self.tmp.name)

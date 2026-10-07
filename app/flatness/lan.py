@@ -33,6 +33,9 @@ DL_STATUSES = (LIVE, MAINT)
 KEYENCE_PREFIX = "00:01:FC"
 DEFAULT_RANGES = {"dl_en1": (11, 99), "other": (100, 199)}
 MAX_LIVE = 8
+# 位置標籤（DEF-01 key）：第 1～10 排，內部存成 row-1～row-10；每排最多一台，主畫面依排號由上而下排列
+ROWS = 10
+ROW_KEYS = tuple(f"row-{i}" for i in range(1, ROWS + 1))
 
 _MAC_RE = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
 
@@ -120,13 +123,13 @@ def config_from_entry(entry: dict) -> dict:
 
 
 def live_devices(devices) -> list[LanDevice]:
-    """「DL-EN1 使用中」依畫面順序。"""
-    return sorted((d for d in devices if d.status == LIVE), key=_list_key)
+    """「DL-EN1 使用中」依主畫面順序（排號）。"""
+    return sorted((d for d in devices if d.status == LIVE), key=_row_key)
 
 
 def screen_devices(devices) -> list[LanDevice]:
-    """主畫面上的排：「使用中」與「維修中」，依它們在設備清單中的相對順序（DSC-15、DSC-17）。"""
-    return sorted((d for d in devices if d.status in DL_STATUSES), key=_list_key)
+    """主畫面上的排：「使用中」與「維修中」，依位置標籤的排號由上而下（DSC-15、EDT-05）。"""
+    return sorted((d for d in devices if d.status in DL_STATUSES), key=_row_key)
 
 
 def screen_layout(devices) -> dict:
@@ -138,6 +141,27 @@ def screen_layout(devices) -> dict:
             entry["maint"] = True
         out.append(entry)
     return {"version": 1, "dl_en1": out}
+
+
+def row_no(key) -> int | None:
+    """row-3 → 3；不是位置標籤時回傳 None。"""
+    return ROW_KEYS.index(key) + 1 if key in ROW_KEYS else None
+
+
+def row_label(key) -> str:
+    n = row_no(key)
+    return f"第 {n} 排" if n else (key or "未設定")
+
+
+def free_row(devices, exclude_mac: str | None = None) -> str | None:
+    """最小的未使用位置（使用中、維修中佔用；已停用不佔用，DSC-09）。"""
+    used = {(d.config or {}).get("key") for d in devices if d.status in DL_STATUSES and d.mac != exclude_mac}
+    return next((k for k in ROW_KEYS if k not in used), None)
+
+
+def _row_key(d: LanDevice):
+    """主畫面順序：依位置標籤的排號（EDT-05）；與設定頁清單順序（DSC-17）無關。"""
+    return (row_no((d.config or {}).get("key")) or ROWS + 1, _list_key(d))
 
 
 def _list_key(d: LanDevice):
@@ -190,7 +214,7 @@ def render_hosts(devices) -> str:
 
 # ---------------------------------------------------------------- 檢查
 
-FIELD_NAME = {"key": "識別碼 key", "name": "排名稱", "ipv4": "IPv4", "port": "TCP 埠",
+FIELD_NAME = {"key": "位置", "name": "排名稱", "ipv4": "IPv4", "port": "TCP 埠",
               "max_probes": "最多探頭數", "probes": "探頭", "status": "設備"}
 
 
@@ -254,6 +278,8 @@ def _entry_issues(d: LanDevice, equip_net) -> list[tuple[str, str]]:
                 out.append(("probes", f"第 {int(m.group(1)) + 1} 列（ID {pid}）{what}{why}"))
             elif fld == "ipv4":
                 continue  # IP 由 ip_problem 檢查，訊息較具體
+            elif fld == "key":
+                out.append(("key", f"請選擇第 1～{ROWS} 排其中一排"))
             else:
                 out.append((fld.split(".")[0], why))
         return out
@@ -297,7 +323,7 @@ def validate(devices, equip_net: ipaddress.IPv4Interface) -> list[Issue]:
             continue
         for d in devs:
             other = next(x for x in devs if x is not d)
-            shown = value if fld == "ipv4" else f"「{value}」"
+            shown = value if fld == "ipv4" else row_label(value) if fld == "key" else f"「{value}」"
             issues.append(Issue(d.mac, fld, f"{shown} {occupied_text(other)}", d.label()))
     return issues
 
@@ -365,6 +391,8 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
     if status in DL_STATUSES:
         if not d.config:
             d.config = copy.deepcopy((remembered or {}).get(mac)) or default_config()
+        if not d.config.get("key"):
+            d.config["key"] = free_row(devices, exclude_mac=mac) or ""  # 預設最小的空位（EDT-05）
         # 改變設備類型時清單位置不變（DSC-17）；尚未排序者（新偵測到）排到最後一位
         if d.sort_order is None:
             d.sort_order = next_sort_order([x for x in devices if x is not d])
@@ -540,8 +568,10 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
             p.power_cycle.append(f"{_title(n)}（{ip_new}）")
         if n.is_dl_en1 and o.is_dl_en1 and mac not in handled:
             co, cn = o.config or {}, n.config or {}
-            for fld, nm in (("key", "識別碼"), ("name", "排名稱"), ("port", "埠"), ("max_probes", "最多探頭數")):
+            for fld, nm in (("key", "位置"), ("name", "排名稱"), ("port", "埠"), ("max_probes", "最多探頭數")):
                 a, b = co.get(fld), cn.get(fld)
+                if fld == "key":
+                    a, b = row_label(a), row_label(b)
                 if fld == "port":
                     a, b = a or bootp.DEFAULT_PORT, b or bootp.DEFAULT_PORT
                 if a != b:

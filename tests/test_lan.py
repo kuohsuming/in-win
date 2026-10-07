@@ -10,11 +10,12 @@ from flatness.lan import LIVE, MAINT, OTHER, RETIRED, UNCLASSIFIED, LanDevice
 
 
 class OutputTest(unittest.TestCase):
-    def test_definition_only_live_in_screen_order(self):
+    def test_definition_only_live_in_screen_order(self):  # EDT-05：依位置標籤排號，與清單順序無關
         devs = sample_devices()
-        by_mac(devs)["00:01:FC:DE:3A:75"].sort_order = 5  # 前排移到最後
+        by_mac(devs)["00:01:FC:DE:3A:75"].config["key"] = "row-5"  # 前排改到第 5 排
+        by_mac(devs)["00:01:FC:DE:3A:76"].sort_order = 9           # 清單順序不影響
         defn = lan.definition_from(devs)
-        self.assertEqual([d["key"] for d in defn["dl_en1"]], ["middle", "rear", "front"])
+        self.assertEqual([d["key"] for d in defn["dl_en1"]], ["row-2", "row-3", "row-5"])
         self.assertEqual(defn["dl_en1"][0]["mac"], "00:01:FC:DE:3A:76")
         self.assertNotIn("port", defn["dl_en1"][0])
 
@@ -23,9 +24,9 @@ class OutputTest(unittest.TestCase):
         by_mac(devs)["00:01:FC:DE:3A:76"].status = MAINT
         text = lan.render_hosts(devs)
         lines = [l for l in text.splitlines() if not l.startswith("#")]
-        self.assertEqual(lines, ["00:01:fc:de:3a:75,192.168.10.11,front",
-                                 "00:01:fc:de:3a:77,192.168.10.13,rear",
-                                 "00:01:fc:de:3a:76,192.168.10.12,middle",
+        self.assertEqual(lines, ["00:01:fc:de:3a:75,192.168.10.11,row-1",
+                                 "00:01:fc:de:3a:77,192.168.10.13,row-3",
+                                 "00:01:fc:de:3a:76,192.168.10.12,row-2",
                                  "3c:52:82:11:22:33,192.168.10.200"])
         self.assertNotIn("3a:70", text)  # 已停用不配發（DSC-06-A1）
 
@@ -49,6 +50,24 @@ class ValidateTest(unittest.TestCase):
     def test_sample_passes(self):
         self.assertEqual(lan.validate(sample_devices(), NET), [])
 
+    def test_row_label_one_device_per_row(self):  # EDT-05：第 1～10 排，每排一台
+        devs = sample_devices()
+        by_mac(devs)["00:01:FC:DE:3A:77"].config["key"] = "row-1"
+        msgs = [i.text() for i in lan.validate(devs, NET) if i.field == "key"]
+        self.assertEqual(len(msgs), 2)
+        self.assertTrue(all("第 1 排" in m for m in msgs), msgs)
+        for bad in ("rear", "row-0", "row-11", ""):
+            by_mac(devs)["00:01:FC:DE:3A:77"].config["key"] = bad
+            msgs = [i.message for i in lan.validate(devs, NET) if i.field == "key"]
+            self.assertEqual(msgs, ["請選擇第 1～10 排其中一排"], bad)
+
+    def test_new_dl_en1_gets_smallest_free_row(self):  # EDT-05
+        devs = sample_devices()
+        by_mac(devs)["00:01:FC:DE:3A:76"].status = RETIRED  # 第 2 排空出
+        d = lan.set_status(devs, "00:01:FC:12:39:A0", LIVE, NET)
+        self.assertEqual(d.config["key"], "row-2")
+        self.assertEqual(lan.row_label("row-10"), "第 10 排")
+
     def issues(self, devs):
         return [(i.mac, i.field, i.message) for i in lan.validate(devs, NET)]
 
@@ -62,7 +81,7 @@ class ValidateTest(unittest.TestCase):
         devs = sample_devices()
         new = by_mac(devs)["00:01:FC:12:39:A0"]
         new.status, new.ipv4, new.sort_order = LIVE, "192.168.10.14", 4
-        new.config = {"key": "old", "name": "舊機", "max_probes": 4, "probes": [{"id": 1, "description": "左"}]}
+        new.config = {"key": "row-4", "name": "舊機", "max_probes": 4, "probes": [{"id": 1, "description": "左"}]}
         self.assertEqual(lan.validate(devs, NET), [])
         by_mac(devs)["00:01:FC:DE:3A:70"].status = LIVE  # 舊機改回使用中 → 衝突
         fields = {f for _, f, _ in self.issues(devs)}
@@ -139,17 +158,17 @@ class OperationTest(unittest.TestCase):
         devs = sample_devices()
         lan.set_status(devs, "00:01:FC:DE:3A:76", RETIRED, NET)
         d = by_mac(devs)["00:01:FC:DE:3A:76"]
-        self.assertEqual(d.config["key"], "middle")
-        self.assertNotIn("middle", lan.render_hosts(devs))
+        self.assertEqual(d.config["key"], "row-2")
+        self.assertNotIn("row-2", lan.render_hosts(devs))
         lan.set_status(devs, d.mac, LIVE, NET)
-        self.assertEqual((d.config["key"], d.ipv4, d.sort_order), ("middle", "192.168.10.12", 2))
+        self.assertEqual((d.config["key"], d.ipv4, d.sort_order), ("row-2", "192.168.10.12", 2))
 
     def test_maint_and_back_keeps_position(self):  # DSC-15-G1
         devs = sample_devices()
         lan.set_status(devs, "00:01:FC:DE:3A:76", MAINT, NET)
-        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["front", "rear"])
+        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["row-1", "row-3"])
         lan.set_status(devs, "00:01:FC:DE:3A:76", LIVE, NET)
-        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["front", "middle", "rear"])
+        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["row-1", "row-2", "row-3"])
 
     def test_switch_to_other_and_back_remembers_config(self):
         devs = sample_devices()
@@ -157,7 +176,7 @@ class OperationTest(unittest.TestCase):
         lan.set_status(devs, "00:01:FC:DE:3A:76", OTHER, NET, remembered=memo)
         self.assertIsNone(by_mac(devs)["00:01:FC:DE:3A:76"].config)
         lan.set_status(devs, "00:01:FC:DE:3A:76", LIVE, NET, remembered=memo)
-        self.assertEqual(by_mac(devs)["00:01:FC:DE:3A:76"].config["key"], "middle")
+        self.assertEqual(by_mac(devs)["00:01:FC:DE:3A:76"].config["key"], "row-2")
 
     def test_set_live_unhides(self):
         devs = sample_devices()
@@ -182,7 +201,9 @@ class OperationTest(unittest.TestCase):
     def test_move(self):  # DSC-17：任何設備皆可移動
         devs = sample_devices()
         self.assertTrue(lan.move(devs, "00:01:FC:DE:3A:76", -1))
-        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["middle", "front", "rear"])
+        self.assertEqual(lan.list_order(devs)[1].mac, "00:01:FC:DE:3A:76")  # 不明設備在最上面
+        # 清單順序不影響主畫面（EDT-05）
+        self.assertEqual([d["key"] for d in lan.definition_from(devs)["dl_en1"]], ["row-1", "row-2", "row-3"])
         self.assertEqual(sorted(d.sort_order for d in devs), [1, 2, 3, 4, 5, 6])  # 第一次調整時全部編號
         self.assertTrue(lan.move(devs, "00:01:FC:DE:3A:76", -1))   # 與最上面的不明設備交換
         self.assertEqual(lan.list_order(devs)[0].mac, "00:01:FC:DE:3A:76")
@@ -213,7 +234,7 @@ class OperationTest(unittest.TestCase):
     def test_import(self):  # DEF-07
         devs = sample_devices()
         defn = {"version": 1, "dl_en1": [
-            {"key": "front", "name": "前排", "mac": "00:01:fc:de:3a:75", "ipv4": "192.168.10.11",
+            {"key": "row-1", "name": "前排", "mac": "00:01:fc:de:3a:75", "ipv4": "192.168.10.11",
              "max_probes": 4, "probes": [{"id": 1, "description": "左"}]},
             {"key": "new", "name": "新排", "mac": "00:01:FC:99:99:99", "ipv4": "192.168.10.20",
              "max_probes": 2, "probes": [{"id": 1, "description": "左"}]}]}
@@ -237,7 +258,7 @@ class DiffTest(unittest.TestCase):
         p = lan.diff(old, new)
         self.assertEqual([i.tag for i in p.items], ["替換"])
         self.assertIn("MAC 00:01:FC:DE:3A:75 → 00:01:FC:12:39:A0", p.items[0].lines[0][0])
-        self.assertEqual(p.replaced, [("front", "00:01:FC:DE:3A:75", "00:01:FC:12:39:A0")])
+        self.assertEqual(p.replaced, [("row-1", "00:01:FC:DE:3A:75", "00:01:FC:12:39:A0")])
         self.assertEqual(len(p.power_cycle), 1)
         self.assertEqual(p.removed_points, [])
 
@@ -257,14 +278,15 @@ class DiffTest(unittest.TestCase):
         d.config["max_probes"] = 5
         d.config["probes"].append({"id": 5, "description": "中央"})
         d.ipv4 = "192.168.10.30"
-        lan.move(new, d.mac, -1)
-        std = {k: {i: object() for i in range(1, 5)} for k in ("front", "middle", "rear")}
+        d.config["key"], by_mac(new)["00:01:FC:DE:3A:75"].config["key"] = "row-1", "row-2"  # 前、中排對調位置
+        std = {k: {i: object() for i in range(1, 5)} for k in ("row-1", "row-2", "row-3")}
         p = lan.diff(old, new, std)
         texts = [t for i in p.items for t, _ in i.lines]
         self.assertIn("排名稱：中排 → 中段", texts)
         self.assertIn("新增探頭 ID 5「中央」", texts)
         self.assertIn("IP：192.168.10.12 → 192.168.10.30", texts)
         self.assertIn("順序", [i.tag for i in p.items])
+        self.assertIn("位置：第 2 排 → 第 1 排", texts)
         self.assertEqual(p.no_standard, ["中段 中央"])
         self.assertEqual(len(p.power_cycle), 1)
 

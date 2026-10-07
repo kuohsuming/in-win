@@ -25,7 +25,7 @@ from pathlib import Path
 DEFAULT_PORT = 64000
 BACKUP_KEEP = 20
 
-_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,29}$")
+_KEY_RE = re.compile(r"^row-([1-9]|10)$")  # 位置標籤：第 1～10 排（EDT-05）
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
@@ -83,7 +83,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
 
         key = dev.get("key")
         if "key" in dev and not (isinstance(key, str) and _KEY_RE.match(key)):
-            errors.append((f"{at}.key", "限小寫英文、數字、連字號，1～30 字，不可以連字號開頭"))
+            errors.append((f"{at}.key", "位置須為 row-1～row-10（第 1～10 排）"))
         if "name" in dev:
             _check_str(errors, f"{at}.name", dev["name"], 1, 10)
 

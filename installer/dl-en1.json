@@ -2,7 +2,7 @@
   "version": 1,
   "dl_en1": [
     {
-      "key": "front",
+      "key": "row-1",
       "name": "前排",
       "mac": "00:01:FC:DE:3A:75",
       "ipv4": "192.168.10.11",

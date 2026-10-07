@@ -35,16 +35,16 @@ class ValidateTest(unittest.TestCase):
     def test_spec_example_is_valid(self):
         # 需求規格書 3.7.2 範例：中排只安裝 ID 1 與 ID 4
         spec = {"version": 1, "dl_en1": [
-            device("front", "00:01:FC:12:34:56", "192.168.10.11", port=64000),
-            device("middle", "00:01:FC:12:34:57", "192.168.10.12",
+            device("row-1", "00:01:FC:12:34:56", "192.168.10.11", port=64000),
+            device("row-2", "00:01:FC:12:34:57", "192.168.10.12",
                    probes=[{"id": 1, "description": "左"}, {"id": 4, "description": "右"}]),
         ]}
         self.assertEqual(len(bootp.validate(spec, NET)), 2)
 
     def test_reports_all_errors_with_locations(self):
         bad = {"version": 1, "dl_en1": [
-            device("front", "00:01:FC:00:00:01", "192.168.10.11"),
-            device("rear", "00:01:fc:00:00:01", "192.168.20.5",          # 重複 MAC（不分大小寫）、網段外
+            device("row-1", "00:01:FC:00:00:01", "192.168.10.11"),
+            device("row-3", "00:01:fc:00:00:01", "192.168.20.5",          # 重複 MAC（不分大小寫）、網段外
                    probes=[{"id": 5, "description": "右"}]),             # id 超過 max_probes
         ]}
         with self.assertRaises(bootp.DefinitionError) as cm:
@@ -90,7 +90,7 @@ class HostsTest(unittest.TestCase):
     def test_render_one_line_per_device(self):
         lines = bootp.render_hosts(SAMPLE["dl_en1"]).splitlines()
         self.assertTrue(lines[0].startswith("#"))
-        self.assertEqual(lines[1], "00:01:fc:de:3a:75,192.168.10.11,front")
+        self.assertEqual(lines[1], "00:01:fc:de:3a:75,192.168.10.11,row-1")
 
     def test_backup_keeps_20(self):
         with tempfile.TemporaryDirectory() as tmp:

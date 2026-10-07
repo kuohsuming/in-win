@@ -121,7 +121,6 @@ class _Relay(QObject):
 
 class SettingsDialog(QDialog):
     saved = Signal(object, object)  # (sync.ApplyResult, lan.Preview)
-    order_saved = Signal(object)    # 上移／下移已儲存（DSC-17）：新的定義檔內容
 
     def __init__(self, backend, parent=None, *, pending_serial: str | None = None, before_save=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
@@ -402,8 +401,14 @@ class SettingsDialog(QDialog):
         status_col.addWidget(self.status_help)
         self._form_row("設備", status_col)
 
-        self.key_edit = self._line("小寫英數，例：front", "key")
-        self._form_row("識別碼 key", self.key_edit)
+        # 位置標籤（EDT-05）：第 1～10 排，決定主畫面由上而下的順序；已被其他使用中／維修中設備佔用的排不可選
+        self.row_box = QComboBox()
+        self.row_box.setObjectName("key")
+        self.row_box.addItem("請選擇", "")
+        for k in lan.ROW_KEYS:
+            self.row_box.addItem(lan.row_label(k), k)
+        self.row_box.currentIndexChanged.connect(lambda _i: self._on_field_edited())
+        self._form_row("位置", self.row_box)
         self.name_edit = self._line("例：前排", "name")
         self._form_row("排名稱 name", self.name_edit)
         ip_col = QVBoxLayout()
@@ -648,7 +653,10 @@ class SettingsDialog(QDialog):
                         ip = f"{d.ipv4}（IP 不在設備網段）"
                 except ValueError:
                     pass
-            cells = ["✘" if d.mac in bad else "", "", d.name or "—", d.mac, ip,
+            name = d.name or "—"
+            if d.status in lan.DL_STATUSES and lan.row_no((d.config or {}).get("key")):
+                name = f"{lan.row_label(d.config['key'])}・{name}"
+            cells = ["✘" if d.mac in bad else "", "", name, d.mac, ip,
                      fmt_time(d.last_seen), str(d.seen_count)]
             for c, text in enumerate(cells):
                 item = QTableWidgetItem(text)
@@ -711,7 +719,7 @@ class SettingsDialog(QDialog):
         cfg = d.config or {}
         for row, visible in ((1, dl), (2, dl), (3, dl or d.status == OTHER), (4, dl), (5, dl)):
             self.form.setRowVisible(row, visible)
-        self.key_edit.setText(cfg.get("key") or "")
+        self._fill_rows(d)
         self.name_edit.setText(cfg.get("name") or "")
         self.ip_edit.setText(d.ipv4 or "" if (dl or d.status == OTHER) else "")
         self.port_edit.setText("" if cfg.get("port") is None else str(cfg.get("port")))
@@ -723,8 +731,9 @@ class SettingsDialog(QDialog):
             self._append_probe_row(p.get("id"), p.get("description", ""))
         self.replace_row.setVisible(d.status == LIVE and self.original.get(d.mac) is not None
                                     and self.original[d.mac].status == LIVE)
-        for w in (self.key_edit, self.name_edit, self.ip_edit, self.port_edit):
+        for w in (self.name_edit, self.ip_edit, self.port_edit):
             w.setReadOnly(self.read_only)
+        self.row_box.setEnabled(not self.read_only)
         self.max_spin.setEnabled(not self.read_only)
         self.probe_table.setEnabled(not self.read_only)
 
@@ -736,9 +745,9 @@ class SettingsDialog(QDialog):
         elif d.status == RETIRED:
             if cfg:
                 self.note_box.setText(
-                    f"最後的設定：識別碼 {cfg.get('key') or '—'}、排名稱 {cfg.get('name') or '—'}、"
+                    f"最後的設定：位置 {lan.row_label(cfg.get('key')) if cfg.get('key') else '—'}、排名稱 {cfg.get('name') or '—'}、"
                     f"IP {d.ipv4 or '—'}、探頭 {len(cfg.get('probes') or [])} 個。\n"
-                    "已停用的設備不佔用 key、名稱與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，"
+                    "已停用的設備不佔用位置、名稱與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，"
                     "並重新檢查是否與現有設備重複。")
             else:
                 self.note_box.setText("沒有保留的設定。改回「DL-EN1 使用中」或「維修中」後再填寫設定。")
@@ -746,6 +755,21 @@ class SettingsDialog(QDialog):
         self._filling = False
         self._render_field_errors()
         self._render_ip_note()
+
+    def _fill_rows(self, d):
+        """位置選單：目前的排選取；其他使用中／維修中設備佔用的排標示佔用者並停用（每排一台）。"""
+        used = {(x.config or {}).get("key"): x for x in self._devices()
+                if x.status in lan.DL_STATUSES and x.mac != d.mac}
+        model = self.row_box.model()
+        for i, k in enumerate(lan.ROW_KEYS, start=1):
+            other = used.get(k)
+            name = (other.config or {}).get("name") or other.mac if other else ""
+            self.row_box.setItemText(i, f"{lan.row_label(k)}（已由 {name} 使用）" if other else lan.row_label(k))
+            model.item(i).setEnabled(other is None)
+            model.item(i).setForeground(self._qcolor(C["ink-2"] if other else C["ink"]))
+        key = (d.config or {}).get("key") or ""
+        idx = self.row_box.findData(key)
+        self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
     def _append_probe_row(self, pid, desc):
         r = self.probe_table.rowCount()
@@ -757,7 +781,7 @@ class SettingsDialog(QDialog):
 
     def _render_field_errors(self):
         mine = {i.field for i in self.issues if i.mac == self.selected}
-        for fld, w in (("key", self.key_edit), ("name", self.name_edit), ("port", self.port_edit),
+        for fld, w in (("key", self.row_box), ("name", self.name_edit), ("port", self.port_edit),
                        ("max_probes", self.max_spin)):
             _set_prop(w, "error", fld in mine)
         ip_bad = "ipv4" in mine
@@ -922,7 +946,7 @@ class SettingsDialog(QDialog):
         d = self.work[self.selected]
         if d.is_dl_en1:
             cfg = d.config = dict(d.config or {})
-            cfg["key"] = self.key_edit.text().strip()
+            cfg["key"] = self.row_box.currentData() or ""
             cfg["name"] = self.name_edit.text().strip()
             port = self.port_edit.text().strip()
             if port:
@@ -999,7 +1023,7 @@ class SettingsDialog(QDialog):
         self._update_buttons()
 
     def _move(self, step):
-        """上移／下移：按下即寫入資料庫並更新定義檔，主畫面同步調整順序（DSC-17）。
+        """上移／下移：按下即寫入資料庫（DSC-17）；只影響設定頁清單，主畫面順序依位置標籤（EDT-05）。
 
         任何設備皆可移動，與清單上看得到的相鄰設備交換位置。只寫入順序（`sort_order`），
         其他尚未儲存的編輯（包括設備類型）保留在畫面上，待「儲存」時寫入。
@@ -1014,7 +1038,7 @@ class SettingsDialog(QDialog):
         if not lan.move(new, self.selected, step, visible=set(shown)):
             return
         try:
-            result = self.backend.apply(old, new, summary="調整 DL-EN1 順序")
+            self.backend.apply(old, new, summary="調整設備清單順序")
         except Exception as exc:
             log.error("調整順序失敗：%s", exc)
             self._warn(f"無法儲存順序，順序未變更。\n\n原因：{exc}")
@@ -1024,10 +1048,8 @@ class SettingsDialog(QDialog):
             if d.mac in self.work:
                 self.work[d.mac].sort_order = d.sort_order
         moved = self.work[self.selected]
-        log.info("調整順序並儲存：%s %s；主畫面：%s", moved.label(), "上移" if step < 0 else "下移",
-                 "、".join(x["name"] for x in result.layout["dl_en1"]))
+        log.info("調整清單順序並儲存：%s %s", moved.label(), "上移" if step < 0 else "下移")
         self.toast.show_text(f"已儲存順序：{moved.label()} {'上移' if step < 0 else '下移'}")
-        self.order_saved.emit(result.layout)
         self._after_change()
 
     @staticmethod

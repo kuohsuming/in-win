@@ -15,7 +15,7 @@
     dl_en1 = [11, 99]
     other = [100, 199]
 
-    [standards.front]                 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id
+    [standards.row-1]                 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id
     1 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
 """
 

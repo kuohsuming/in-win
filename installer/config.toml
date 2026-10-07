@@ -18,19 +18,19 @@ other = [100, 199]
 
 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id，單位 mm
 # ⚠ 以下為假設值（TBD-01，待品保提供正式標準值與上下限）；未設定的探頭量測時顯示「未設定允收標準」
-[standards.front]
+[standards.row-1]
 1 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
 2 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
 3 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
 4 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
 
-[standards.middle]
+[standards.row-2]
 1 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
 2 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
 3 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
 4 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
 
-[standards.rear]
+[standards.row-3]
 1 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
 2 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
 3 = { nominal = 12.520, lower = 12.470, upper = 12.570 }

@@ -106,15 +106,21 @@ class SettingsDialogTest(UiBase):
         d.select("00:01:FC:12:39:A0")
         d.status_box.setCurrentIndex(1)  # DL-EN1 使用中
         self.assertEqual(d.ip_edit.text(), "192.168.10.14")  # DSC-08 預設 IP
-        # 有變更儲存鍵就可按（EDT-03）；key、名稱未填 → 按下列出錯誤，不進入確認頁、不寫入
+        # 位置預設最小的空位（EDT-05）：第 1～3 排已佔用；已停用的舊機（第 4 排）不佔用
+        self.assertEqual(d.row_box.currentData(), "row-4")
+        model = d.row_box.model()
+        self.assertFalse(model.item(d.row_box.findData("row-1")).isEnabled())  # 每排一台
+        self.assertIn("前排", d.row_box.itemText(d.row_box.findData("row-1")))
+        self.assertTrue(model.item(d.row_box.findData("row-5")).isEnabled())
+        # 有變更儲存鍵就可按（EDT-04）；排名稱未填 → 按下列出錯誤，不進入確認頁、不寫入
         self.assertTrue(d.btn_save.isEnabled())
-        self.assertIn("有 2 項錯誤，儲存前須修正", d.save_hint.text())
-        self.assertIn("識別碼 key", d.save_hint.toolTip())
+        self.assertIn("有 1 項錯誤，儲存前須修正", d.save_hint.text())
+        self.assertIn("排名稱", d.save_hint.toolTip())
         d.btn_save.click()
         self.assertEqual(d.pages.currentIndex(), 1)
-        self.assertIn("設定有 2 項錯誤，請修正後再儲存", self.warnings[-1])
+        self.assertIn("設定有 1 項錯誤，請修正後再儲存", self.warnings[-1])
         self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].status, "unclassified")
-        self.type(d.key_edit, "extra")
+        d.row_box.setCurrentIndex(d.row_box.findData("row-5"))
         self.type(d.name_edit, "加排")
         pump(self.app, 0.2)
         self.assertEqual(d.save_hint.text(), "")
@@ -122,10 +128,10 @@ class SettingsDialogTest(UiBase):
         self.save()
         self.assertEqual(len(self.saved), 1)
         result, preview = self.saved[0]
-        self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["front", "middle", "rear", "extra"])
-        self.assertIn("extra", Path(self.tmp.name, "dl-en1.hosts").read_text())
+        self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["row-1", "row-2", "row-3", "row-5"])
+        self.assertIn("row-5", Path(self.tmp.name, "dl-en1.hosts").read_text())
         self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].config["name"], "加排")
-        self.assertIn("加排 左", preview.no_standard)  # extra 沒有允收標準
+        self.assertIn("加排 左", preview.no_standard)  # 第 5 排沒有允收標準
 
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg
@@ -228,17 +234,15 @@ class SettingsDialogTest(UiBase):
         from flatness.ui.main_window import MainWindow
         from flatness.ui.settings_dialog import SettingsDialog
         d = self.dlg
-        orders = []
-        d.order_saved.connect(lambda defn: orders.append([x["key"] for x in defn["dl_en1"]]))
         hosts_before = Path(self.tmp.name, "dl-en1.hosts").read_text()
         d.select("00:01:FC:DE:3A:77")              # 後排
         d.btn_up.click()
         d.btn_up.click()                           # 後排 → 最上，每按一次即儲存
         live = ["00:01:FC:DE:3A:77", "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76"]
         self.assertEqual(self.list_macs(d)[1:4], live)
-        self.assertEqual(orders, [["front", "rear", "middle"], ["rear", "front", "middle"]])
+        self.assertEqual([x.mac for x in lan.list_order(self.store.load())][1:4], live)  # 已寫入資料庫
         self.assertEqual([x["key"] for x in lan.definition_from(self.store.load())["dl_en1"]],
-                         ["rear", "front", "middle"])  # 已寫入資料庫
+                         ["row-1", "row-2", "row-3"])  # 主畫面依排號，不受清單順序影響（EDT-05）
         self.assertEqual(Path(self.tmp.name, "dl-en1.hosts").read_text(), hosts_before)  # 不需重啟 dnsmasq
         self.assertFalse(d.is_dirty())             # 不需按「儲存」
         d.reject()
@@ -248,9 +252,9 @@ class SettingsDialogTest(UiBase):
         be2 = Backend(self.be.cfg, self.store, sync.Files(base / "dl-en1.json", base / "dl-en1.hosts"), None,
                       equip_net=NET, probe=lambda *a: None)
         be2.start()
-        self.assertEqual([x["key"] for x in be2.definition["dl_en1"]], ["rear", "front", "middle"])
+        self.assertEqual([x["key"] for x in be2.definition["dl_en1"]], ["row-1", "row-2", "row-3"])
         win = MainWindow(be2, lambda defn: None)
-        self.assertEqual([r.dev["name"] for r in win.rows], ["後排", "前排", "中排"])  # 主畫面
+        self.assertEqual([r.dev["name"] for r in win.rows], ["前排", "中排", "後排"])  # 主畫面依排號
         d2 = SettingsDialog(be2)
         d2.enter_edit()
         self.assertEqual(self.list_macs(d2)[1:4], live)  # 設定頁
@@ -265,8 +269,9 @@ class SettingsDialogTest(UiBase):
         d.select("00:01:FC:DE:3A:77")
         d.btn_up.click()
         saved = {x["key"]: x for x in lan.definition_from(self.store.load())["dl_en1"]}
-        self.assertEqual(saved["middle"]["name"], "中排")    # 名稱未寫入
-        self.assertEqual(list(saved), ["front", "rear", "middle"])  # 順序已寫入
+        self.assertEqual(saved["row-2"]["name"], "中排")    # 名稱未寫入
+        self.assertEqual([x.mac for x in lan.list_order(self.store.load())][1:4],
+                         ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:77", "00:01:FC:DE:3A:76"])  # 順序已寫入
         self.assertTrue(d.is_dirty())
         self.assertEqual(d.work["00:01:FC:DE:3A:76"].config["name"], "中段")
 
@@ -281,7 +286,7 @@ class SettingsDialogTest(UiBase):
         self.assertIn("無法儲存順序", self.warnings[-1])
         self.assertEqual(self.list_macs(d)[1:4], ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"])
 
-    def test_move_maint_row(self):  # DSC-17：維修中也在主畫面上，可調整順序
+    def test_move_maint_row(self):  # DSC-17：維修中也可調整清單順序；主畫面仍依排號（EDT-05）
         from flatness import lan
         old = self.store.load()
         new = [x.copy() for x in old]
@@ -293,7 +298,7 @@ class SettingsDialogTest(UiBase):
         self.dlg.btn_up.click()
         layout = lan.screen_layout(self.store.load())["dl_en1"]
         self.assertEqual([(x["key"], x.get("maint", False)) for x in layout],
-                         [("front", False), ("rear", True), ("middle", False)])
+                         [("row-1", False), ("row-2", False), ("row-3", True)])
 
     def test_move_buttons_any_device(self):  # DSC-17：到頂停用上移、到底停用下移，其餘兩鍵可用
         d = self.dlg
@@ -346,11 +351,11 @@ class SettingsDialogTest(UiBase):
         d.status_box.setCurrentIndex(2)  # 維修中
         self.save()
         result, preview = self.saved[0]
-        self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["front", "rear"])
+        self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["row-1", "row-3"])
         self.assertIn("00:01:fc:de:3a:76", Path(self.tmp.name, "dl-en1.hosts").read_text())
         self.assertEqual((len(preview.paused_points), preview.removed_points), (4, []))
         self.assertEqual([(x["key"], x.get("maint", False)) for x in result.layout["dl_en1"]],
-                         [("front", False), ("middle", True), ("rear", False)])  # 主畫面保留中排
+                         [("row-1", False), ("row-2", True), ("row-3", False)])  # 主畫面保留中排
 
     def test_apply_failure_keeps_dialog_and_restores(self):  # UPL-08
         d = self.dlg
@@ -431,7 +436,7 @@ class MainWindowTest(UiBase):
         self.fail(f"橫幅狀態 {self.win.banner.state}，預期 {states}")
 
     def test_layout_from_definition(self):  # DEF-04
-        self.assertEqual([r.dev["key"] for r in self.win.rows], ["front", "middle", "rear"])
+        self.assertEqual([r.dev["key"] for r in self.win.rows], ["row-1", "row-2", "row-3"])
         self.assertEqual(sum(len(r.tiles) for r in self.win.rows), 12)
 
     def test_detect_then_measure_pass_and_next_writes(self):  # DEV-01、MEA-01～MEA-06
@@ -484,15 +489,15 @@ class MainWindowTest(UiBase):
         from flatness import measure
         w = self.win
         st = self.stations[-1]
-        st.detect = lambda: [measure.DeviceStatus("front"), measure.DeviceStatus("middle", reachable=False),
-                             measure.DeviceStatus("rear")]
+        st.detect = lambda: [measure.DeviceStatus("row-1"), measure.DeviceStatus("row-2", reachable=False),
+                             measure.DeviceStatus("row-3")]
         w.detect()
         self.wait_state("error")
         self.assertIn("中排 DL-EN1 偵測不到", w.banner.say.text())
         self.assertIn("偵測不到", w.rows[1].unit_text.text())
 
     def test_missing_standard_is_device_error(self):  # DEF-09
-        self.be.cfg.standards.pop("rear")
+        self.be.cfg.standards.pop("row-3")
         self.win.rebuild(self.be.definition)
         self.win.detect()
         self.wait_state("error")
@@ -509,9 +514,9 @@ class MainWindowTest(UiBase):
         result = self.be.apply(old, new)
         w._on_settings_saved(result, lan.diff(old, new))
         self.assertEqual([(r.dev["key"], r.maint) for r in w.rows],
-                         [("front", False), ("middle", True), ("rear", False)])
-        self.assertEqual([r.dev["key"] for r in w.live_rows], ["front", "rear"])
-        self.assertEqual([d["key"] for d in self.stations[-1].definition["dl_en1"]], ["front", "rear"])
+                         [("row-1", False), ("row-2", True), ("row-3", False)])
+        self.assertEqual([r.dev["key"] for r in w.live_rows], ["row-1", "row-3"])
+        self.assertEqual([d["key"] for d in self.stations[-1].definition["dl_en1"]], ["row-1", "row-3"])
         self.wait_state("idle")
         self.assertEqual(w.detect_count, 2)
 
@@ -531,26 +536,8 @@ class MainWindowTest(UiBase):
         self.stations[-1].force = "pass"
         w.next_piece()
         self.wait_state("pass")
-        self.assertEqual({p.key for p in w.result.points}, {"front", "rear"})
+        self.assertEqual({p.key for p in w.result.points}, {"row-1", "row-3"})
         self.assertIn("8 個量測點都在標準範圍內", w.banner.say.text())
-
-    def test_reorder_keeps_result(self):  # DSC-17：主畫面同步順序，結果保留
-        w = self.win
-        w.detect()
-        self.wait_state("idle")
-        self.stations[-1].force = "pass"
-        w.next_piece()
-        self.wait_state("pass")
-        values = {r.dev["key"]: [t.m.text() for t in r.tiles.values()] for r in w.rows}
-        defn = dict(self.be.definition)
-        defn["dl_en1"] = [defn["dl_en1"][2], defn["dl_en1"][0], defn["dl_en1"][1]]
-        w.reorder(defn)
-        pump(self.app)
-        lay = w.rows_area.widget().layout()
-        self.assertEqual([lay.itemAt(i).widget().dev["key"] for i in range(3)], ["rear", "front", "middle"])
-        self.assertEqual(w.rows[0].unit_text.text(), "DL-EN1 #1")
-        self.assertEqual(w.banner.state, "pass")
-        self.assertEqual({r.dev["key"]: [t.m.text() for t in r.tiles.values()] for r in w.rows}, values)
 
     def test_flags(self):  # 5.1 系統狀態提示
         w = self.win
