@@ -123,6 +123,15 @@ def main(argv=None) -> int:
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, on_signal)
+
+    def on_snapshot(_signum, _frame):
+        """維護用：kill -USR1 <pid> 將目前畫面存到日誌目錄（Wayland 下外部程式無法擷取 App 畫面）。"""
+        from datetime import datetime
+        path = args.log_file.parent / f"screen-{datetime.now():%Y%m%d-%H%M%S}.png"
+        ok = win.grab().save(str(path))
+        log.info("畫面擷取%s：%s（%dx%d）", "完成" if ok else "失敗", path, win.width(), win.height())
+
+    signal.signal(signal.SIGUSR1, on_snapshot)
     pulse = QTimer(interval=300)
     pulse.timeout.connect(lambda: None)
     pulse.start()

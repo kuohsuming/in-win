@@ -529,6 +529,31 @@ class ScreenFitTest(UiBase):
                         self.assertGreaterEqual(t.height(), t.sizeHint().height(), (n, state, win.scale_k))
                         self.assertGreaterEqual(t.m.height(), t.m.sizeHint().height(), (n, state, win.scale_k))
 
+    def test_banner_words_not_clipped(self):  # UI-11：橫幅大字與副標在固定高度內完整、不重疊
+        from flatness.ui.main_window import Banner
+        b = Banner(lambda: None, lambda: None)
+        self.addCleanup(b.deleteLater)
+        b.resize(1888, 190)
+        b.show()
+        cases = [dict(word="不合格", sub="FAIL", icon="fail"), dict(word="合格", sub="PASS", icon="pass"),
+                 dict(word="設備異常", sub="ERROR", icon="err"), dict(word="待放置"),
+                 dict(word="偵測設備中", word_px=84, icon="detect"), dict(word="3", countdown=True)]
+        from flatness.ui.main_window import MainWindow
+        k_min = 0.4 + 0.6 * MainWindow.SCALE_MIN  # 橫幅最小比例（_apply_scale）
+        for k in (1.0, 0.85, k_min):
+            b.set_scale(k)
+            for c in cases:
+                b.set("fail", **c)
+                pump(self.app, 0.02)
+                inner = b.contentsRect().adjusted(0, b._lay.contentsMargins().top(), 0,
+                                                  -b._lay.contentsMargins().bottom())
+                w, sub = b.word.geometry(), b.sub.geometry()
+                self.assertGreaterEqual(b.word.height(), b.word.sizeHint().height(), (k, c))
+                self.assertTrue(inner.contains(w), (k, c, w, inner))
+                if b.sub.isVisible():
+                    self.assertLessEqual(w.bottom(), sub.top(), (k, c))          # 不重疊
+                    self.assertTrue(inner.contains(sub), (k, c, sub, inner))
+
     def test_four_rows_fit_1080p(self):
         win = self.window(4)
         self.assertLess(win.scale_k, 1.0)                                # 已縮小

@@ -12,8 +12,8 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPolygonF
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPolygonF
 from PySide6.QtWidgets import (
     QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
@@ -445,6 +445,68 @@ class DeviceRow(QFrame):
             self.unit_text.setStyleSheet(f"color:{C['ink-2']};background:transparent;")
 
 
+class TightText(QWidget):
+    """依字形實際上下範圍排版的單行大字（橫幅的「不合格」「FAIL」）。
+
+    中文字型的行高約為字級的 1.45 倍，上下留白很多；橫幅高度固定（UI-11），以行高排版時大字與副標
+    放不下而被裁切。這裡高度只取字形本身的範圍，文字垂直置中繪製。
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._text, self._color, self._spacing = "", QColor(C["ink"]), 0.0
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str):
+        self._text = text
+        self._relayout()
+
+    def set_style(self, color: str, spacing_em: float = 0.0):
+        self._color, self._spacing = QColor(color), spacing_em
+        self._relayout()
+
+    def setFont(self, font):
+        super().setFont(font)
+        self._relayout()
+
+    def _font(self):
+        f = QFont(self.font())
+        f.setLetterSpacing(QFont.AbsoluteSpacing, self._spacing * f.pixelSize())
+        return f
+
+    def _box(self):
+        fm = QFontMetrics(self._font())
+        r = fm.tightBoundingRect(self._text or " ")
+        return fm, r
+
+    def _relayout(self):
+        fm, r = self._box()
+        self.setFixedHeight(r.height() + 4 if self._text else 0)
+        self.updateGeometry()
+        self.update()
+
+    def sizeHint(self):
+        fm, r = self._box()
+        return QSize(fm.horizontalAdvance(self._text) + 4, r.height() + 4 if self._text else 0)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def paintEvent(self, _e):
+        if not self._text:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.TextAntialiasing)
+        p.setFont(self._font())
+        p.setPen(self._color)
+        _, r = self._box()
+        p.drawText(2 - min(0, r.left()), (self.height() - r.height()) // 2 - r.top(), self._text)
+        p.end()
+
+
 class Banner(QFrame):
     """結果橫幅（5.3）。"""
 
@@ -459,8 +521,8 @@ class Banner(QFrame):
         words = QVBoxLayout()
         words.setSpacing(6)
         words.addStretch()
-        self.word = QLabel()
-        self.sub = QLabel()
+        self.word = TightText()
+        self.sub = TightText()
         words.addWidget(self.word)
         words.addWidget(self.sub)
         words.addStretch()
@@ -492,7 +554,8 @@ class Banner(QFrame):
         """橫幅依縮放比例調整字級、圖示與按鍵（UI-11）；目前狀態以同樣參數重畫。"""
         self.k = k
         px = self._px
-        self._lay.setContentsMargins(px(32), px(22), px(32), px(22))
+        # 上下內距 14：大字（112px 字形約 111px）＋ 副標「FAIL」需約 151px，固定高度 190 內放得下
+        self._lay.setContentsMargins(px(32), px(14), px(32), px(14))
         self._lay.setSpacing(px(36))
         self._left.setSpacing(px(20))
         self.icon.setFixedSize(px(110), px(110))
@@ -528,10 +591,10 @@ class Banner(QFrame):
             self.icon.hide()
         self.word.setFont(num_font(px(112), 700) if countdown else text_font(px(word_px), 900))
         self.word.setText(word)
-        self.word.setStyleSheet(f"color:{C['ink'] if countdown else color}; letter-spacing: 0.05em;")
+        self.word.set_style(C["ink"] if countdown else color, 0.05)
         self.sub.setText(sub)
         self.sub.setVisible(bool(sub))
-        self.sub.setStyleSheet(f"color:{color}; letter-spacing: 0.12em;")
+        self.sub.set_style(color, 0.12)
         self.say.setText(say)
         self.btn_reread.setEnabled(reread)
         self.btn_next.setEnabled(next_)
