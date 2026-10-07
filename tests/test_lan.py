@@ -94,9 +94,15 @@ class ValidateTest(unittest.TestCase):
         other.ipv4 = "192.168.10.12"
         self.assertIn(("3C:52:82:11:22:33", "ipv4"), {(m, f) for m, f, _ in self.issues(devs)})
 
-    def test_live_count(self):
+    def test_live_count(self):  # 0～8 台（0 台允許：刪除最後一台，DSC-18）
         devs = [d for d in sample_devices() if d.status != LIVE]
-        self.assertIn((None, "status"), {(m, f) for m, f, _ in self.issues(devs)})
+        self.assertNotIn((None, "status"), {(m, f) for m, f, _ in self.issues(devs)})
+        devs = sample_devices()
+        for i in range(6):
+            devs.append(LanDevice(mac=f"00:01:FC:00:00:{i:02X}", status=LIVE, ipv4=f"192.168.10.{40 + i}",
+                                  config={"key": f"row-{4 + i}", "name": f"加{i}", "max_probes": 1,
+                                          "probes": [{"id": 1, "description": "左"}]}))
+        self.assertIn((None, "status"), {(m, f) for m, f, _ in self.issues(devs)})  # 9 台
 
     def test_field_rules(self):
         devs = sample_devices()

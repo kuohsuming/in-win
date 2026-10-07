@@ -22,6 +22,12 @@ class DefinitionTest(unittest.TestCase):
         errors = definition.validate(self.sample, NET)
         self.assertIn("dl_en1[0].probes[0].id", [w for w, _ in errors])
 
+    def test_zero_devices_valid_nine_invalid(self):  # DEF-01：0～8 台（DSC-18 可刪除最後一台）
+        self.assertEqual(definition.validate({"version": 1, "dl_en1": []}, NET), [])
+        dev = self.sample["dl_en1"][0]
+        nine = {"version": 1, "dl_en1": [dict(dev) for _ in range(9)]}
+        self.assertTrue(definition.validate(nine, NET))
+
     def test_load_missing_file_is_empty(self):
         self.assertEqual(definition.load_definition(Path("/nonexistent/dl-en1.json")), {"version": 1, "dl_en1": []})
 

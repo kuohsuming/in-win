@@ -292,8 +292,8 @@ def validate(devices, equip_net: ipaddress.IPv4Interface) -> list[Issue]:
     issues: list[Issue] = []
 
     live = [d for d in devices if d.status == LIVE]
-    if not 1 <= len(live) <= MAX_LIVE:
-        issues.append(Issue(None, "status", f"DL-EN1 使用中須為 1～{MAX_LIVE} 台（目前 {len(live)} 台）"))
+    if len(live) > MAX_LIVE:  # 0 台允許（例如刪除最後一台，DSC-18）：主畫面顯示尚未設定、無法量測
+        issues.append(Issue(None, "status", f"DL-EN1 使用中最多 {MAX_LIVE} 台（目前 {len(live)} 台）"))
 
     groups: dict[tuple[str, str], list[LanDevice]] = {}
     for d in list_order(devices):

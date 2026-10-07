@@ -335,7 +335,7 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(d.work["00:01:FC:DE:3A:77"].config["name"], "後段")
         self.assertTrue(d.is_dirty())
 
-    def test_delete_last_live_blocked(self):  # DSC-18：至少須 1 台使用中
+    def test_delete_last_live_allowed_with_warning(self):  # DSC-18：任何設備皆可刪除，含最後一台使用中
         from flatness import lan
         old = self.store.load()
         new = [x.copy() for x in old]
@@ -343,11 +343,15 @@ class SettingsDialogTest(UiBase):
             lan.set_status(new, mac, lan.RETIRED, NET)
         self.be.apply(old, new)
         self.dlg.load()
-        self.dlg._confirm_delete = lambda text: self.fail("不應詢問")
+        texts = []
+        self.dlg._confirm_delete = lambda text: texts.append(text) or True
         self.dlg.select("00:01:FC:DE:3A:75")
         self.dlg.btn_delete.click()
-        self.assertIn("唯一一台", self.warnings[-1])
-        self.assertIn("00:01:FC:DE:3A:75", by_mac(self.store.load()))
+        self.assertIn("最後一台", texts[-1])
+        self.assertNotIn("00:01:FC:DE:3A:75", by_mac(self.store.load()))
+        (result, _p), = self.saved
+        self.assertEqual(result.definition["dl_en1"], [])      # 定義檔 0 台
+        self.assertEqual(Path(self.tmp.name, "dl-en1.hosts").read_text().count("00:01:fc:de:3a:75"), 0)
 
     def test_move_buttons_any_device(self):  # DSC-17：到頂停用上移、到底停用下移，其餘兩鍵可用
         d = self.dlg

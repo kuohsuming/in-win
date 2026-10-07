@@ -8,7 +8,7 @@
     "version": { "const": 1 },
     "dl_en1": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "maxItems": 8,
       "items": { "$ref": "#/$defs/device" }
     }

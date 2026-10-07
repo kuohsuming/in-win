@@ -71,8 +71,9 @@ class ValidateTest(unittest.TestCase):
             bootp.validate({"version": 1, "dl_en1": [d]}, NET)
         self.assertEqual(where(cm.exception), {"dl_en1[0].key", "dl_en1[0].mac", "dl_en1[0].color"})
 
-    def test_rejects_device_count_out_of_range(self):
-        for n in (0, 9):
+    def test_rejects_device_count_out_of_range(self):  # 0～8 台（0 台允許，DSC-18）
+        bootp.validate({"version": 1, "dl_en1": []}, NET)
+        for n in (9,):
             devs = [device(f"d{i}", f"00:01:FC:00:00:{i:02X}", f"192.168.10.{i + 10}") for i in range(n)]
             with self.subTest(n=n), self.assertRaises(bootp.DefinitionError):
                 bootp.validate({"version": 1, "dl_en1": devs}, NET)

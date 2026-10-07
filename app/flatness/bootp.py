@@ -63,8 +63,8 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
         errors.append(("version", "必須為 1"))
 
     devices = definition.get("dl_en1")
-    if not isinstance(devices, list) or not 1 <= len(devices) <= 8:
-        errors.append(("dl_en1", "必須是 1～8 台 DL-EN1 的陣列"))
+    if not isinstance(devices, list) or len(devices) > 8:
+        errors.append(("dl_en1", "必須是 0～8 台 DL-EN1 的陣列"))
         raise DefinitionError(errors)
 
     seen: dict[str, dict] = {"key": {}, "name": {}, "mac": {}, "ipv4": {}}

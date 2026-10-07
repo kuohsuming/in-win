@@ -1041,16 +1041,15 @@ class SettingsDialog(QDialog):
             del self.work[d.mac]
             self._after_delete(d.mac, f"已移除 {d.label()}（尚未儲存的匯入設備）")
             return
-        if o.status == LIVE and sum(x.status == LIVE for x in self.original.values()) == 1:
-            self._warn(f"{o.label()} 是唯一一台「DL-EN1 使用中」，刪除後沒有可量測的設備（至少須 1 台，DEF-01）。\n"
-                       "請先將另一台設備設為使用中並儲存，再刪除這台。")
-            return
         what = [f"將從設備清單與資料庫刪除 {o.label()}（{o.mac}，{lan.STATUS_NAME[o.status]}）。"]
         if o.status in lan.DL_STATUSES:
             what.append(f"主畫面將移除「{o.name or '—'}」這一排（{lan.row_label((o.config or {}).get('key'))}），"
                         "其設定（位置、排名稱、探頭）一併刪除。")
         if o.assigns_ip:
             what.append(f"不再配發 IP {o.ipv4}，BOOTP 對應會更新。")
+        if o.status == LIVE and sum(x.status == LIVE for x in self.original.values()) == 1:
+            what.append("⚠ 這是最後一台「DL-EN1 使用中」：刪除後主畫面沒有可量測的設備，無法量測，"
+                        "直到再將設備設為使用中並儲存。")
         if d.mac in self.original and self.is_dirty() and d.settings() != o.settings():
             what.append("這台設備尚未儲存的修改也會一併捨棄。")
         what.append("刪除後無法還原；之後若該設備再送出請求，會以「不明設備」重新出現。\n\n確定要刪除嗎？")
