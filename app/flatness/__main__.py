@@ -86,6 +86,9 @@ def main(argv=None) -> int:
 
     app = QApplication(sys.argv[:1])
     app.setApplicationName("flatness")
+    app.setDesktopFileName("flatness")  # Wayland：工作列與 Dock 對應到 flatness.desktop 的 icon
+    from PySide6.QtGui import QIcon
+    app.setWindowIcon(QIcon(str(Path(__file__).resolve().parent / "ui" / "assets" / "app-icon.png")))
     family = theme.load_fonts()
     app.setFont(theme.text_font(15))
     app.setStyleSheet(theme.qss())
