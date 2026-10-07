@@ -70,6 +70,17 @@ class SettingsDialogTest(UiBase):
     def tearDown(self):
         self.dlg.deleteLater()
 
+    def test_list_and_detail_panels_equal_width(self):  # 5.10：兩欄均分寬度
+        from PySide6.QtWidgets import QFrame
+        self.dlg.resize(1920, 1080)
+        self.dlg.show()
+        pump(self.app, 0.1)
+        self.dlg.select(sample_devices()[0].mac)
+        pump(self.app, 0.1)
+        widths = [f.width() for f in self.dlg.findChildren(QFrame, "panel2") if f.isVisible()][:2]
+        self.assertEqual(len(widths), 2)
+        self.assertLessEqual(abs(widths[0] - widths[1]), 1, widths)
+
     def type(self, widget, text):
         widget.setText(text)
         widget.textEdited.emit(text)

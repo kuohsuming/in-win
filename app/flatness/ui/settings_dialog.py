@@ -20,7 +20,7 @@ from PySide6.QtGui import QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QAbstractSpinBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
+    QAbstractSpinBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
     QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -287,8 +287,12 @@ class SettingsDialog(QDialog):
 
         cols = QHBoxLayout()
         cols.setSpacing(16)
-        cols.addWidget(self._list_panel(), 155)
-        cols.addWidget(self._detail_panel(), 100)
+        for panel in (self._list_panel(), self._detail_panel()):  # 兩欄均分寬度，不隨內容改變
+            sp = panel.sizePolicy()
+            sp.setHorizontalPolicy(QSizePolicy.Ignored)
+            sp.setHorizontalStretch(1)
+            panel.setSizePolicy(sp)
+            cols.addWidget(panel, 1)
         b.addLayout(cols, 1)
 
         msg_title = QHBoxLayout()
