@@ -38,6 +38,8 @@ def parse_args(argv=None):
     p.add_argument("--equip-net", type=ipaddress.IPv4Interface,
                    help="指定設備網段（預設取設備網卡目前位址，沒有時用 config.toml 的 pc_ip／net_prefix）")
     p.add_argument("--log-file", type=Path, default=Path("/var/log/flatness/flatness.log"))
+    p.add_argument("--buffer", type=Path, default=Path("/var/lib/flatness/buffer"),
+                   help="資料庫斷線時的本機暫存（DAT-04）")
     p.add_argument("--fullscreen", action="store_true", help="全螢幕（預設，保留此參數相容舊的啟動方式）")
     p.add_argument("--windowed", action="store_true", help="以一般視窗執行（開發用；預設全螢幕，UI-10）")
     p.add_argument("--on-top", action="store_true", help="視窗保持在最上層（Wayland 下需搭配 QT_QPA_PLATFORM=xcb）")
@@ -78,6 +80,7 @@ def main(argv=None) -> int:
     from .backend import Backend
     from .dlen1 import DlEn1Station
     from .measure import DemoStation
+    from .results import ResultSink
     from .ui import theme
     from .ui.main_window import MainWindow
 
@@ -89,20 +92,23 @@ def main(argv=None) -> int:
     log.info("文字字型：%s", family)
 
     cmd = None if args.no_dnsmasq else shlex.split(args.dnsmasq_cmd)
+    store = make_store(args.db_env)
     arp_cmd = None if args.no_arp else shlex.split(args.arp_cmd)
-    backend = Backend(cfg, make_store(args.db_env), sync.Files(args.def_file, args.hosts), cmd,
+    backend = Backend(cfg, store, sync.Files(args.def_file, args.hosts), cmd,
                       simulate=args.simulate, equip_net=args.equip_net, arp_cmd=arp_cmd)
     result = backend.start()
     if result.problem:
         log.warning("啟動：%s", result.problem)
 
     if args.demo:
-        log.warning("量測來源：示範模式（不連線 DL-EN1，數值為隨機產生）")
+        log.warning("量測來源：示範模式（不連線 DL-EN1，數值為隨機產生；結果不寫入資料庫）")
         factory = lambda definition: DemoStation(definition, cfg.standards)  # noqa: E731
+        sink = None
     else:
-        log.info("量測來源：DL-EN1 實機")
+        log.info("量測來源：DL-EN1 實機；結果寫入資料庫（本機暫存 %s）", args.buffer)
         factory = lambda definition: DlEn1Station(definition)  # noqa: E731
-    win = MainWindow(backend, factory)
+        sink = ResultSink(store, cfg.station_id, args.buffer).start()
+    win = MainWindow(backend, factory, sink)
     if args.on_top:
         from PySide6.QtCore import Qt
         win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
@@ -137,6 +143,8 @@ def main(argv=None) -> int:
     pulse.start()
     code = app.exec()
     backend.shutdown()  # DSC-07：App 結束時停止 dnsmasq
+    if sink is not None:
+        sink.close()    # DAT-05：結束前盡量寫完，未寫入的留在本機暫存
     return code
 
 

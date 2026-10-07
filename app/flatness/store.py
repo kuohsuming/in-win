@@ -53,6 +53,7 @@ class MemoryStore:
         self._rows = {d.mac: d.copy() for d in devices}
         self._lock = threading.RLock()
         self.available = True
+        self.inspections: dict[str, tuple[dict, list[dict]]] = {}  # serial → (主檔, 明細)
 
     def _check(self):
         if not self.available:
@@ -80,6 +81,19 @@ class MemoryStore:
                 d.hostname = e.hostname or d.hostname
                 d.vendor_class = e.vendor_class or d.vendor_class
                 d.seen_ip = e.ip or d.seen_ip
+
+    def write_inspection(self, head: dict, points: list[dict]) -> bool:
+        with self._lock:
+            self._check()
+            if head["serial"] in self.inspections:
+                return False
+            self.inspections[head["serial"]] = (dict(head, written_at=datetime.now()), [dict(p) for p in points])
+            return True
+
+    def count_inspections(self, day) -> int:
+        with self._lock:
+            self._check()
+            return sum(1 for h, _ in self.inspections.values() if h["measured_at"].date() == day)
 
     def set_hidden(self, mac: str, hidden: bool) -> None:
         with self._lock:
@@ -216,6 +230,45 @@ class MySQLStore:
                         "  hostname = COALESCE(n.hostname, lan_device.hostname),"
                         "  vendor_class = COALESCE(n.vendor_class, lan_device.vendor_class)",
                         (e.mac, e.hostname, e.vendor_class))
+
+    def write_inspection(self, head: dict, points: list[dict]) -> bool:
+        """DAT-02：主檔 1 筆與明細，同一交易寫入；寫入時間為資料庫時間。
+
+        編號已存在時回傳 False 不寫入：補寫（DAT-04）時前一次其實已寫入成功，避免重複。
+        """
+        import pymysql
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO inspection (serial, station_id, measured_at, written_at, judgment, reread_count)"
+                    " VALUES (%s, %s, %s, NOW(3), %s, %s)",
+                    (head["serial"], head["station_id"], head["measured_at"], head["judgment"], head["reread_count"]))
+                cur.executemany(
+                    "INSERT INTO inspection_point (serial, device_key, probe_id, device_name, probe_description,"
+                    " measured_value, standard_value, lower_limit, upper_limit, judgment, raw_response,"
+                    " error_text, device_mac) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    [(head["serial"], p["device_key"], p["probe_id"], p["device_name"], p["probe_description"],
+                      p["measured_value"], p["standard_value"], p["lower_limit"], p["upper_limit"], p["judgment"],
+                      p["raw_response"], p["error_text"], p["device_mac"]) for p in points])
+            conn.commit()
+            return True
+        except pymysql.IntegrityError as exc:
+            conn.rollback()
+            if exc.args and exc.args[0] == 1062:  # 主鍵重複：已寫入
+                return False
+            raise StoreError(f"資料庫寫入失敗：{exc}") from exc
+        except pymysql.MySQLError as exc:
+            conn.rollback()
+            raise StoreError(f"資料庫寫入失敗：{exc}") from exc
+        finally:
+            conn.close()
+
+    def count_inspections(self, day) -> int:
+        with self._cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM inspection WHERE measured_at >= %s AND measured_at < %s + INTERVAL 1 DAY",
+                        (day, day))
+            return cur.fetchone()[0]
 
     def set_hidden(self, mac: str, hidden: bool) -> None:
         with self._cursor() as cur:

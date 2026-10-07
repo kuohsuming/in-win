@@ -28,6 +28,8 @@ print(n.network_address, n.netmask)' "$PC_IP/$NET_PREFIX") || fail "PC_IP/NET_PR
   #    加上 sticky bit，App 只能改自己擁有的檔案，不能刪除或替換 root 擁有的 dnsmasq.conf（DSC-07-A5）
   install -d -m 3775 -o root -g "$APP_USER" /etc/flatness
   install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$BOOTP_DIR"
+  # 資料庫斷線時的量測結果本機暫存（DAT-04、3.0.6）
+  install -d -m 750 -o "$APP_USER" -g "$APP_USER" /var/lib/flatness/buffer
   if [[ ! -f $BOOTP_HOSTS ]]; then
     echo "# 由 App 依資料庫 lan_device 產生（DSC-06）" | install -m 644 -o "$APP_USER" -g "$APP_USER" /dev/stdin "$BOOTP_HOSTS"
   fi

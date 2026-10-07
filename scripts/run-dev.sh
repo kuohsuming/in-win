@@ -41,11 +41,11 @@ if [[ $REAL == yes ]]; then
   PYTHONPATH=app exec .venv/bin/python -m flatness \
     --config .dev/config.toml --db-env .dev/db.env \
     --def .dev/dl-en1.json --hosts "$HOSTS" \
-    --log-file .dev/flatness.log "${ARGS[@]}"
+    --log-file .dev/flatness.log --buffer .dev/buffer "${ARGS[@]}"
 fi
 
 PYTHONPATH=app exec .venv/bin/python -m flatness \
   --config .dev/config.toml --db-env .dev/db.env \
   --def .dev/dl-en1.json --hosts .dev/bootp/dl-en1.hosts \
   --dnsmasq-cmd "$PWD/.venv/bin/python $PWD/scripts/fake-dnsmasq.py --hosts $PWD/.dev/bootp/dl-en1.hosts" --no-arp --demo \
-  --log-file .dev/flatness.log "${ARGS[@]}"
+  --log-file .dev/flatness.log --buffer .dev/buffer "${ARGS[@]}"

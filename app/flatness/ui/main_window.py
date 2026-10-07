@@ -88,6 +88,7 @@ class _Relay(QObject):
     detected = Signal(object)
     read_done = Signal(object)
     failed = Signal(str)
+    sink_event = Signal(object)    # 結果寫入資料庫的進度（DAT-04）
 
 
 # ====================================================================== 元件
@@ -708,12 +709,17 @@ class MainWindow(QMainWindow):
         self.result: InspectionResult | None = None
         self.detect_count = 0
         self.busy = False                           # 倒數、讀取、偵測中
-        self.flags = {"sim": backend.simulate, "bootp": None, "db": None, "ip": None}
+        self.flags = {"sim": backend.simulate, "bootp": None, "db": None, "ip": None, "sync": None}
         self.seen_ips: dict[str, str] = {}  # MAC → 實際使用 IP（ARP 位址偵測封包，DSC-19）
         self._relay = _Relay()
         self._relay.detected.connect(self._on_detected)
         self._relay.read_done.connect(self._on_read)
         self._relay.failed.connect(self._on_worker_failed)
+        self._relay.sink_event.connect(self._on_sink_event)
+        if hasattr(self.sink, "listener"):
+            self.sink.listener = self._relay.sink_event.emit
+            if self.sink.pending():
+                self.set_flag("sync", f"待同步 {self.sink.pending()} 筆（寫入資料庫中）")
 
         page = QWidget()
         page.setObjectName("page")
@@ -925,7 +931,7 @@ class MainWindow(QMainWindow):
                              f"padding:5px 10px;border-radius:4px;letter-spacing:0.15em;")
             self.flag_box.addWidget(lb)
         for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"]),
-                            ("ip", "white", C["warn"])):
+                            ("ip", "white", C["warn"]), ("sync", C["warn"], C["warn-soft"])):
             text = self.flags.get(key)
             if text:
                 lb = QLabel(f'<span style="color:{fg}">●</span> {html.escape(text)}')
@@ -1197,10 +1203,19 @@ class MainWindow(QMainWindow):
         r.written = True
         self.result = None
         if self.sink.real:
-            self.toast.show_text(f"編號 {r.serial} 已寫入資料庫")
+            pass  # 寫入資料庫在背景進行，完成時提示（_on_sink_event）
         else:
             self.toast.show_text(f"示範模式：編號 {r.serial} 未寫入資料庫")
         return r.serial
+
+    def _on_sink_event(self, event):
+        """DAT-04：寫入成功提示；資料庫無法寫入時頂端顯示待同步筆數，補寫完成後消失。"""
+        kind, what, pending = event
+        if kind == "written":
+            self.toast.show_text(f"編號 {what} 已寫入資料庫")
+            self.set_flag("sync", f"待同步 {pending} 筆（寫入資料庫中）" if pending else None)
+        else:
+            self.set_flag("sync", f"資料庫無法寫入，待同步 {pending} 筆（自動重試）")
 
     def pending_serial(self) -> str | None:
         return self.result.serial if self.result and not self.result.written else None
