@@ -190,6 +190,20 @@ class SettingsDialogTest(UiBase):
         d.select("00:01:FC:DE:3A:76")
         self.assertEqual(d.probe_table.cellWidget(1, 4).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
 
+    def test_port_field_hidden_but_kept(self):  # 2026-10-07 PO：設定頁不顯示 TCP 埠
+        d = self.dlg
+        d.resize(1920, 1080)
+        d.show()
+        d.select("00:01:FC:DE:3A:76")
+        pump(self.app, 0.05)
+        self.assertTrue(d.name_edit.isVisible())
+        self.assertFalse(d.port_edit.isVisible())
+        self.assertFalse(d.form.isRowVisible(d.port_edit))
+        before = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config.get("port")
+        self.type(d.name_edit, "中段")
+        self.save()
+        self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].config.get("port"), before)  # 原值保留
+
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")

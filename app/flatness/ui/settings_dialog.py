@@ -433,6 +433,7 @@ class SettingsDialog(QDialog):
         self._form_row("IPv4", ip_col)
         self.port_edit = self._line("64000（未填寫時）", "port", num=True)
         self._form_row("TCP 埠 port", self.port_edit)
+        # 2026-10-07 PO：設定頁不顯示 TCP 埠（不開發模擬器，DL-EN1 固定 64000）；定義檔或匯入的值照舊保留
         self.max_spin = QSpinBox()
         self.max_spin.setRange(1, 15)
         self.max_spin.setProperty("num", True)
@@ -747,8 +748,9 @@ class SettingsDialog(QDialog):
         self.status_help.setText(STATUS_HELP[d.status])
         dl = d.is_dl_en1
         cfg = d.config or {}
-        for row, visible in ((1, dl), (2, dl), (3, dl or d.status == OTHER), (4, dl), (5, dl)):
+        for row, visible in ((1, dl), (2, dl), (3, dl or d.status == OTHER), (5, dl)):
             self.form.setRowVisible(row, visible)
+        self.form.setRowVisible(self.port_edit, False)  # TCP 埠一律隱藏（2026-10-07 PO）
         self._fill_rows(d)
         self.name_edit.setText(cfg.get("name") or "")
         self.ip_edit.setText(d.ipv4 or "" if (dl or d.status == OTHER) else "")
