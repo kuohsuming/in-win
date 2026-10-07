@@ -643,6 +643,7 @@ class ExportDialog(QDialog):
     def __init__(self, sink, parent=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.sink = sink
+        self.main = parent  # 顯示時會被移到遮罩層下，parent() 不再是主畫面
         self.setObjectName("export")
         self.setStyleSheet(f"#export {{ background:{C['panel']}; border:1px solid {C['line']}; border-radius:8px; }}")
         self.setFixedWidth(460)
@@ -708,7 +709,8 @@ class ExportDialog(QDialog):
             self.info.setText(f"<b>無法產生檔案</b><br>{html.escape(str(exc))}")
             return
         prefs.setValue("export_dir", str(Path(path).parent))  # EXP-02：下次預設為這次的資料夾
-        self.parent().toast.show_text(f"已儲存 {n} 筆：{path}")
+        if self.main is not None:
+            self.main.toast.show_text(f"已儲存 {n} 筆：{path}")
         self.accept()
 
 

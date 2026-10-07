@@ -688,6 +688,33 @@ class MainWindowTest(UiBase):
         self.assertGreaterEqual(time.monotonic() - t0, 0.45)
         self.assertLess(time.monotonic() - t0, 2.5)
 
+    def test_export_saves_file_and_closes(self):  # EXP-02、EXP-03
+        from unittest import mock
+        from flatness.ui import main_window as mw
+        from PySide6.QtWidgets import QWidget
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        w.next_piece()
+        self.wait_state("pass", "fail", "error")
+        w.next_piece()                                    # 寫入第一片
+        self.wait_state("pass", "fail", "error")
+        dlg = mw.ExportDialog(w.sink, w)
+        holder = QWidget()
+        self.addCleanup(holder.deleteLater)
+        dlg.setParent(holder, dlg.windowFlags())          # 同 _modal：顯示時移到遮罩層下
+        self.addCleanup(dlg.deleteLater)
+        out = Path(tmp.name) / "x.xlsx"
+        with mock.patch.object(mw.QFileDialog, "getSaveFileName", return_value=(str(out), "")), \
+                mock.patch.object(mw, "QSettings") as prefs:
+            prefs.return_value.value.return_value = tmp.name
+            dlg._save()
+        self.assertTrue(out.exists())
+        self.assertEqual(dlg.result(), mw.QDialog.Accepted)
+        self.assertIn("已儲存 1 筆", w.toast.history[-1])
+
     def test_first_next_writes_nothing(self):  # MEA-02
         self.win.detect()
         self.wait_state("idle")
