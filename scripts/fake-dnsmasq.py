@@ -68,6 +68,7 @@ def main():
     p.add_argument("--scenario", default="demo", choices=["demo", "quiet"])
     p.add_argument("--fail", action="store_true")
     p.add_argument("--conf-file")  # 與真 dnsmasq 參數相容，忽略
+    p.add_argument("--tag")        # 測試用：區分不同的程序，忽略
     args, _ = p.parse_known_args()
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

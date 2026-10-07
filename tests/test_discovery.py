@@ -1,5 +1,6 @@
 """探索（DSC-01、DSC-05）與 dnsmasq 管理（DSC-07）。"""
 
+import os
 import sys
 import threading
 import time
@@ -122,6 +123,53 @@ class DnsmasqTest(unittest.TestCase):
             time.sleep(0.05)
         self.assertEqual([s[0] for s in states[:3]], [True, False, True])
         self.assertIn("異常結束", states[1][1])
+        svc.stop()
+
+    def _orphan(self, cmd):
+        """以 setsid 在背景啟動，模擬 App 當掉後留下的 dnsmasq（父程序不是 App）。"""
+        import subprocess
+        p = subprocess.Popen(["setsid", "-f"] + cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p.wait()
+        end = time.monotonic() + 3
+        svc = DnsmasqService(cmd)
+        while time.monotonic() < end and not svc.leftovers():
+            time.sleep(0.05)
+        pids = svc.leftovers()
+        self.assertTrue(pids)
+        self.addCleanup(lambda: [os.kill(x, 9) for x in pids if os.path.exists(f"/proc/{x}")])
+        return pids
+
+    def test_start_clears_leftover(self):  # DSC-07：App 當掉後殘留的 dnsmasq 於下次啟動時停止
+        cmd = FAKE + ["--scenario", "quiet", "--tag", "leftover"]
+        old = self._orphan(cmd)
+        states = []
+        svc = DnsmasqService(cmd, on_state=lambda up, why: states.append((up, why)))
+        svc.start()
+        self.assertFalse(any(os.path.exists(f"/proc/{p}") for p in old))
+        self.assertTrue(svc.running)
+        self.assertEqual(svc.leftovers(), [])                   # 自己啟動的不算殘留
+        svc.stop()
+
+    def test_leftover_of_running_app_not_stopped(self):  # 另一個執行中 App 的 dnsmasq 不停止
+        import subprocess
+        from flatness import dnsmasq as d
+        cmd = FAKE + ["--scenario", "quiet", "--tag", "other-app"]
+        # 父程序命令列含「-m flatness」即視為執行中的 App
+        app = subprocess.Popen([sys.executable, "-c", "import subprocess, sys; subprocess.run(sys.argv[3:])",
+                                "-m", "flatness"] + cmd, stdout=subprocess.DEVNULL)
+        self.addCleanup(app.kill)
+        kids, end = [], time.monotonic() + 3
+        while time.monotonic() < end and not kids:
+            kids = [p for p, (argv, ppid) in d._proc_table().items() if argv == cmd and ppid == app.pid]
+            time.sleep(0.05)
+        self.assertTrue(kids)
+        self.addCleanup(lambda: [os.kill(x, 9) for x in kids if os.path.exists(f"/proc/{x}")])
+        states = []
+        svc = DnsmasqService(cmd, on_state=lambda up, why: states.append((up, why)), restart_delay=30)
+        svc.start()
+        self.assertFalse(svc.running)
+        self.assertIn("另一個 App", states[-1][1])
+        self.assertTrue(os.path.exists(f"/proc/{kids[0]}"))
         svc.stop()
 
     def test_no_command_is_noop(self):  # 模擬模式不啟動 dnsmasq（DSC-07-A6）

@@ -10,6 +10,8 @@ DNSMASQ_CONF=/etc/flatness/dnsmasq.conf
 OLD_DNSMASQ_CONF=/etc/dnsmasq.d/flatness-dl-en1.conf   # 舊版安裝包（由系統服務啟動）留下的設定
 # 與 app/flatness/dnsmasq.py 的 COMMAND 必須完全相同
 DNSMASQ_CMD="/usr/sbin/dnsmasq --keep-in-foreground --log-facility=- --conf-file=$DNSMASQ_CONF"
+# 與 app/flatness/dnsmasq.py 的 STOP_COMMAND 相同：停止 App 啟動的 dnsmasq（含 App 當掉後的殘留）
+STOP_HELPER=/usr/local/sbin/flatness-stop-dnsmasq
 
 step_bootp() {
   log "步驟 3：BOOTP 服務（dnsmasq，由 App 啟動）"
@@ -73,10 +75,21 @@ EOF
       && ok "防火牆：$EQUIP_IF 開放 UDP 67"
   fi
 
-  # 5. sudoers：只允許 App 帳號以固定參數執行 dnsmasq（僅此一項 root 權限，DSC-07-A5）
+  # 5. 停止程式：root 擁有、App 不可改；不接受參數，只停止以固定命令列執行的 dnsmasq（DSC-07）
+  #    sudo 啟動的 dnsmasq 為 root 程序，App 帳號無法直接送訊號停止
+  if write_if_changed "$STOP_HELPER" 755 <<EOF
+#!/bin/sh
+# 由表面平整檢查系統安裝包產生：停止 App 啟動的 dnsmasq（DSC-07）；不接受參數
+exec /usr/bin/pkill -TERM -x -f '$DNSMASQ_CMD'
+EOF
+  then
+    ok "已寫入 $STOP_HELPER"
+  fi
+
+  # 6. sudoers：只允許 App 帳號以固定參數執行 dnsmasq，以及不帶參數執行停止程式（DSC-07-A5）
   local sudoers_tmp
   sudoers_tmp=$(mktemp)
-  echo "$APP_USER ALL=(root) NOPASSWD: $DNSMASQ_CMD" > "$sudoers_tmp"
+  echo "$APP_USER ALL=(root) NOPASSWD: $DNSMASQ_CMD, $STOP_HELPER \"\"" > "$sudoers_tmp"
   visudo -cf "$sudoers_tmp" >/dev/null || { rm -f "$sudoers_tmp"; fail "sudoers 內容錯誤"; }
   write_if_changed /etc/sudoers.d/flatness 440 < "$sudoers_tmp" && ok "已設定 /etc/sudoers.d/flatness"
   rm -f "$sudoers_tmp"
