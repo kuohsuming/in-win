@@ -653,6 +653,8 @@ class SettingsDialog(QDialog):
                 sel_row = r
             fg = C["ng"] if d.mac in bad else (C["ink"] if d.is_dl_en1 or d.status == UNCLASSIFIED else C["ink-2"])
             ip = d.ipv4 if d.assigns_ip else (f"不配發・使用 {d.seen_ip}" if d.seen_ip else "不配發")
+            if not d.assigns_ip and lan.seen_ip_problem(d.seen_ip, self.backend.equip_net()):
+                ip += "（不在設備網段）"
             if d.assigns_ip:
                 try:
                     if ipaddress.IPv4Address(d.ipv4) not in net:
@@ -703,6 +705,9 @@ class SettingsDialog(QDialog):
                  if d.last_seen else "—")]
         if d.seen_ip:  # DSC-19：ARP 位址偵測封包中設備自己使用的 IP
             seen = d.seen_ip
+            bad = lan.seen_ip_problem(d.seen_ip, self.backend.equip_net())
+            if bad:
+                seen += f'　<span style="color:{C["ng"]}">✘ {html.escape(bad)}，量測 PC 無法連線</span>'
             if d.assigns_ip and lan.ip_mismatch(d.seen_ip, d.ipv4):
                 seen += f'　<span style="color:{C["warn"]}">⚠ 與設定的 {d.ipv4} 不同</span>'
             rows.append(("實際使用 IP", seen))

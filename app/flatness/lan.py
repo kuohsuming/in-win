@@ -352,6 +352,12 @@ def usable_seen_ip(devices, d: LanDevice, equip_net: ipaddress.IPv4Interface) ->
     return ip
 
 
+def seen_ip_problem(seen_ip: str | None, equip_net: ipaddress.IPv4Interface) -> str | None:
+    """設備實際使用的 IP（DSC-19）本身的問題：不在設備網段（網段取自設備網卡，DSC-08）、
+    網路／廣播位址、與量測 PC 相同。這樣的設備量測 PC 連不到，須重設後以 BOOTP 取得 IP。"""
+    return ip_problem(seen_ip, equip_net) if seen_ip else None
+
+
 def ip_mismatch(seen_ip: str | None, ipv4: str | None) -> bool:
     """設備實際使用的 IP 與設定（配發）的 IP 不同（DSC-19、DSC-20）。"""
     return bool(seen_ip and ipv4 and seen_ip != ipv4)

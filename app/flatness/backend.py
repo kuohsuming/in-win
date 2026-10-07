@@ -55,7 +55,16 @@ class Backend(QObject):
     # ------------------------------------------------------------ 生命週期
 
     def start(self) -> sync.StartupResult:
-        r = sync.startup(self.store, self.files, self.equip_net())
+        # 設備網段（DSC-08）：取自設備網卡目前的位址與遮罩，用來判斷 IP 是否有效（DSC-19、DSC-20）
+        if self._equip_net is not None:
+            net = self._equip_net
+            log.info("設備網段 %s（啟動參數指定）", net.network)
+        elif (net := netinfo.interface_address(self.cfg.equip_if)) is not None:
+            log.info("設備網段 %s（取自設備網卡 %s 的位址 %s）", net.network, self.cfg.equip_if, net)
+        else:
+            net = self.cfg.fallback_net
+            log.warning("設備網卡 %s 沒有 IPv4 位址，設備網段改用設定檔的 %s", self.cfg.equip_if, net.network)
+        r = sync.startup(self.store, self.files, net)
         self.startup_result, self.definition, self.layout = r, r.definition, r.layout
         self._db_ok = r.db_ok
         if r.devices is not None:

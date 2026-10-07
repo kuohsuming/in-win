@@ -82,6 +82,12 @@ class ValidateTest(unittest.TestCase):
         by_mac(devs)["3C:52:82:11:22:33"].seen_ip = "10.0.0.5"
         self.assertNotEqual(lan.set_status(devs, "3C:52:82:11:22:33", OTHER, NET).ipv4, "10.0.0.5")
 
+    def test_seen_ip_problem_uses_equipment_network(self):  # DSC-19：網段取自設備網卡
+        self.assertIsNone(lan.seen_ip_problem("192.168.10.57", NET))
+        self.assertIsNone(lan.seen_ip_problem(None, NET))
+        self.assertEqual(lan.seen_ip_problem("10.0.0.5", NET), f"IP 不在設備網段 {NET.network}")
+        self.assertEqual(lan.seen_ip_problem(str(NET.ip), NET), "不可與量測 PC 相同")
+
     def issues(self, devs):
         return [(i.mac, i.field, i.message) for i in lan.validate(devs, NET)]
 

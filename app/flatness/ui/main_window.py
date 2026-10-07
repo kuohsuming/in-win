@@ -852,6 +852,7 @@ class MainWindow(QMainWindow):
         """DSC-20：使用中／維修中 DL-EN1 實際使用的 IP 與設定不同時，該排以警告色標示，
         頂端提示按住 DL-EN1 的 RST 鍵 3 秒重設，使其重新以 BOOTP 取得設定的 IP。"""
         notes = []
+        net = self.backend.equip_net()
         for row in self.rows:
             try:
                 mac = lan.normalize_mac(row.dev.get("mac", ""))
@@ -861,7 +862,9 @@ class MainWindow(QMainWindow):
             bad = lan.ip_mismatch(seen, want)
             row.set_ip_mismatch(seen if bad else None)
             if bad:
-                notes.append(f"{row.dev.get('name') or mac}（DL-EN1 #{row.index + 1}）實際 IP {seen}，設定為 {want}")
+                why = lan.seen_ip_problem(seen, net)
+                notes.append(f"{row.dev.get('name') or mac}（DL-EN1 #{row.index + 1}）實際 IP {seen}"
+                             + (f"（{why}）" if why else "") + f"，設定為 {want}")
         self.set_flag("ip", ("IP 不符：" + "；".join(notes) + "。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，"
                              "使其重新取得設定的 IP") if notes else None)
         if notes:

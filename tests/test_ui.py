@@ -583,6 +583,8 @@ class MainWindowTest(UiBase):
         self.assertIn("RST 鍵 3 秒", w.flags["ip"])
         self.assertIn("192.168.10.99", w.flags["ip"])
         self.assertIsNone(w.rows[1].seen_ip)                                       # 其他排不受影響
+        w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="10.0.0.5")])  # 不同網段
+        self.assertIn("10.0.0.5（IP 不在設備網段 192.168.10.0/24）", w.flags["ip"])
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 重設後取得設定的 IP
         self.assertIsNone(w.flags["ip"])
         self.assertNotIn("IP 不符", row.unit_text.text())
