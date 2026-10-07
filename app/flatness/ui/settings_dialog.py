@@ -360,7 +360,8 @@ class SettingsDialog(QDialog):
         self.btn_hide = _btn("隱藏", "small", self._toggle_hidden)
         self.btn_up = _btn("上移", "small", lambda: self._move(-1))
         self.btn_down = _btn("下移", "small", lambda: self._move(1))
-        for w in (self.btn_hide, self.btn_up, self.btn_down):
+        self.btn_delete = _btn("刪除", "small-danger", self._delete)  # DSC-18：按下後確認，即從資料庫刪除
+        for w in (self.btn_hide, self.btn_up, self.btn_down, self.btn_delete):
             row.addWidget(w)
         self.move_hint = _label("", "note")  # 上移／下移無法使用時說明原因（DSC-17）
         row.addWidget(self.move_hint)
@@ -891,6 +892,7 @@ class SettingsDialog(QDialog):
         can_hide = d is not None and not d.is_dl_en1 and not (o and o.is_dl_en1) and not self.read_only
         self.btn_hide.setEnabled(can_hide)
         self.btn_hide.setText("取消隱藏" if d and d.hidden else "隱藏")
+        self.btn_delete.setEnabled(d is not None and not self.read_only)  # 任何設備皆可刪除（DSC-18）
         # 上移／下移（DSC-17）：任何設備皆可，到頂停用「上移」、到底停用「下移」，其餘兩鍵皆可用
         shown = [x.mac for x in self._visible_devices()]
         idx = shown.index(d.mac) if d is not None and d.mac in shown else None
@@ -1024,6 +1026,66 @@ class SettingsDialog(QDialog):
             self._render_detail()
         self._render_list()
         self._update_buttons()
+
+    def _delete(self):
+        """刪除（DSC-18）：確認後立即從資料庫刪除該設備，不需按「儲存」；本次其他尚未儲存的編輯保留。
+
+        使用中、維修中或配發 IP 的設備：一併更新定義檔與 BOOTP 主機對應（必要時重新啟動 dnsmasq），
+        主畫面依新的設定重建。之後該 MAC 再送出請求時，以不明設備重新出現（DSC-01）。
+        """
+        d = self.work.get(self.selected)
+        if d is None or self.read_only:
+            return
+        o = self.original.get(d.mac)
+        if o is None:  # 匯入後尚未儲存的設備：只從畫面移除
+            del self.work[d.mac]
+            self._after_delete(d.mac, f"已移除 {d.label()}（尚未儲存的匯入設備）")
+            return
+        if o.status == LIVE and sum(x.status == LIVE for x in self.original.values()) == 1:
+            self._warn(f"{o.label()} 是唯一一台「DL-EN1 使用中」，刪除後沒有可量測的設備（至少須 1 台，DEF-01）。\n"
+                       "請先將另一台設備設為使用中並儲存，再刪除這台。")
+            return
+        what = [f"將從設備清單與資料庫刪除 {o.label()}（{o.mac}，{lan.STATUS_NAME[o.status]}）。"]
+        if o.status in lan.DL_STATUSES:
+            what.append(f"主畫面將移除「{o.name or '—'}」這一排（{lan.row_label((o.config or {}).get('key'))}），"
+                        "其設定（位置、排名稱、探頭）一併刪除。")
+        if o.assigns_ip:
+            what.append(f"不再配發 IP {o.ipv4}，BOOTP 對應會更新。")
+        if d.mac in self.original and self.is_dirty() and d.settings() != o.settings():
+            what.append("這台設備尚未儲存的修改也會一併捨棄。")
+        what.append("刪除後無法還原；之後若該設備再送出請求，會以「不明設備」重新出現。\n\n確定要刪除嗎？")
+        if not self._confirm_delete("\n".join(what)):
+            return
+        if (o.status in lan.DL_STATUSES) and self.before_save:
+            try:
+                self.before_save()  # 主畫面將重建：先寫入畫面上未寫入的結果（UPL-02）
+            except Exception as exc:
+                log.exception("刪除設備前寫入量測結果失敗")
+                self._warn(f"畫面上的量測結果寫入失敗，未刪除：{exc}")
+                return
+            self.pending_serial = None
+        old = [x.copy() for x in self.original.values()]
+        new = [x.copy() for x in old if x.mac != d.mac]
+        try:
+            result = self.backend.apply(old, new, summary=f"刪除設備 {o.label()}（{o.mac}）", deleted=[d.mac])
+        except Exception as exc:
+            log.error("刪除設備失敗：%s", exc)
+            self._warn(f"無法刪除，資料庫與檔案維持原狀。\n\n原因：{exc}")
+            return
+        log.info("刪除設備：%s %s（%s）", o.mac, o.label(), lan.STATUS_NAME[o.status])
+        del self.original[d.mac]
+        del self.work[d.mac]
+        if o.status in lan.DL_STATUSES or o.assigns_ip:
+            self.saved.emit(result, lan.diff(old, new, self.backend.standards()))  # 主畫面依新設定重建
+        self._after_delete(d.mac, f"已刪除 {o.label()}")
+
+    def _after_delete(self, mac: str, message: str):
+        for m in (self.remembered, self.ip_checks, self.replaced_from):
+            m.pop(mac, None)
+        nxt = next(iter(self._visible_devices()), None)
+        self.selected = nxt.mac if nxt else None
+        self.toast.show_text(message)
+        self._render_all()
 
     def _move(self, step):
         """上移／下移：按下即寫入資料庫（DSC-17）；只影響設定頁清單，主畫面順序依位置標籤（EDT-05）。
@@ -1303,6 +1365,9 @@ class SettingsDialog(QDialog):
 
     def _warn(self, text: str):
         show_message(self, text, kind="warn")
+
+    def _confirm_delete(self, text: str) -> bool:
+        return show_message(self, text, title="刪除設備", buttons=("取消", "刪除"), primary=0, kind="warn") == 1
 
     def _info(self, text: str):
         show_message(self, text)

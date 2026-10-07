@@ -129,10 +129,11 @@ class ApplyResult:
 
 
 def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, new_devices,
-          restart=None, summary: str = "") -> ApplyResult:
+          restart=None, summary: str = "", deleted=()) -> ApplyResult:
     """套用設備設定；失敗時資料庫與檔案皆還原並拋出例外（UPL-08、UPL-12）。
 
     restart：以新主機對應重新啟動 dnsmasq 的函式，失敗時拋出例外；None 表示不重新啟動（開發用）。
+    deleted：要從資料庫刪除的 MAC（DSC-18）；new_devices 不含這些設備。
     """
     defn, def_text, hosts_text = render(new_devices, equip_net)
     before = {files.def_path: _read(files.def_path), files.hosts_path: _read(files.hosts_path)}
@@ -140,6 +141,7 @@ def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, 
     try:
         with store.transaction() as tx:
             n = tx.save(old_devices, new_devices)
+            n += tx.delete(deleted)
             try:
                 _write(files.def_path, def_text)
                 _write(files.hosts_path, hosts_text)

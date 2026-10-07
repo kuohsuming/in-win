@@ -109,9 +109,9 @@ class Backend(QObject):
     def set_hidden(self, mac: str, hidden: bool):
         self.store.set_hidden(mac, hidden)
 
-    def apply(self, old, new, summary: str = "") -> sync.ApplyResult:
+    def apply(self, old, new, summary: str = "", deleted=()) -> sync.ApplyResult:
         restart = self.dnsmasq.restart if self.dnsmasq.command else None
-        result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary)
+        result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary, deleted)
         self.definition, self.layout = result.definition, result.layout
         return result
 

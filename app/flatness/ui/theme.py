@@ -81,6 +81,8 @@ QPushButton[kind="primary"]:disabled {{ background: rgba(28,35,38,0.35); color: 
                                         border-color: transparent; }}
 QPushButton[kind="danger"] {{ background: {C['panel']}; color: {C['ng']}; border-color: {C['ng']}; }}
 QPushButton[kind="small"] {{ font-size: 14px; padding: 5px 10px; border-width: 1px; }}
+QPushButton[kind="small-danger"] {{ font-size: 14px; padding: 5px 10px; border-width: 1px; color: {C['ng']};
+                                   border-color: {C['ng']}; }}
 QPushButton[kind="tool"] {{ font-size: 17px; font-weight: 700; padding: 10px 18px; }}
 QPushButton[kind="icon"] {{ padding: 0; min-width: 42px; max-width: 42px; min-height: 42px; max-height: 42px; }}
 

@@ -146,9 +146,11 @@ DEALLOCATE PREPARE stmt;
 
 -- -----------------------------------------------------------------------------
 -- 4. App 帳號（INS-05）
---    只能從本機連線；只有 SELECT、INSERT、UPDATE，無法刪除資料或資料表
+--    只能從本機連線；SELECT、INSERT、UPDATE；另只對 lan_device 有 DELETE（設定頁「刪除」DSC-18），
+--    量測紀錄（inspection、inspection_point）與資料表本身無法刪除
 -- -----------------------------------------------------------------------------
 CREATE USER IF NOT EXISTS 'flatness_app'@'localhost' IDENTIFIED BY RANDOM PASSWORD;
 
 GRANT SELECT, INSERT, UPDATE ON flatness.*     TO 'flatness_app'@'localhost';
 GRANT SELECT, INSERT, UPDATE ON flatness_sim.* TO 'flatness_app'@'localhost';
+GRANT DELETE ON flatness.lan_device TO 'flatness_app'@'localhost';

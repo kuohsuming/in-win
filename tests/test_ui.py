@@ -97,7 +97,7 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(macs[1:4], ["00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"])
         self.assertIn("有 1 台不明設備", self.dlg.list_hint.text())
         texts = [b.text() for b in self.dlg.findChildren(type(self.dlg.btn_save))]
-        self.assertFalse(any("新增設備" in t or t == "刪除" for t in texts))
+        self.assertFalse(any("新增設備" in t for t in texts))  # 「刪除」為 DSC-18，允許
         from PySide6.QtWidgets import QLineEdit
         self.assertFalse(any(e.objectName() == "mac" for e in self.dlg.findChildren(QLineEdit)))
 
@@ -299,6 +299,55 @@ class SettingsDialogTest(UiBase):
         layout = lan.screen_layout(self.store.load())["dl_en1"]
         self.assertEqual([(x["key"], x.get("maint", False)) for x in layout],
                          [("row-1", False), ("row-2", False), ("row-3", True)])
+
+    def test_delete_unclassified_after_confirm(self):  # DSC-18
+        d = self.dlg
+        asked = []
+        d._confirm_delete = lambda text: asked.append(text) or False
+        d.select("00:01:FC:12:39:A0")
+        self.assertTrue(d.btn_delete.isEnabled())
+        d.btn_delete.click()                                   # 取消：不刪除
+        self.assertIn("00:01:FC:12:39:A0", by_mac(self.store.load()))
+        self.assertIn("無法還原", asked[-1])
+        d._confirm_delete = lambda text: True
+        d.btn_delete.click()
+        self.assertNotIn("00:01:FC:12:39:A0", by_mac(self.store.load()))
+        self.assertNotIn("00:01:FC:12:39:A0", self.list_macs(d))
+        self.assertEqual(self.saved, [])                       # 不影響主畫面
+        self.assertFalse(d.is_dirty())
+
+    def test_delete_live_updates_files_and_main_screen(self):  # DSC-18
+        d = self.dlg
+        texts = []
+        d._confirm_delete = lambda text: texts.append(text) or True
+        d.select("00:01:FC:DE:3A:76")
+        self.type(d.name_edit, "中段")                         # 本台尚未儲存的修改一併捨棄
+        d.select("00:01:FC:DE:3A:77")
+        self.type(d.name_edit, "後段")                         # 其他設備的修改保留
+        d.select("00:01:FC:DE:3A:76")
+        d.btn_delete.click()
+        self.assertIn("主畫面將移除", texts[-1])
+        self.assertIn("192.168.10.12", texts[-1])
+        self.assertNotIn("00:01:FC:DE:3A:76", by_mac(self.store.load()))
+        self.assertNotIn("3a:76", Path(self.tmp.name, "dl-en1.hosts").read_text())
+        (result, _preview), = self.saved
+        self.assertEqual([x["key"] for x in result.layout["dl_en1"]], ["row-1", "row-3"])
+        self.assertEqual(d.work["00:01:FC:DE:3A:77"].config["name"], "後段")
+        self.assertTrue(d.is_dirty())
+
+    def test_delete_last_live_blocked(self):  # DSC-18：至少須 1 台使用中
+        from flatness import lan
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        for mac in ("00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"):
+            lan.set_status(new, mac, lan.RETIRED, NET)
+        self.be.apply(old, new)
+        self.dlg.load()
+        self.dlg._confirm_delete = lambda text: self.fail("不應詢問")
+        self.dlg.select("00:01:FC:DE:3A:75")
+        self.dlg.btn_delete.click()
+        self.assertIn("唯一一台", self.warnings[-1])
+        self.assertIn("00:01:FC:DE:3A:75", by_mac(self.store.load()))
 
     def test_move_buttons_any_device(self):  # DSC-17：到頂停用上移、到底停用下移，其餘兩鍵可用
         d = self.dlg

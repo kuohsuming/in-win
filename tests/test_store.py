@@ -82,6 +82,24 @@ class StoreContract:
                 raise RuntimeError("dnsmasq 重新啟動失敗")
         self.assertEqual(by_mac(s.load())["00:01:FC:DE:3A:76"].status, LIVE)
 
+    def test_delete_then_seen_again_is_new_unclassified(self):  # DSC-18
+        s = self.make_store(sample_devices())
+        mac = "00:01:FC:DE:3A:76"
+        with s.transaction() as tx:
+            self.assertEqual(tx.delete([mac]), 1)
+        self.assertNotIn(mac, by_mac(s.load()))
+        s.record([SeenEvent(mac, "BOOTP", T0 + timedelta(hours=2))])
+        d = by_mac(s.load())[mac]
+        self.assertEqual((d.status, d.config, d.ipv4, d.seen_count), (UNCLASSIFIED, None, None, 1))
+
+    def test_delete_rolls_back(self):
+        s = self.make_store(sample_devices())
+        with self.assertRaises(RuntimeError):
+            with s.transaction() as tx:
+                tx.delete(["00:01:FC:DE:3A:76"])
+                raise RuntimeError("dnsmasq 重新啟動失敗")
+        self.assertIn("00:01:FC:DE:3A:76", by_mac(s.load()))
+
     def test_save_inserts_imported_device(self):
         s = self.make_store(sample_devices())
         old = s.load()
@@ -128,6 +146,7 @@ class MySQLStoreTest(StoreContract, unittest.TestCase):
             cur.execute("DROP TABLE IF EXISTS flatness_test.lan_device")
             cur.execute("CREATE TABLE flatness_test.lan_device LIKE flatness.lan_device")
             cur.execute("GRANT SELECT, INSERT, UPDATE ON flatness_test.* TO 'flatness_app'@'localhost'")
+            cur.execute("GRANT DELETE ON flatness_test.lan_device TO 'flatness_app'@'localhost'")
         root.close()
         store = MySQLStore(database="flatness_test", user=env["DB_USER"], password=env["DB_PASS"],
                            unix_socket=env["DB_SOCKET"])
@@ -152,14 +171,21 @@ class MySQLStoreTest(StoreContract, unittest.TestCase):
         with self.assertRaises(StoreError):
             s.load()
 
-    def test_app_account_cannot_delete(self):
+    def test_app_account_delete_only_lan_device(self):  # INS-05、DSC-18
         import pymysql
         env, _ = _dev_env()
         conn = pymysql.connect(user=env["DB_USER"], password=env["DB_PASS"], unix_socket=env["DB_SOCKET"],
                                database="flatness")
+        for table in ("inspection", "inspection_point"):  # 量測紀錄不可刪除
+            with self.assertRaises(pymysql.MySQLError):
+                with conn.cursor() as cur:
+                    cur.execute(f"DELETE FROM {table} WHERE 1 = 0")
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM lan_device WHERE mac = 'FF:FF:FF:FF:FF:FF'")  # 有權限（不存在的 MAC）
         with self.assertRaises(pymysql.MySQLError):
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM lan_device")
+                cur.execute("DROP TABLE lan_device")
+        conn.rollback()
         conn.close()
 
 

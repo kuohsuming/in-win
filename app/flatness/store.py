@@ -120,6 +120,13 @@ class _MemoryTx:
             n += 1
         return n
 
+    def delete(self, macs) -> int:
+        """從 lan_device 刪除（DSC-18）；之後再出現時以不明設備重新建立。"""
+        n = 0
+        for mac in macs:
+            n += self._rows.pop(mac, None) is not None
+        return n
+
 
 _COLUMNS = ("mac, status, first_seen, last_seen, seen_count, last_request, hostname, vendor_class, "
             "ipv4, dl_en1_config, sort_order, hidden, hidden_at, updated_at")
@@ -254,3 +261,11 @@ class _MySQLTx:
                     (d.mac, d.status, d.ipv4 or None, cfg, d.sort_order, int(d.hidden), d.hidden_at))
                 n += 1
         return n
+
+    def delete(self, macs) -> int:
+        """從 lan_device 刪除（DSC-18）；之後再出現時以不明設備重新建立。"""
+        macs = list(macs)
+        if not macs:
+            return 0
+        with self._conn.cursor() as cur:
+            return cur.execute("DELETE FROM lan_device WHERE mac IN (" + ", ".join(["%s"] * len(macs)) + ")", macs)
