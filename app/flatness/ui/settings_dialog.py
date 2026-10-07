@@ -1193,7 +1193,7 @@ class SettingsDialog(QDialog):
                 zero = self.probe_table.item(r, 0).data(Qt.UserRole) if self.probe_table.item(r, 0) else None
                 probe = {"id": r + 1, "description": desc, **(zero or {})}
                 tol = self.probe_table.cellWidget(r, 4)
-                if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設 5 mm 不寫入
+                if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設值（0.5 mm）不寫入
                     probe["tolerance"] = tol.currentData()
                 probes.append(probe)
             cfg["probes"] = probes

@@ -435,7 +435,7 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
 
 ZERO_FIELDS = ("zero_offset", "zeroed_at")
 TOLERANCES = bootp.TOLERANCES          # 探頭允許誤差（mm）的選項（JDG-06）
-DEFAULT_TOLERANCE = 5                   # 未設定時的允許誤差；等於預設值時設定中不寫此欄
+DEFAULT_TOLERANCE = 0.5                 # 未設定時的允許誤差（mm，2026-10-08 PO 由 5 改為 0.5）；等於預設值時設定中不寫此欄
 
 
 def probe_tolerance(probe: dict) -> int:

@@ -144,7 +144,7 @@ class SettingsDialogTest(UiBase):
         self.assertEqual([x["key"] for x in result.definition["dl_en1"]], ["row-1", "row-2", "row-3", "row-5"])
         self.assertIn("row-5", Path(self.tmp.name, "dl-en1.hosts").read_text())
         self.assertEqual(by_mac(self.store.load())["00:01:FC:12:39:A0"].config["name"], "加排")
-        self.assertEqual(preview.no_standard, [])  # JDG-06：每個探頭都有允許誤差（預設 5 mm）
+        self.assertEqual(preview.no_standard, [])  # JDG-06：每個探頭都有允許誤差（預設 0.5 mm）
 
     def test_probe_count_drives_list_and_saves(self):  # EDT-06
         d = self.dlg
@@ -168,25 +168,25 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(cfg["max_probes"], 4)
         self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "右中", "右", "探頭 5"])
 
-    def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 5 mm
+    def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 0.5 mm
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         self.assertEqual(d.probe_table.horizontalHeaderItem(4).text(), "允許誤差")
         box = d.probe_table.cellWidget(1, 4)
         self.assertEqual([box.itemText(i) for i in range(box.count())],
                          ["0.1 mm", "0.2 mm", "0.5 mm", "1 mm", "2 mm", "5 mm", "10 mm", "20 mm", "50 mm"])
-        self.assertEqual(box.currentData(), 5)
-        self.assertFalse(d.is_dirty())                          # 未設定視為 5 mm，開啟時不算變更
+        self.assertEqual(box.currentData(), 0.5)
+        self.assertFalse(d.is_dirty())                          # 未設定視為 0.5 mm，開啟時不算變更
         box.setCurrentIndex(box.findText("0.2 mm"))
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
-        self.assertIn("探頭 ID 2「左中」允許誤差：5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
+        self.assertIn("探頭 ID 2「左中」允許誤差：0.5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
         d.btn_commit.click()
         probes = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"]
         self.assertEqual(probes[1]["tolerance"], 0.2)
-        self.assertNotIn("tolerance", probes[0])               # 預設 5 mm 不寫入
+        self.assertNotIn("tolerance", probes[0])               # 預設 0.5 mm 不寫入
         std = self.be.standards()["row-2"]
-        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-5, 5), (-0.2, 0.2)))
+        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.5, 0.5), (-0.2, 0.2)))
         d.select("00:01:FC:DE:3A:76")
         self.assertEqual(d.probe_table.cellWidget(1, 4).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
 
@@ -843,12 +843,12 @@ class MainWindowTest(UiBase):
         from flatness import measure
         self.be.cfg.standards.clear()                     # config.toml 的 [standards] 不再使用
         std = self.be.standards()
-        self.assertEqual((std["row-1"][1].nominal, std["row-1"][1].lower, std["row-1"][1].upper), (0.0, -5.0, 5.0))
+        self.assertEqual((std["row-1"][1].nominal, std["row-1"][1].lower, std["row-1"][1].upper), (0.0, -0.5, 0.5))
         self.win.rebuild(self.be.definition)
         self.win.detect()
         self.wait_state("idle")                           # 沒有「未設定允收標準」
         s = std["row-1"][1]
-        self.assertEqual((measure.judge(4.999, s), measure.judge(5.001, s), measure.judge(-5.001, s)),
+        self.assertEqual((measure.judge(0.4999, s), measure.judge(0.5001, s), measure.judge(-0.5001, s)),
                          (measure.OK, measure.HI, measure.LO))
 
     def test_settings_saved_rebuilds_and_detects(self):  # 5.10 儲存後
