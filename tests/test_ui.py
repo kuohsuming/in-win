@@ -409,6 +409,60 @@ class SettingsDialogTest(UiBase):
         self.assertFalse(d.btn_save.isEnabled())
 
 
+class ScreenFitTest(UiBase):
+    """UI-11：主畫面依螢幕自動縮放，至少 4 排不需捲動即可看到全部探頭。"""
+
+    def window(self, n, probes=4, size=(1920, 1080)):
+        from helpers import dl
+        from flatness.ui.main_window import MainWindow
+        devs = [dl(f"00:01:FC:DE:3A:{0x70 + i:02X}", f"row-{i + 1}", f"第{i + 1}排", f"192.168.10.{11 + i}", i + 1,
+                   max_probes=probes, probes=[{"id": j + 1, "description": f"點{j + 1}"} for j in range(probes)])
+                for i in range(n)]
+        be = self.make_backend(devices=devs)
+        win = MainWindow(be, lambda defn: None)
+        self.addCleanup(win.deleteLater)
+        win.resize(*size)
+        win.show()
+        pump(self.app, 0.1)
+        return win
+
+    def bottom_of(self, win, row):
+        vp = win.rows_area.viewport()
+        return row.mapTo(vp, row.rect().bottomLeft()).y()
+
+    def test_four_rows_fit_1080p(self):
+        win = self.window(4)
+        self.assertLess(win.scale_k, 1.0)                                # 已縮小
+        self.assertEqual(win.rows_area.verticalScrollBar().maximum(), 0)  # 不需捲動
+        self.assertLessEqual(self.bottom_of(win, win.rows[3]), win.rows_area.viewport().height())
+
+    def test_eight_rows_show_at_least_four(self):
+        win = self.window(8, probes=6)
+        self.assertLessEqual(self.bottom_of(win, win.rows[3]), win.rows_area.viewport().height())
+
+    def test_few_rows_stay_full_size_and_scale_with_window(self):
+        win = self.window(2)
+        win4 = self.window(4)
+        k_big = win4.scale_k
+        self.assertGreater(win.scale_k, k_big)                            # 排少時方塊較大
+        win4.resize(1600, 900)
+        pump(self.app, 0.1)
+        self.assertLess(win4.scale_k, k_big)                              # 畫面變小，方塊跟著縮小
+
+    def test_tile_height_same_for_every_result(self):  # 結果改變時排不跳動
+        from flatness.measure import ERR, HI, OK
+        win = self.window(4)
+        t = next(iter(win.rows[0].tiles.values()))
+        heights = set()
+        for args in ((OK, 12.5), (HI, 12.6, "超出上限 0.050"), (ERR, None, "探頭無回應", "探頭無回應", True)):
+            t.set_result(*args)
+            pump(self.app, 0.02)
+            heights.add(t.sizeHint().height())
+        t.set_blank()
+        heights.add(t.sizeHint().height())
+        self.assertEqual(len(heights), 1, heights)
+
+
 class MainWindowTest(UiBase):
     def setUp(self):
         from flatness import measure

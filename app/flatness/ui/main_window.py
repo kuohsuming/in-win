@@ -12,8 +12,8 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPolygonF
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPolygonF
 from PySide6.QtWidgets import (
     QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
@@ -97,9 +97,15 @@ class ScaleBar(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.k = 1.0
         self.setFixedHeight(34)
         self.value = self.std = None
         self.color = C["ink"]
+
+    def set_scale(self, k: float):
+        self.k = k
+        self.setFixedHeight(max(14, round(34 * k)))
+        self.update()
 
     def set(self, value, std, color):
         self.value, self.std, self.color = value, std, color
@@ -108,23 +114,23 @@ class ScaleBar(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        w = self.width()
+        w, k = self.width(), self.k
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(C["line"]))
-        p.drawRoundedRect(QRectF(0, 14, w, 6), 3, 3)
+        p.drawRoundedRect(QRectF(0, 14 * k, w, 6 * k), 3 * k, 3 * k)
         ok = QColor(C["go"])
         ok.setAlphaF(0.35)
         p.setBrush(ok)
-        p.drawRoundedRect(QRectF(w * 0.2, 10, w * 0.6, 14), 2, 2)
+        p.drawRoundedRect(QRectF(w * 0.2, 10 * k, w * 0.6, 14 * k), 2, 2)
         p.setBrush(QColor(C["ink-2"]))
-        p.drawRect(QRectF(w * 0.5 - 1, 7, 2, 20))
+        p.drawRect(QRectF(w * 0.5 - 1, 7 * k, 2, 20 * k))
         if self.value is not None and self.std is not None:
             span = (self.std.upper - self.std.lower) / 0.6
             start = self.std.lower - span * 0.2
             pct = max(0.02, min(0.98, (self.value - start) / span))
             x = w * pct
             p.setBrush(QColor(self.color))
-            p.drawPolygon(QPolygonF([QPointF(x - 9, 0), QPointF(x + 9, 0), QPointF(x, 13)]))
+            p.drawPolygon(QPolygonF([QPointF(x - 9 * k, 0), QPointF(x + 9 * k, 0), QPointF(x, 13 * k)]))
 
 
 class ProbeTile(QFrame):
@@ -133,51 +139,48 @@ class ProbeTile(QFrame):
     def __init__(self, description: str, std):
         super().__init__()
         self.std = std
+        self.k = 1.0                     # 依螢幕自動縮放（UI-11）
         self.setObjectName("probe")
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(8)
+        lay = self._lay = QVBoxLayout(self)
         top = QHBoxLayout()
         self.pos = QLabel(description)
-        self.pos.setFont(text_font(20, 700))
         top.addWidget(self.pos)
         top.addStretch()
         self.badge_icon = QLabel()
         self.badge_text = QLabel()
-        self.badge_text.setFont(text_font(22, 900))
         top.addWidget(self.badge_icon)
         top.addSpacing(6)
         top.addWidget(self.badge_text)
         lay.addLayout(top)
 
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(2)
-        for r, k in enumerate(("測量值", "標準值", "允收")):
+        # 測量值在左（大字）、標準值與允收在右，兩列高度即可（UI-11：讓 4 排以上放得下）
+        grid = self._grid = QGridLayout()
+        self._keys = []
+        for k in ("測量值", "標準值", "允收"):
             lb = QLabel(k)
-            lb.setFont(text_font(15))
             lb.setStyleSheet(f"color:{C['ink-2']}")
-            grid.addWidget(lb, r, 0, Qt.AlignLeft | Qt.AlignBaseline)
+            self._keys.append(lb)
         self.m = QLabel("—")
         self.m.setTextFormat(Qt.RichText)
-        self.m.setFont(num_font(44, 700))
         self.s = QLabel(f3(std.nominal) if std else "—")
-        self.s.setFont(num_font(22))
         self.rg = QLabel(f"{f3(std.lower)} ～ {f3(std.upper)}" if std else "未設定")
-        self.rg.setFont(num_font(18))
+        grid.addWidget(self._keys[0], 0, 0, 2, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        grid.addWidget(self.m, 0, 1, 2, 1, Qt.AlignLeft | Qt.AlignVCenter)
+        grid.addWidget(self._keys[1], 0, 2, Qt.AlignRight | Qt.AlignBaseline)
+        grid.addWidget(self.s, 0, 3, Qt.AlignLeft | Qt.AlignBaseline)
+        grid.addWidget(self._keys[2], 1, 2, Qt.AlignRight | Qt.AlignBaseline)
+        grid.addWidget(self.rg, 1, 3, Qt.AlignLeft | Qt.AlignBaseline)
         self.rg.setStyleSheet(f"color:{C['ink-2']}")
-        grid.addWidget(self.m, 0, 1, Qt.AlignLeft | Qt.AlignBaseline)
-        grid.addWidget(self.s, 1, 1, Qt.AlignLeft | Qt.AlignBaseline)
-        grid.addWidget(self.rg, 2, 1, Qt.AlignLeft | Qt.AlignBaseline)
         grid.setColumnStretch(1, 1)
         lay.addLayout(grid)
         self.scale = ScaleBar()
         lay.addWidget(self.scale)
         self.note = QLabel()
-        self.note.setFont(text_font(18, 700))
         self.note.setStyleSheet(f"color:{C['ng']}")
-        self.note.setWordWrap(True)
-        lay.addWidget(self.note)
+        # 隱藏時保留位置：方塊高度不隨結果改變，排的大小固定（UI-11）
+        sp = self.scale.sizePolicy()
+        sp.setRetainSizeWhenHidden(True)
+        self.scale.setSizePolicy(sp)
         sep = QFrame()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background:{C['line']}")
@@ -186,18 +189,53 @@ class ProbeTile(QFrame):
         dev.setSpacing(6)
         self.dot = Dot()
         self.dev_text = QLabel()
-        self.dev_text.setFont(text_font(14))
         dev.addWidget(self.dot)
         dev.addWidget(self.dev_text)
         dev.addStretch()
+        dev.addWidget(self.note)  # 超出多少等說明放在設備狀態列右側，不另佔一列（UI-11）
         lay.addLayout(dev)
         self._fx = QGraphicsOpacityEffect(self)
         self._fx.setOpacity(1.0)
         self.setGraphicsEffect(self._fx)
         self.state = "blank"
-        self.set_blank("stale", "")
+        self._last = (self.set_blank, ("stale", ""), {})
+        self.set_scale(1.0)
+
+    def _px(self, v: float) -> int:
+        return max(1, round(v * self.k))
+
+    def _fpx(self, v: float) -> int:
+        """字級：縮放後不小於 12px，維持可讀（UI-11）。"""
+        return max(12, round(v * self.k))
+
+    def set_scale(self, k: float):
+        """依縮放比例設定字級、間距與刻度條（UI-11）；目前的顯示內容以同樣參數重畫。"""
+        self.k = k
+        px = self._px
+        self._lay.setSpacing(px(8))
+        self.badge_icon.setFixedSize(px(36), px(36))  # 有無徽章時高度相同
+        self._grid.setHorizontalSpacing(px(10))
+        self._grid.setVerticalSpacing(px(2))
+        self.pos.setFont(text_font(self._fpx(20), 700))
+        self.badge_text.setFont(text_font(self._fpx(22), 900))
+        for lb in self._keys:
+            lb.setFont(text_font(self._fpx(15)))
+        self.s.setFont(num_font(self._fpx(22)))
+        self.rg.setFont(num_font(self._fpx(18)))
+        self.note.setFont(text_font(self._fpx(18), 700))
+        self.dev_text.setFont(text_font(self._fpx(14)))
+        self.scale.set_scale(k)
+        # 預留測量值寬度（例如「-88.888 mm」），有結果時方塊不變寬
+        big = QFontMetrics(num_font(self._fpx(44), 700)).horizontalAdvance("-88.888")
+        unit = QFontMetrics(num_font(self._fpx(18), 500)).horizontalAdvance(" mm")
+        self.m.setMinimumWidth(big + unit + 4)
+        fn, args, kw = self._last
+        fn(*args, **kw)
 
     def _frame(self, border_px, border, bg):
+        # 邊框粗細不同時以內距補足，方塊內容與高度不變（UI-11）
+        px, extra = self._px, 5 - border_px
+        self._lay.setContentsMargins(px(14) + extra, px(12) + extra, px(14) + extra, px(12) + extra)
         self.setStyleSheet(f"QFrame#probe {{ background:{bg}; border:{border_px}px solid {border}; border-radius:6px; }}"
                            f" QFrame#probe QLabel {{ background: transparent; border: none; }}")
 
@@ -208,11 +246,12 @@ class ProbeTile(QFrame):
 
     def set_blank(self, dev_color="stale", dev_text="", blink=False):
         """空白（倒數、讀取中）或偵測中：徽章與指標隱藏，測量值「—」。"""
+        self._last = (self.set_blank, (dev_color, dev_text, blink), {})
         self.state = "blank"
         self._frame(3, C["line"], C["panel-2"])
         self.badge_icon.clear()
         self.badge_text.clear()
-        self.m.setFont(num_font(44, 700))
+        self.m.setFont(num_font(self._fpx(44), 700))
         self.m.setText("—")
         self.m.setStyleSheet(f"color:{C['ink']}")
         self.scale.show()
@@ -222,29 +261,30 @@ class ProbeTile(QFrame):
         self.fade(False)
 
     def set_result(self, state, value=None, note="", device_text="設備正常", device_error=False):
+        self._last = (self.set_result, (state, value, note, device_text, device_error), {})
         self.state = state
         color = C["go"] if state == OK else C["ng"]
         if state == OK:
             self._frame(3, C["go"], C["panel-2"])
         else:
             self._frame(5, C["ng"], C["ng-soft"])
-        self.badge_icon.setPixmap(icons.pixmap(BADGE_ICON[state], color, 36))
+        self.badge_icon.setPixmap(icons.pixmap(BADGE_ICON[state], color, self._px(36)))
         self.badge_text.setText(WORD[state])
         self.badge_text.setStyleSheet(f"color:{color}")
         if state == ERR:
-            self.m.setFont(text_font(26, 900))
+            self.m.setFont(text_font(self._fpx(26), 900))
             self.m.setText("無數據")
             self.m.setStyleSheet(f"color:{C['ng']}")
             self.scale.hide()
         else:
-            self.m.setFont(num_font(44, 700))
-            self.m.setText(f'{f3(value)}<span style="font-size:18px;font-weight:500;color:{C["ink-2"]}">'
+            self.m.setFont(num_font(self._fpx(44), 700))
+            self.m.setText(f'{f3(value)}<span style="font-size:{self._fpx(18)}px;font-weight:500;color:{C["ink-2"]}">'
                            f'&nbsp;mm</span>')
             self.m.setStyleSheet(f"color:{C['ink'] if state == OK else C['ng']}")
             self.scale.show()
             self.scale.set(value, self.std, C["ink"] if state == OK else C["ng"])
         self.note.setText(note)
-        self.note.setVisible(bool(note))
+        self.note.setVisible(bool(note) and note != device_text)  # 與設備狀態相同時不重複顯示
         if device_error:
             self._device("ng", device_text, bold=True)
         else:
@@ -262,18 +302,14 @@ class DeviceRow(QFrame):
         self.index, self.dev = index, dev
         self.maint = bool(dev.get("maint"))  # 維修中：顯示但不連線、不量測（DSC-15）
         self.setObjectName("row")
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 12, 12, 12)
-        lay.setSpacing(12)
-        left = QFrame()
+        lay = self._lay = QHBoxLayout(self)
+        left = self._left = QFrame()
         left.setObjectName("rowname")
-        left.setFixedWidth(110)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(4, 10, 4, 10)
         ll.setSpacing(6)
         ll.addStretch()
         self.name = QLabel(dev["name"])
-        self.name.setFont(text_font(26, 900))
         self.name.setAlignment(Qt.AlignCenter)
         self.name.setWordWrap(True)
         ll.addWidget(self.name)
@@ -282,7 +318,6 @@ class DeviceRow(QFrame):
         unit.addStretch()
         self.unit_dot = Dot()
         self.unit_text = QLabel(f"DL-EN1 #{index + 1}")
-        self.unit_text.setFont(num_font(12))
         self.unit_text.setAlignment(Qt.AlignCenter)
         unit.addWidget(self.unit_dot)
         unit.addWidget(self.unit_text)
@@ -292,18 +327,17 @@ class DeviceRow(QFrame):
         lay.addWidget(left)
 
         self.tiles: dict[int, ProbeTile] = {}
+        self._grid = self._note = None
         if self.maint:
-            note = QLabel(f"維修中：不連線、不量測（{len(dev['probes'])} 個探頭）")
-            note.setFont(text_font(22, 700))
+            note = self._note = QLabel(f"維修中：不連線、不量測（{len(dev['probes'])} 個探頭）")
             note.setAlignment(Qt.AlignCenter)
-            note.setMinimumHeight(90)
             note.setStyleSheet(f"color:{C['ink-2']};background:{C['panel-2']};border:2px dashed {C['line']};"
                                f"border-radius:6px;")
             lay.addWidget(note, 1)
+            self.set_scale(1.0)
             self.set_down(False)
             return
-        grid = QGridLayout()
-        grid.setSpacing(10)
+        grid = self._grid = QGridLayout()
         probes = sorted(dev["probes"], key=lambda p: p["id"])
         ncols = min(max(len(probes), 4), 6)
         for i, p in enumerate(probes):
@@ -313,7 +347,24 @@ class DeviceRow(QFrame):
         for c in range(ncols):
             grid.setColumnStretch(c, 1)
         lay.addLayout(grid, 1)
+        self.set_scale(1.0)
         self.set_down(False)
+
+    def set_scale(self, k: float):
+        """排與探頭方塊依縮放比例調整（UI-11）。"""
+        px = lambda v: max(1, round(v * k))  # noqa: E731
+        self._lay.setContentsMargins(px(12), px(12), px(12), px(12))
+        self._lay.setSpacing(px(12))
+        self._left.setFixedWidth(max(84, px(110)))
+        self.name.setFont(text_font(max(14, px(26)), 900))
+        self.unit_text.setFont(num_font(max(11, px(12))))
+        if self._note is not None:
+            self._note.setFont(text_font(px(22), 700))
+            self._note.setMinimumHeight(px(90))
+        if self._grid is not None:
+            self._grid.setSpacing(px(10))
+        for t in self.tiles.values():
+            t.set_scale(k)
 
     def set_index(self, index: int):
         """排的位置改變時更新「DL-EN1 #n」，維持目前的偵測狀態顯示。"""
@@ -351,21 +402,16 @@ class Banner(QFrame):
     def __init__(self, on_reread, on_next):
         super().__init__()
         self.setObjectName("banner")
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(32, 22, 32, 22)
-        lay.setSpacing(36)
-        left = QHBoxLayout()
-        left.setSpacing(20)
+        self.k = 1.0                     # 依螢幕自動縮放（UI-11）
+        lay = self._lay = QHBoxLayout(self)
+        left = self._left = QHBoxLayout()
         self.icon = QLabel()
-        self.icon.setFixedSize(110, 110)
         left.addWidget(self.icon)
         words = QVBoxLayout()
         words.setSpacing(6)
         words.addStretch()
         self.word = QLabel()
-        self.word.setFont(text_font(112, 900))
         self.sub = QLabel()
-        self.sub.setFont(num_font(40, 700))
         words.addWidget(self.word)
         words.addWidget(self.sub)
         words.addStretch()
@@ -374,15 +420,12 @@ class Banner(QFrame):
         self.say = QLabel()
         self.say.setTextFormat(Qt.RichText)
         self.say.setWordWrap(True)
-        self.say.setFont(text_font(28, 500))
         self.say.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         lay.addWidget(self.say, 1)
         self.btn_reread = QPushButton("重讀")
         self.btn_next = QPushButton("下一片")
         for b in (self.btn_reread, self.btn_next):
-            b.setFont(text_font(24, 700))
             b.setCursor(Qt.PointingHandCursor)
-            b.setMinimumHeight(76)
         self.btn_reread.clicked.connect(on_reread)
         self.btn_next.clicked.connect(on_next)
         lay.addWidget(self.btn_reread)
@@ -390,9 +433,34 @@ class Banner(QFrame):
         self._spin_angle = 0
         self._spin = QTimer(self, interval=40, timeout=self._rotate)
         self.state = ""
+        self._last = None
+        self.set_scale(1.0)
+
+    def _px(self, v: float) -> int:
+        return max(1, round(v * self.k))
+
+    def set_scale(self, k: float):
+        """橫幅依縮放比例調整字級、圖示與按鍵（UI-11）；目前狀態以同樣參數重畫。"""
+        self.k = k
+        px = self._px
+        self._lay.setContentsMargins(px(32), px(22), px(32), px(22))
+        self._lay.setSpacing(px(36))
+        self._left.setSpacing(px(20))
+        self.icon.setFixedSize(px(110), px(110))
+        self.setFixedHeight(px(190))  # 固定高度：狀態改變時排的大小不跳動（UI-11）
+        self.sub.setFont(num_font(px(40), 700))
+        self.say.setFont(text_font(px(28), 500))
+        for b in (self.btn_reread, self.btn_next):
+            b.setFont(text_font(px(24), 700))
+            b.setMinimumHeight(px(76))
+        if self._last is not None:
+            self.set(*self._last[0], **self._last[1])
 
     def set(self, state: str, *, icon=None, word="", sub="", say="", word_px=112, color=None,
             reread=False, next_=False, spin=False, countdown=False):
+        self._last = ((state,), dict(icon=icon, word=word, sub=sub, say=say, word_px=word_px, color=color,
+                                     reread=reread, next_=next_, spin=spin, countdown=countdown))
+        px = self._px
         self.state = state
         bg, border = {"pass": (C["go-soft"], C["go"]), "fail": (C["ng-soft"], C["ng"]),
                       "error": (C["ng-soft"], C["ng"])}.get(state, (C["panel"], C["line"]))
@@ -403,13 +471,13 @@ class Banner(QFrame):
         self._spin.stop()
         self._spin_angle = 0
         if icon:
-            self.icon.setPixmap(icons.pixmap(icon, color, 110))
+            self.icon.setPixmap(icons.pixmap(icon, color, px(110)))
             self.icon.show()
             if spin:
                 self._spin.start()
         else:
             self.icon.hide()
-        self.word.setFont(num_font(112, 700) if countdown else text_font(word_px, 900))
+        self.word.setFont(num_font(px(112), 700) if countdown else text_font(px(word_px), 900))
         self.word.setText(word)
         self.word.setStyleSheet(f"color:{C['ink'] if countdown else color}; letter-spacing: 0.05em;")
         self.sub.setText(sub)
@@ -420,19 +488,19 @@ class Banner(QFrame):
         self.btn_next.setEnabled(next_)
         primary = {"pass": C["go"], "fail": C["ng"], "error": C["ng"]}.get(state, C["ink"])
         self.btn_next.setStyleSheet(
-            f"QPushButton {{ background:{primary}; color:white; border:none; border-radius:8px; padding:18px 30px;"
-            f" font-size:24px; font-weight:700; }}"
+            f"QPushButton {{ background:{primary}; color:white; border:none; border-radius:8px;"
+            f" padding:{px(18)}px {px(30)}px; font-size:{px(24)}px; font-weight:700; }}"
             f"QPushButton:disabled {{ background: rgba(28,35,38,0.35); color: rgba(255,255,255,0.8); }}")
         self.btn_reread.setStyleSheet(
             f"QPushButton {{ background:{C['panel']}; color:{C['ink']}; border:3px solid {C['ink-2']};"
-            f" border-radius:8px; padding:18px 30px; font-size:24px; font-weight:700; }}"
+            f" border-radius:8px; padding:{px(18)}px {px(30)}px; font-size:{px(24)}px; font-weight:700; }}"
             f" QPushButton:hover {{ border-color:{C['ink']}; }}"
             f"QPushButton:disabled {{ color: rgba(28,35,38,0.35); border-color: rgba(86,97,106,0.35); }}")
 
     def _rotate(self):
         """偵測圖示每 1.6 秒旋轉一圈（第 7 節）。"""
         self._spin_angle = (self._spin_angle + 360 * 40 / 1600) % 360
-        base = icons.pixmap(self._icon_name, self._icon_color, 110)
+        base = icons.pixmap(self._icon_name, self._icon_color, self._px(110))
         pm = base.copy()
         pm.fill(Qt.transparent)
         p = QPainter(pm)
@@ -540,22 +608,25 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(page)
         outer.setContentsMargins(16, 16, 16, 16)
         body = QWidget()
-        body.setMaximumWidth(1600)
         outer.addWidget(body, 0, Qt.AlignHCenter)
         page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         body.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.body_lay = QVBoxLayout(body)
         self.body_lay.setContentsMargins(0, 0, 0, 0)
         self.body_lay.setSpacing(14)
-        self.body_lay.addWidget(self._topbar())
-        self.body_lay.addWidget(self._serialbar())
+        self._top = self._topbar()
+        self._serial = self._serialbar()
+        self.body_lay.addWidget(self._top)
+        self.body_lay.addWidget(self._serial)
         self.banner = Banner(self.reread, self.next_piece)
         self.body_lay.addWidget(self.banner)
         self.rows_area = QScrollArea()
         self.rows_area.setWidgetResizable(True)
         self.rows_area.setFrameShape(QFrame.NoFrame)
+        self.rows_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.rows_area.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         self.body_lay.addWidget(self.rows_area, 1)
+        self.rows_area.installEventFilter(self)  # 排區大小改變（例如編號列變高）時重新縮放（UI-11）
         outer.setStretch(0, 1)
         body.setMinimumWidth(0)
 
@@ -581,9 +652,74 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         body = self.body_lay.parentWidget()
-        body.setFixedWidth(min(1600, self.centralWidget().width() - 32))
+        body.setFixedWidth(self.centralWidget().width() - 32)  # 使用整個螢幕寬度（UI-11）
         if self.backdrop.isVisible():
             self.backdrop.cover()
+        self._fit_later()
+
+    # 依螢幕自動縮放（UI-11）：至少 4 排（設備少於 4 排時為全部）不捲動即可看到全部探頭
+    MIN_VISIBLE_ROWS = 4
+    SCALE_MIN = 0.45
+
+    def eventFilter(self, obj, e):
+        if obj is self.rows_area and e.type() == QEvent.Resize and not getattr(self, "_fitting", False):
+            self._fit_later()
+        return super().eventFilter(obj, e)
+
+    def _fit_later(self):
+        if not getattr(self, "_fit_pending", False):
+            self._fit_pending = True
+            QTimer.singleShot(0, self.fit_to_screen)
+
+    def _apply_scale(self, k: float):
+        self.scale_k = k
+        self.banner.set_scale(min(1.0, 0.4 + 0.6 * k))  # 橫幅是主要結果，縮得比排少
+        for r in self.rows:
+            r.set_scale(k)
+            r.setFixedHeight(r.layout().sizeHint().height())  # 排高固定為此比例所需，不被捲動區拉伸或壓縮
+        holder = self.rows_area.widget()
+        if holder is not None:  # 立即重新排版，避免沿用上一個比例的高度
+            holder.layout().invalidate()
+            holder.layout().activate()
+        self.body_lay.invalidate()
+        self.body_lay.activate()
+
+    def fit_to_screen(self):
+        """選擇最大的縮放比例，使全部的排（多於 4 排時至少前 4 排）與橫幅在畫面內，不需捲動。"""
+        self._fit_pending = False
+        self._fitting = True
+        try:
+            self._fit()
+        finally:
+            self._fitting = False
+
+    def _fit(self):
+        avail_w = self.body_lay.parentWidget().width()
+        if self.centralWidget().height() <= 32 or not self.rows:
+            self._apply_scale(1.0)
+            return
+
+        def fits(k, count):
+            self._apply_scale(k)  # 套用後版面已重新計算：以排區實際高度比較
+            rows = self.rows[:count]
+            h = sum(r.maximumHeight() for r in rows) + 12 * (len(rows) - 1)  # 排高已固定（_apply_scale）
+            w = max(r.minimumSizeHint().width() for r in self.rows)
+            return h <= self.rows_area.height() and w <= avail_w
+
+        n = len(self.rows)
+        counts = [n] if n <= self.MIN_VISIBLE_ROWS else [n, self.MIN_VISIBLE_ROWS]
+        for count in counts:
+            if fits(1.0, count):
+                return
+            if not fits(self.SCALE_MIN, count):
+                continue
+            lo, hi = self.SCALE_MIN, 1.0          # 二分搜尋最大的可容納比例
+            while hi - lo > 0.01:
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if fits(mid, count) else (lo, mid)
+            self._apply_scale(round(lo, 3))
+            return
+        self._apply_scale(self.SCALE_MIN)
 
     def _topbar(self) -> QWidget:
         bar = QFrame()
@@ -715,6 +851,8 @@ class MainWindow(QMainWindow):
             lay.addWidget(hint)
         lay.addStretch()
         self.rows_area.setWidget(holder)
+        self._apply_scale(getattr(self, "scale_k", 1.0))
+        self._fit_later()
 
     @property
     def live_rows(self) -> list[DeviceRow]:
@@ -845,15 +983,19 @@ class MainWindow(QMainWindow):
 
     def show_device_error(self, errs, outs):
         """設備異常（5.3）：列出原因；每 10 秒自動重新偵測（DEV-05、DEV-06）。"""
-        more = f"<br>另有：<b>{'、'.join(map(html.escape, outs))}</b>" if outs else ""
-        self._err_text = (f"<b>{'、'.join(map(html.escape, errs))}</b>{more}<br>請通知工程人員；排除後自動恢復。")
+        def brief(items, n=2):
+            """橫幅高度固定（UI-11）：最多列出 n 項，其餘以「等 N 項」表示；各排的異常仍標示在排與探頭上。"""
+            text = "、".join(map(html.escape, items[:n]))
+            return text + (f" 等 {len(items)} 項" if len(items) > n else "")
+        more = f"<br>另有：<b>{brief(outs, 1)}</b>" if outs else ""
+        self._err_text = (f"<b>{brief(errs)}</b>{more}<br>請通知工程人員；排除後自動恢復。")
         self._retry_left = self.redetect_s
         self._render_error()
         self._retry_timer.start()
 
     def _render_error(self):
         self.banner.set("error", icon="err", word="設備異常", sub="FAIL", word_px=84,
-                        say=f"{self._err_text}<br><span style='font-size:25px;color:{C['ink-2']}'>"
+                        say=f"{self._err_text}<br><span style='font-size:{self.banner._px(25)}px;color:{C['ink-2']}'>"
                             f"已偵測 <b>{self.detect_count}</b> 次，<b>{self._retry_left}</b> 秒後自動重新偵測</span>")
         self._fade_ok(True)
 

@@ -37,7 +37,8 @@
 | 編號列 | `MainWindow._serialbar()` | 17 碼編號（DAT-01）、重讀次數、每秒更新的時鐘 |
 | 結果橫幅 | `Banner.set(state, …)` | `detecting`／`booting`／`idle`／`countdown`／`reading`／`pass`／`fail`／`error`，按鍵可用性依 5.3 |
 | 排 | `DeviceRow` | 排名稱、DL-EN1 標示；偵測不到時整排紅框（5.4）；維修中（`dev["maint"]`）顯示灰色「維修中」、沒有探頭方塊，不列入偵測與量測（`MainWindow.live_rows` 只含使用中） |
-| 探頭方塊 | `ProbeTile` | `set_blank()`、`set_result(state, value, note, …)`、`fade()`（5.5） |
+| 探頭方塊 | `ProbeTile` | `set_blank()`、`set_result(state, value, note, …)`、`fade()`（5.5） ；`set_scale(k)` 依比例調整字級與間距 |
+| 自動縮放 | `MainWindow.fit_to_screen()` | 視窗或排區大小改變、重建排後執行；二分搜尋最大的比例 `scale_k`，使至少 4 排不需捲動（UI-11）；排高固定為該比例所需 |
 | 刻度條 | `ScaleBar` | 5.6 公式，`paintEvent` 繪製 |
 
 ![主畫面：不合格，合格點淡化](images/app-main-fail.png)
