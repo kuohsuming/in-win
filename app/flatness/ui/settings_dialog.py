@@ -821,8 +821,9 @@ class SettingsDialog(QDialog):
         self.probe_table.setCellWidget(r, 3, btn)
         tol = QComboBox()  # JDG-06：允許誤差，判定為 |讀值| ≤ 允許誤差
         for v in lan.TOLERANCES:
-            tol.addItem(f"{v} mm", v)
-        tol.setCurrentIndex(max(0, tol.findData(tolerance)))
+            tol.addItem(f"{v:g} mm", v)
+        tol.setCurrentIndex(next((i for i, v in enumerate(lan.TOLERANCES) if v == tolerance),
+                                 lan.TOLERANCES.index(lan.DEFAULT_TOLERANCE)))
         tol.setEnabled(not self.read_only)
         tol.setToolTip("允許誤差：讀值在 ± 此值內為合格")
         tol.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")

@@ -174,21 +174,21 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(d.probe_table.horizontalHeaderItem(4).text(), "允許誤差")
         box = d.probe_table.cellWidget(1, 4)
         self.assertEqual([box.itemText(i) for i in range(box.count())],
-                         ["5 mm", "10 mm", "20 mm", "50 mm", "100 mm", "200 mm"])
+                         ["0.1 mm", "0.2 mm", "0.5 mm", "1 mm", "2 mm", "5 mm", "10 mm", "20 mm", "50 mm"])
         self.assertEqual(box.currentData(), 5)
         self.assertFalse(d.is_dirty())                          # 未設定視為 5 mm，開啟時不算變更
-        box.setCurrentIndex(box.findData(20))
+        box.setCurrentIndex(box.findText("0.2 mm"))
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
-        self.assertIn("探頭 ID 2「左中」允許誤差：5 mm → 20 mm", d.preview.summary() + str(d.preview.items[0].lines))
+        self.assertIn("探頭 ID 2「左中」允許誤差：5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
         d.btn_commit.click()
         probes = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"]
-        self.assertEqual(probes[1]["tolerance"], 20)
+        self.assertEqual(probes[1]["tolerance"], 0.2)
         self.assertNotIn("tolerance", probes[0])               # 預設 5 mm 不寫入
         std = self.be.standards()["row-2"]
-        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-5, 5), (-20, 20)))
+        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-5, 5), (-0.2, 0.2)))
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.cellWidget(1, 4).currentData(), 20)  # 重新開啟仍為 20 mm
+        self.assertEqual(d.probe_table.cellWidget(1, 4).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
 
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg

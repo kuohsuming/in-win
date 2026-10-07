@@ -644,7 +644,7 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
             ta, tb = _tolerances(co), _tolerances(cn)  # JDG-06
             for pid in sorted(ta.keys() & tb.keys()):
                 if ta[pid] != tb[pid]:
-                    lines.append((f"探頭 ID {pid}「{pb[pid]}」允許誤差：{ta[pid]} mm → {tb[pid]} mm", False))
+                    lines.append((f"探頭 ID {pid}「{pb[pid]}」允許誤差：{ta[pid]:g} mm → {tb[pid]:g} mm", False))
         elif n.is_dl_en1 and not o.is_dl_en1 and mac not in handled:
             cn = n.config or {}
             lines.append((f"識別碼 {cn.get('key')}、排名稱 {cn.get('name')}、"

@@ -45,8 +45,9 @@ class ValidateTest(unittest.TestCase):
         def defn(tol):
             return {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
                 {"id": 1, "description": "左", "tolerance": tol}])]}
-        self.assertEqual(len(bootp.validate(defn(20), NET)), 1)
-        for bad in (7, "5", True, 5.0):
+        for ok in (0.1, 0.5, 2, 20, 5.0):
+            self.assertEqual(len(bootp.validate(defn(ok), NET)), 1, ok)
+        for bad in (7, 100, 0.3, "5", True):
             with self.assertRaises(bootp.DefinitionError, msg=bad):
                 bootp.validate(defn(bad), NET)
 
