@@ -1,6 +1,6 @@
 """啟動表面平整檢查系統 App：python -m flatness [選項]
 
-啟動順序（DSC-06、DSC-07）：讀設定檔 → 依資料庫產生定義檔與 BOOTP 主機對應 → 啟動 dnsmasq 與探索 → 主畫面 → 自動偵測設備。
+啟動順序（NFR-14、DSC-06、DSC-07）：停止其他執行中的 App → 讀設定檔 → 依資料庫產生定義檔與 BOOTP 主機對應 → 啟動 dnsmasq 與探索 → 主畫面 → 自動偵測設備。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 from . import config as config_mod
-from . import dnsmasq, sync
+from . import dnsmasq, instance, sync
 
 
 def parse_args(argv=None):
@@ -65,6 +65,7 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     setup_logging(args.log_file)
     log = logging.getLogger("flatness")
+    instance.stop_other_apps()  # NFR-14：同一時間只執行一個 App，先停止之前遺留的 App
     cfg = config_mod.load(args.config)
 
     from PySide6.QtWidgets import QApplication
@@ -104,8 +105,13 @@ def main(argv=None) -> int:
     # 登出、關機（SIGTERM、SIGHUP）或 Ctrl+C 時正常結束：寫入未寫入的結果（DAT-05）並停止 dnsmasq（DSC-07）。
     # Qt 事件迴圈執行中 Python 無法處理訊號，以計時器定期讓出控制權。
     from PySide6.QtCore import QTimer
+    def on_signal(signum, _frame):
+        log.info("收到 %s，結束 App", signal.Signals(signum).name)
+        win.close()   # DAT-05：closeEvent 寫入未寫入的結果
+        app.quit()    # 不依賴「最後一個視窗關閉」：仍有其他視窗（設定頁等）時也要結束（NFR-14）
+
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(sig, lambda *_: win.close())
+        signal.signal(sig, on_signal)
     pulse = QTimer(interval=300)
     pulse.timeout.connect(lambda: None)
     pulse.start()

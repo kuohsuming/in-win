@@ -199,7 +199,10 @@ class DnsmasqService:
         try:
             proc = subprocess.Popen(self.command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                    errors="replace")
+                                    errors="replace",
+                                    # 獨立程序群組：sudo 不轉送同一程序群組送來的訊號，
+                                    # 與 App 同群組時 terminate() 無效，要等逾時改用 STOP_COMMAND
+                                    start_new_session=True)
         except OSError as exc:
             self._notify(False, f"無法執行 dnsmasq：{exc}")
             self._schedule_retry(gen)

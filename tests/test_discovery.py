@@ -199,3 +199,41 @@ class DnsmasqTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SingleInstanceTest(unittest.TestCase):  # NFR-14：啟動前停止其他執行中的 App
+    def test_other_apps_excludes_self_and_ancestors(self):
+        from flatness.instance import other_apps
+        table = {
+            1: (["/sbin/init"], 0),
+            10: (["bash", "scripts/run-dev.sh"], 1),
+            11: ([".venv/bin/python", "-m", "flatness", "--config", "x"], 10),     # 本程序
+            20: ([".venv/bin/python", "-m", "flatness", "--simulate"], 1),        # 遺留的 App
+            30: ([".venv/bin/python", "-m", "flatness.initdb"], 1),               # 不是 App
+            40: (["/usr/sbin/dnsmasq", "--keep-in-foreground"], 20),
+        }
+        self.assertEqual(other_apps(table, me=11), [20])
+
+    def _fake_app(self, ignore_term=False):
+        import subprocess
+        code = ("import signal, time\n"
+                + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if ignore_term else "")
+                + "time.sleep(60)")
+        p = subprocess.Popen([sys.executable, "-c", code, "-m", "flatness"])
+        self.addCleanup(lambda: (p.kill(), p.wait()))
+        time.sleep(0.3)  # 等訊號處理設定完成
+        return p
+
+    def test_stop_other_apps_terminates(self):
+        from flatness.instance import stop_other_apps
+        p = self._fake_app()
+        self.assertEqual(stop_other_apps(timeout=3, pids=[p.pid]), [])
+        self.assertIsNotNone(p.wait(3))
+
+    def test_stop_other_apps_kills_when_term_ignored(self):
+        from flatness.instance import stop_other_apps
+        p = self._fake_app(ignore_term=True)
+        t0 = time.monotonic()
+        self.assertEqual(stop_other_apps(timeout=0.5, pids=[p.pid]), [])
+        self.assertEqual(p.wait(3), -9)
+        self.assertLess(time.monotonic() - t0, 3)
