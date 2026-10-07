@@ -709,7 +709,7 @@ class MainWindowTest(UiBase):
             dlg.setParent(holder, dlg.windowFlags())      # 同 _modal：顯示時移到遮罩層下
             self.addCleanup(dlg.deleteLater)
             self.assertEqual(dlg.name.text(), f"平整檢查_{datetime.now():%Y-%m-%d}")  # 預設檔名
-            self.assertEqual(dlg.folder_label.text(), tmp.name)                   # 上次的資料夾
+            self.assertEqual(dlg.folder_edit.text(), tmp.name)                    # 上次的資料夾
             dlg.name.setText("A線 第1班")                                          # 使用者改檔名
             self.assertIn(str(Path(tmp.name) / "A線 第1班.xlsx"), dlg.info.text())
             dlg._save()
@@ -729,6 +729,23 @@ class MainWindowTest(UiBase):
             dlg.name.setText("a/b")                                              # 不允許的字元
             self.assertFalse(dlg.save.isEnabled())
             self.assertIn("檔名不可包含 /", dlg.info.text())
+            dlg.name.setText("x")
+            sub = Path(tmp.name) / "usb"
+            sub.mkdir()
+            dlg.folder_edit.textEdited.emit(str(sub))                            # 直接輸入資料夾
+            self.assertIn(str(sub / "x.xlsx"), dlg.info.text())
+            dlg._save()
+            self.assertTrue((sub / "x.xlsx").exists())
+            with mock.patch.object(mw.QFileDialog, "exec", return_value=mw.QDialog.Accepted), \
+                    mock.patch.object(mw.QFileDialog, "selectedFiles", return_value=[tmp.name]):
+                dlg._choose_folder()                                             # 變更資料夾（App 內建視窗）
+            self.assertEqual((dlg.folder, dlg.folder_edit.text()), (Path(tmp.name), tmp.name))
+            with mock.patch.object(mw.QFileDialog, "exec", return_value=mw.QDialog.Rejected):
+                dlg._choose_folder()                                             # 取消：不變
+            self.assertEqual(dlg.folder, Path(tmp.name))
+            dlg.folder_edit.textEdited.emit(str(sub / "gone"))                   # 不存在的資料夾
+            self.assertFalse(dlg.save.isEnabled())
+            self.assertIn("資料夾不存在", dlg.info.text())
 
     def test_first_next_writes_nothing(self):  # MEA-02
         self.win.detect()

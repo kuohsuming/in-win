@@ -675,11 +675,9 @@ class ExportDialog(QDialog):
         lay.addLayout(name_row)
         lay.addWidget(_obj(QLabel("存放資料夾"), "label"))
         folder_row = QHBoxLayout()
-        self.folder_label = QLabel()
-        self.folder_label.setWordWrap(True)
-        self.folder_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.folder_label.setStyleSheet("font-size:16px;")
-        folder_row.addWidget(self.folder_label, 1)
+        self.folder_edit = QLineEdit(str(self.folder))  # 可直接輸入或貼上路徑
+        self.folder_edit.textEdited.connect(self._folder_typed)
+        folder_row.addWidget(self.folder_edit, 1)
         change = QPushButton("變更資料夾")
         change.clicked.connect(self._choose_folder)
         folder_row.addWidget(change)
@@ -710,7 +708,13 @@ class ExportDialog(QDialog):
         self.name.setText(f"平整檢查_{self.date.date().toPython():%Y-%m-%d}")  # EXP-02 預設檔名
         self._update()
 
+    def _folder_typed(self, text: str):
+        self.folder = Path(text.strip()).expanduser() if text.strip() else Path.home()
+        self._update()
+
     def _target(self) -> tuple[Path | None, str | None]:
+        if not self.folder.is_dir():
+            return None, f"資料夾不存在：{self.folder}"
         name = self.name.text().strip()
         if name.lower().endswith(".xlsx"):
             name = name[:-5].rstrip()
@@ -724,7 +728,6 @@ class ExportDialog(QDialog):
     def _update(self):
         self._confirm = None
         self.save.setText("儲存")
-        self.folder_label.setText(str(self.folder))
         day = self.date.date().toPython()
         try:
             n = self.sink.count(day)
@@ -743,10 +746,19 @@ class ExportDialog(QDialog):
         self.save.setEnabled(bool(n) and why is None)
 
     def _choose_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "選擇存放資料夾", str(self.folder))
-        if folder:
-            self.folder = Path(folder)
-            self._update()
+        # 不用系統（portal）視窗：全螢幕時會被 App 擋住或選擇結果沒有傳回（2026-10-07 實測）
+        dlg = QFileDialog(self, "選擇存放資料夾", str(self.folder if self.folder.is_dir() else Path.home()))
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
+        dlg.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        dlg.resize(900, 600)
+        if dlg.exec() != QDialog.Accepted or not dlg.selectedFiles():
+            log.info("取出測試數據：取消變更資料夾（仍為 %s）", self.folder)
+            return
+        self.folder = Path(dlg.selectedFiles()[0])
+        self.folder_edit.setText(str(self.folder))
+        log.info("取出測試數據：存放資料夾改為 %s", self.folder)
+        self._update()
 
     def _open_folder(self):
         from PySide6.QtCore import QUrl
