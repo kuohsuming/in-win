@@ -8,12 +8,11 @@
     FR,nn,037  放大器 ID nn 的小數位數 → FR,01,037,+000000004
     MS         全部放大器的輸出狀態與測量值 → MS,02,-000002971,02,+000000358
                （第 N 組對應放大器 ID N，DEF-05；實際值 = 整數 ÷ 10^小數位數；為放大器歸零後的判斷值 P.V.）
-    SR,nn,037／038  放大器 ID nn 的判斷值 P.V.／原始值 R.V.（CAL-10：兩者相減為放大器目前的歸零基準）
-               真機（2026-10-07）：歸零後 R.V. 也一起變 0（148 設 R.V. 或 P.V. 皆同），相減恆為 0
 寫入命令只在校準時對選取的單一放大器使用（NFR-11、CAL-02）：
     SW,nn,149／148／150  預設記憶 YES、預設資料 R.V.、執行點全部通道通用（不符合才寫入）
     SW,nn,067／072／077／082  通道 0～3 的預設值 0（不符合才寫入）
     SW,nn,002,+000000001  預設重置（清除歸零）；SW,nn,001,+000000001  執行預設（歸零）
+    真機（2026-10-07）：歸零後 SR,nn,038 R.V. 也一起變 0（148 設 R.V. 或 P.V. 皆同），讀不出歸零量
     回應為 SW,nn,資料編號（不含設定值）。禁止 003 重置、005 初始化重置。
 錯誤回應 ER,命令,ddd；031／254 表示設備啟動中（DEV-07）。
 2026-10-07 以真機（2 台放大器、4 位小數）確認以上回應格式。
@@ -33,7 +32,7 @@ import time
 
 from .bootp import DEFAULT_PORT
 from .calibrate import Cancelled, SampleError
-from .measure import UNCALIBRATED, ZERO_CHANGED, ZERO_LOST, DeviceStatus, ProbeReading
+from .measure import UNCALIBRATED, DeviceStatus, ProbeReading
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +40,6 @@ NO_DATA = {"+100000000", "+099999999", "-099999999", "-099999998"}  # 探頭無�
 BOOTING = {"031", "254"}                                             # 設備啟動中（DEV-07）
 OUT_ERROR = "03"                                                     # MS 輸出狀態：00 全 OFF、01 HIGH、02 LOW、03 錯誤、04 GO（手冊 2-4）
 AMP_ERROR_BASE = 668                                                 # SR,00,(668 + ID)：ID 的錯誤代碼（手冊 3-1，668 為 ID00）
-SR_INVALID = {"+009999999", "-009999999", "-009999998", "+010000000"}  # SR 037／038：超範圍、欠範圍、無效、錯誤（手冊 4-1 *4）
 PRESET_EXECUTE, PRESET_RESET = 1, 2                                  # GT2 資料編號 001 執行預設、002 預設重置
 PRESET_SETTINGS = {149: 0, 148: 0, 150: 0}                           # 預設記憶 YES、預設資料 R.V.、執行點全部通道通用
 PRESET_VALUES = (67, 72, 77, 82)                                     # 通道 0～3 的預設值（歸零後顯示 0）
@@ -128,18 +126,15 @@ def _int(fields: list[str]) -> int:
 class DlEn1Station:
     """以 DL-EN1 實機量測（DEV、MEA）。definition 只含使用中的 DL-EN1。"""
 
-    def __init__(self, definition: dict, standards: dict | None = None, *, tolerance: float = 0.002,
-                 connect_timeout: float = 3.0, timeout: float = 3.0):
+    def __init__(self, definition: dict, standards: dict | None = None, *, connect_timeout: float = 3.0, timeout: float = 3.0):
         self.definition = definition
         self.devices = list(definition.get("dl_en1", []))
         self.links = {d["key"]: Link(d["ipv4"], d.get("port") or DEFAULT_PORT, connect_timeout, timeout)
                       for d in self.devices}
         self.decimals: dict[tuple[str, int], int] = {}  # DEV-03：(key, 放大器 ID) → 小數位數
-        # CAL-06：(key, 探頭 id) → 校準時放大器的歸零基準；沒有的探頭為未校準（CAL-07）
+        # CAL-06：(key, 探頭 id) → 校準時的歸零基準（歸零前的原始值）；沒有的探頭為未校準（CAL-07）
         self.offsets = {(d["key"], p["id"]): p["zero_offset"] for d in self.devices for p in d["probes"]
                         if p.get("zero_offset") is not None}
-        self.tolerance = tolerance                       # CAL-10：歸零基準與紀錄的容許差
-        self.not_ready: dict[tuple[str, int], str] = {}  # CAL-07、CAL-10：上次偵測時不可量測的探頭 → 原因
         self._pool = ThreadPoolExecutor(max_workers=max(1, len(self.devices)), thread_name_prefix="dlen1")
 
     def close(self):
@@ -176,15 +171,6 @@ class DlEn1Station:
                     code = _int(link.ask(f"SR,00,{AMP_ERROR_BASE + pid}"))
                     st.probe_errors[pid] = f"放大器錯誤（錯誤代碼 {code}）"
             st.uncalibrated = {pid: UNCALIBRATED for pid in ids if (key, pid) not in self.offsets}  # CAL-07
-            for pid in ids:  # CAL-10：放大器的歸零與校準紀錄不符
-                if pid not in st.probe_errors and pid not in st.uncalibrated:
-                    why = self._check_zero(d, link, pid)
-                    if why:
-                        st.uncalibrated[pid] = why
-            for pid in ids:
-                self.not_ready.pop((key, pid), None)
-                if pid in st.uncalibrated:
-                    self.not_ready[(key, pid)] = st.uncalibrated[pid]
             log.info("偵測 %s（%s）：連接 %d 台，整體狀態 %d，小數位數 %s", d["name"], link.ip, count, state,
                      {pid: self.decimals.get((key, pid)) for pid in ids})
         except CommandError as exc:
@@ -197,33 +183,6 @@ class DlEn1Station:
             st.reachable = False
             log.warning("偵測 %s（%s）：偵測不到（%s）", d["name"], link.ip, exc)
         return st
-
-    def _check_zero(self, d: dict, link: Link, pid: int) -> str | None:
-        """CAL-10：比對放大器目前的歸零基準（R.V. − P.V.）與校準紀錄；無法讀取時不判定。"""
-        key = d["key"]
-        try:
-            base = self._zero_base(link, key, pid)
-        except CommandError as exc:
-            log.warning("%s 放大器 ID %d：無法讀取 P.V.／R.V.，不確認歸零（%s）", d["name"], pid, exc)
-            return None
-        if base is None:
-            log.info("%s 放大器 ID %d：P.V.／R.V. 無有效數據，不確認歸零", d["name"], pid)
-            return None
-        stored = self.offsets[(key, pid)]
-        if abs(base - stored) <= self.tolerance:
-            return None
-        why = ZERO_LOST if abs(base) <= self.tolerance else ZERO_CHANGED
-        log.warning("%s 放大器 ID %d：%s（目前 %.4f，校準紀錄 %.4f），須重新校準", d["name"], pid, why, base, stored)
-        return why
-
-    def _zero_base(self, link: Link, key: str, pid: int) -> float | None:
-        """放大器目前的歸零基準 R.V. − P.V.（mm）；任一為超範圍、無效等特殊值時回傳 None。"""
-        dec = self._decimals(link, key, pid)
-        pv = link.ask(f"SR,{pid:02d},037")[-1]
-        rv = link.ask(f"SR,{pid:02d},038")[-1]
-        if pv in SR_INVALID or rv in SR_INVALID:
-            return None
-        return round((int(rv) - int(pv)) / 10 ** dec, 6)
 
     def _decimals(self, link: Link, key: str, pid: int) -> int:
         dec = self.decimals.get((key, pid))
@@ -270,9 +229,8 @@ class DlEn1Station:
                     res.append(ProbeReading(key, pid, None, raw, f"無法讀取小數位數（{exc}）"))
                     continue
                 offset = self.offsets.get((key, pid))
-                why = self.not_ready.get((key, pid)) or (UNCALIBRATED if offset is None else None)
-                if why:  # CAL-07、CAL-10：未校準或歸零不符不判定
-                    res.append(ProbeReading(key, pid, None, raw, why))
+                if offset is None:  # CAL-07：未校準不判定
+                    res.append(ProbeReading(key, pid, None, raw, UNCALIBRATED))
                 else:    # CAL-03：放大器已歸零，直接使用判斷值；記下歸零基準（CAL-09）
                     res.append(ProbeReading(key, pid, int(raw) / 10 ** dec, raw, None, offset))
         return res
@@ -321,13 +279,6 @@ class DlEn1Station:
         """放大器的響應時間（秒）；取樣間隔不小於此值，才不會連續讀到同一個值。"""
         v = self._calib(key, probe_id, "讀取響應時間", lambda link: _int(link.ask(f"SR,{probe_id:02d},132")))
         return RESPONSE_TIME.get(v, 0.1)
-
-    def zero_base(self, key: str, probe_id: int) -> float:
-        """放大器目前的歸零基準 R.V. − P.V.（CAL-06）。"""
-        base = self._calib(key, probe_id, "讀取 P.V.／R.V.", lambda link: self._zero_base(link, key, probe_id))
-        if base is None:
-            raise SampleError(f"放大器 ID {probe_id} 的 P.V.／R.V. 無有效數據")
-        return base
 
     def sample(self, key: str, probe_id: int, n: int, interval: float, cancel=None) -> list[float]:
         """讀取一個探頭的判斷值 n 次，每次間隔 interval 秒；與量測共用同一條連線。"""

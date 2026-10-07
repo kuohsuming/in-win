@@ -106,7 +106,7 @@ def main(argv=None) -> int:
         sink = None
     else:
         log.info("量測來源：DL-EN1 實機；結果寫入資料庫（本機暫存 %s）", args.buffer)
-        factory = lambda definition: DlEn1Station(definition, tolerance=cfg.calibration.tolerance)  # noqa: E731
+        factory = lambda definition: DlEn1Station(definition)  # noqa: E731
         sink = ResultSink(store, cfg.station_id, args.buffer).start()
     win = MainWindow(backend, factory, sink)
     if args.on_top:

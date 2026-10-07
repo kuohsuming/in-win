@@ -7,7 +7,7 @@
     4. 執行歸零（預設），放大器記住，斷電後仍保留
     5. 再讀 M 次驗證接近 0
     6. 失敗或取消時再清除一次，探頭為未校準
-之後量測直接使用放大器的值；資料庫記錄歸零基準（R.V. − P.V.），供偵測時比對（CAL-10）。
+之後量測直接使用放大器的值；資料庫記錄歸零基準（取樣平均，即歸零前的原始值）供紀錄與追溯。
 寫入命令只用於此流程（NFR-11）。經由量測用的 Station（DL-EN1 同一時間只接受 1 條連線，校準與量測共用）。
 
 驗證條件（CAL-04）：M 次平均在 0 ± 容許值內，且每次在 0 ± max(3σ, 解析度) 內。
@@ -41,7 +41,7 @@ class CalResult:
     samples: list = field(default_factory=list)       # 清除歸零後的讀值（＝原始值）
     mean: float | None = None
     sigma: float | None = None
-    new_offset: float | None = None                   # 歸零後從放大器讀回的歸零基準
+    new_offset: float | None = None                   # 歸零基準（通過時為取樣平均）
     verify: list = field(default_factory=list)        # 歸零後的讀值
     verify_mean: float | None = None
     verify_max_dev: float | None = None
@@ -84,7 +84,7 @@ def run(station, dev: dict, probe_id: int, settings, cancel: threading.Event | N
     """校準一個探頭（阻斷數秒，須在背景執行緒呼叫）。
 
     station 須提供：prepare_preset(key, id)、preset(key, id, execute)、response_time(key, id)、
-    zero_base(key, id)、sample(key, id, n, interval_s, cancel)、resolution(key, id)；
+    sample(key, id, n, interval_s, cancel)、resolution(key, id)；
     失敗拋出 SampleError，取樣時取消拋出 Cancelled。
     """
     key = dev["key"]
@@ -110,7 +110,7 @@ def run(station, dev: dict, probe_id: int, settings, cancel: threading.Event | N
         if why:
             res.reason = why
             return res
-        res.new_offset = station.zero_base(key, probe_id)
+        res.new_offset = res.mean  # 歸零基準：歸零前的原始值（放大器讀不出歸零量，只供紀錄）
         res.result = PASS
     except Cancelled:
         res.result, res.reason = CANCEL, "工程人員取消"

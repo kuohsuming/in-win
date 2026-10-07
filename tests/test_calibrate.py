@@ -29,9 +29,6 @@ class FakeAmp:
     def response_time(self, key, probe_id):
         return self.response
 
-    def zero_base(self, key, probe_id):
-        return self.zero
-
     def sample(self, key, probe_id, n, interval, cancel=None):
         self.calls.append((key, probe_id, n, interval))
         if cancel is not None and cancel.is_set():
@@ -60,8 +57,7 @@ class CalibrateTest(unittest.TestCase):
         res = calibrate.run(amp, DEV, 2, CS)
         self.assertTrue(res.ok, res.reason)
         self.assertEqual(amp.ops, ["prepare", "reset", "execute"])
-        self.assertEqual(res.new_offset, 12.4987)                # 從放大器讀回的歸零基準
-        self.assertAlmostEqual(res.mean, sum(STEADY) / 20)
+        self.assertAlmostEqual(res.new_offset, sum(STEADY) / 20)  # 歸零基準：取樣平均
         self.assertEqual(res.old_offset, 12.3)
         self.assertEqual(res.verify, [0.0001, -0.0002, 0.0, 0.0001, 0.0])
         self.assertTrue(res.cleared and res.zeroed)
@@ -128,7 +124,7 @@ class CalibrateTest(unittest.TestCase):
         res = calibrate.run(FakeAmp(STEADY, [12.4987] * 5), DEV, 2, CS)
         rec = calibrate.record(res, "ST01", True)
         self.assertEqual((rec["device_key"], rec["probe_id"], rec["samples"], rec["result"], rec["adopted"],
-                          rec["old_offset"], rec["new_offset"]), ("row-1", 2, 20, "PASS", True, 12.3, 12.4987))
+                          rec["old_offset"], round(rec["new_offset"], 4)), ("row-1", 2, 20, "PASS", True, 12.3, 12.4987))
 
 
 class ClearZeroTest(unittest.TestCase):  # CAL-06

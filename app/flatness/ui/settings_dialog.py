@@ -1074,7 +1074,7 @@ class SettingsDialog(QDialog):
             show_message(self, "\n".join(lines), title="探頭校準", buttons=("關閉",), kind="info")
             return
         if res.ok:
-            lines.append("\n✘ 放大器已歸零，但無法寫入資料庫；偵測時會顯示「歸零已變更」，請重新校準。")
+            lines.append("\n✘ 放大器已歸零，但無法寫入資料庫，設定頁顯示的校準狀態與放大器不同；請在資料庫恢復後重新校準。")
         elif res.cleared:
             lines.append(f"\n✘ 校準{'已取消' if res.result == calibrate.CANCEL else '未通過'}：{res.reason}\n"
                          "放大器原本的歸零已清除，此探頭為「未校準」，請重新校準。")

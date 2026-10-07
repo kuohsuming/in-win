@@ -67,7 +67,7 @@ REAL = {  # 真機回應（2 台放大器、4 位小數）
 
 
 class Gt2:
-    """假 DL-EN1 加上放大器 ID 2 的歸零狀態：R.V. 固定 +0.0358，P.V. ＝ R.V. − 歸零基準。"""
+    """假 DL-EN1 加上放大器 ID 2 的歸零狀態：原始值 +0.0358，P.V.（MS 讀值）＝ 原始值 − 歸零基準。"""
 
     RV = 358
 
@@ -178,41 +178,20 @@ class DlEn1StationTest(unittest.TestCase):
 
     def test_amplifier_value_and_uncalibrated(self):  # CAL-03、CAL-07、CAL-09
         _, st = self.station(REAL, offsets={1: -0.3, 2: None})
-        (s,) = st.detect()                                # 讀不到 P.V.／R.V.（ER）：不判定歸零
+        (s,) = st.detect()
         self.assertEqual(s.uncalibrated, {2: "未校準"})
         r1, r2 = st.read()
         self.assertEqual(r1.value, -0.2971)               # 放大器已歸零：直接使用，不扣偏移量
         self.assertEqual((r1.offset, r1.raw), (-0.3, "-000002971"))
         self.assertEqual((r2.value, r2.error, r2.raw), (None, "未校準", "+000000358"))
 
-    def test_zero_matches_record(self):  # CAL-10：歸零基準與紀錄相符
+    def test_read_uses_amplifier_value(self):  # CAL-03：直接使用放大器歸零後的值，偵測與量測不寫入
         dev, st = self.station(Gt2(zero=358), offsets={1: 0.0, 2: 0.0358})
         (s,) = st.detect()
         self.assertEqual(s.uncalibrated, {})
         r1, r2 = st.read()
         self.assertEqual((r2.value, r2.offset), (0.0, 0.0358))
-        self.assertEqual(sw(dev), [])                     # 偵測與量測不寫入（NFR-11）
-
-    def test_zero_lost_or_changed(self):  # CAL-10、CAL-A9
-        amp = Gt2(zero=0)                                 # 放大器被重設：歸零遺失
-        _, st = self.station(amp, offsets={1: 0.0, 2: 0.0358})
-        (s,) = st.detect()
-        self.assertEqual(s.uncalibrated, {2: "歸零遺失"})
-        self.assertEqual((st.read()[1].value, st.read()[1].error), (None, "歸零遺失"))
-        amp.zero = 100                                    # 面板上重新歸零
-        (s,) = st.detect()
-        self.assertEqual(s.uncalibrated, {2: "歸零已變更"})
-        amp.zero = 358 + 10                               # 差 0.001，在容許值 0.002 內
-        (s,) = st.detect()
-        self.assertEqual(s.uncalibrated, {})
-        self.assertIsNone(st.read()[1].error)
-
-    def test_zero_check_skipped_on_invalid_value(self):  # SR 特殊值：不判定
-        amp = Gt2(zero=0)
-        replies = lambda cmd: "SR,02,038,-009999998" if cmd == "SR,02,038" else amp(cmd)  # noqa: E731
-        _, st = self.station(replies, offsets={1: 0.0, 2: 0.0358})
-        (s,) = st.detect()
-        self.assertEqual(s.uncalibrated, {})
+        self.assertEqual(sw(dev), [])                     # NFR-11
 
     def test_preset_commands(self):  # CAL-02、NFR-11：只寫選取的放大器、只寫必要的資料編號
         amp = Gt2(settings={149: 1, 72: 50})
@@ -224,9 +203,9 @@ class DlEn1StationTest(unittest.TestCase):
         self.assertEqual(st.prepare_preset("row-1", 2)[149], 0)  # 已符合：不再寫入
         self.assertEqual(len(sw(dev)), 2)
         st.preset("row-1", 2, True)
-        self.assertEqual((st.zero_base("row-1", 2), st.sample("row-1", 2, 2, 0.0)), (0.0358, [0.0, 0.0]))
+        self.assertEqual(st.sample("row-1", 2, 2, 0.0), [0.0, 0.0])
         st.preset("row-1", 2, False)
-        self.assertEqual((st.zero_base("row-1", 2), st.sample("row-1", 2, 1, 0.0)), (0.0, [0.0358]))
+        self.assertEqual(st.sample("row-1", 2, 1, 0.0), [0.0358])
         self.assertEqual(sw(dev)[2:], ["SW,02,001,+000000001", "SW,02,002,+000000001"])
         self.assertEqual(st.response_time("row-1", 2), 0.1)
 

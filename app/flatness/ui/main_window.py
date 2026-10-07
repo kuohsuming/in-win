@@ -53,7 +53,7 @@ class PointResult:
     std: object = None
     raw: str = ""
     error: str | None = None
-    zero_offset: float | None = None  # 量測當時放大器的歸零基準（CAL-09）
+    zero_offset: float | None = None  # 量測當時的歸零基準（CAL-09）
 
 
 @dataclass
@@ -1122,14 +1122,9 @@ class MainWindow(QMainWindow):
                     t.set_result(ERR, note=s.probe_errors[pid], device_text="探頭無回應", device_error=True)
                     errs.append(f"{d['name']} {self._desc(d, pid)}探頭無回應（{s.probe_errors[pid]}）")
                     n_err += 1
-                elif pid in s.uncalibrated:  # CAL-07、CAL-10：未校準或歸零不符不量測
-                    why = s.uncalibrated[pid]
-                    if why == measure.UNCALIBRATED:
-                        t.set_result(ERR, note="請在設備設定校準", device_text=why, device_error=True)
-                        uncal += 1
-                    else:
-                        t.set_result(ERR, note="請在設備設定重新校準", device_text=why, device_error=True)
-                        errs.append(f"{d['name']} {self._desc(d, pid)}{why}，請在設備設定以標準件重新校準")
+                elif pid in s.uncalibrated:  # CAL-07：未校準不量測
+                    t.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
+                    uncal += 1
                     n_err += 1
                 elif (std.get(d["key"]) or {}).get(pid) is None:
                     t.set_result(ERR, note="未設定允收標準", device_text="未設定允收標準", device_error=True)
@@ -1275,10 +1270,10 @@ class MainWindow(QMainWindow):
                 r = by.get((d["key"], pid)) or measure.ProbeReading(d["key"], pid, None, "", "探頭無回應")
                 s = (std.get(d["key"]) or {}).get(pid)
                 desc = self._desc(d, pid)
-                if r.error in measure.ZERO_ERRORS:  # CAL-07、CAL-10
+                if r.error == measure.UNCALIBRATED:  # CAL-07
                     state = ERR
-                    tile.set_result(ERR, note="請在設備設定校準", device_text=r.error, device_error=True)
-                    errs.append(f"{d['name']} {desc}{r.error}")
+                    tile.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
+                    errs.append(f"{d['name']} {desc}未校準")
                     n_err += 1
                 elif r.error or r.value is None:
                     state = ERR

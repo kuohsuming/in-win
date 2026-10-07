@@ -873,9 +873,6 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         def response_time(self, key, pid):
             return 0.0
 
-        def zero_base(self, key, pid):
-            return self.zero
-
         def sample(self, key, pid, n, interval, cancel=None):
             self.calls.append((key, pid, n))
             return [self.base - self.zero + (self.noise if i % 2 else -self.noise) for i in range(n)]
