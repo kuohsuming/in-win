@@ -156,6 +156,9 @@ class MySQLWriteTest(unittest.TestCase):
         self.assertEqual(rows[2][3:], (None, None, None, None, "ERROR", None, "放大器未連接",
                                        "00:01:FC:DE:3A:75"))
         self.assertEqual(self.store.count_inspections(T.date()), 1)
+        (got,) = self.store.read_inspections(T.date())                      # EXP-03
+        self.assertEqual(got["head"], dict(head, measured_at=T))
+        self.assertEqual(got["points"], [dict(p, zero_offset=None) for p in rec["points"]])
 
 
 if __name__ == "__main__":

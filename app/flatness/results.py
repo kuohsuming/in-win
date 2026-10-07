@@ -88,8 +88,22 @@ class ResultSink:
         n = sum(1 for f in self._files() if f.name[:8] == day.strftime("%Y%m%d"))
         return self.store.count_inspections(day) + n
 
-    def export(self, day, path):
-        raise NotImplementedError("取出測試數據（Excel）尚未實作")
+    def export(self, day, path) -> int:
+        """取出測試數據（EXP-03）：資料庫 ＋ 尚未寫入的暫存；回傳筆數。資料庫無法讀取時拋出 StoreError。"""
+        from . import export
+        records = {r["head"]["serial"]: r for r in self.store.read_inspections(day)}
+        for f in self._files():
+            if f.name[:8] != day.strftime("%Y%m%d") or f.stem in records:
+                continue
+            try:
+                rec = json.loads(f.read_text(encoding="utf-8"))
+                rec["head"]["measured_at"] = datetime.fromisoformat(rec["head"]["measured_at"])
+            except (OSError, ValueError, KeyError):
+                continue  # 寫入中或格式錯誤（背景寫入會處理）
+            records[rec["head"]["serial"]] = rec
+        n = export.write_xlsx(path, list(records.values()), day)
+        log.info("取出測試數據：%s 共 %d 筆 → %s", day, n, path)
+        return n
 
     def close(self, timeout: float = 3.0) -> None:
         """App 結束：盡量寫完（DAT-05）；資料庫無法寫入時留在暫存，下次啟動補寫。"""

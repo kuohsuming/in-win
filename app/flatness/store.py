@@ -101,6 +101,12 @@ class MemoryStore:
             self._check()
             return sum(1 for h, _ in self.inspections.values() if h["measured_at"].date() == day)
 
+    def read_inspections(self, day) -> list[dict]:
+        with self._lock:
+            self._check()
+            return [{"head": dict(h), "points": [dict(p) for p in pts]}
+                    for h, pts in self.inspections.values() if h["measured_at"].date() == day]
+
     def set_hidden(self, mac: str, hidden: bool) -> None:
         with self._lock:
             self._check()
@@ -285,6 +291,30 @@ class MySQLStore:
             cur.execute("SELECT COUNT(*) FROM inspection WHERE measured_at >= %s AND measured_at < %s + INTERVAL 1 DAY",
                         (day, day))
             return cur.fetchone()[0]
+
+    def read_inspections(self, day) -> list[dict]:
+        """取出測試數據（EXP-03）：當日主檔與明細，格式同 results.to_record。"""
+        def num(v):
+            return None if v is None else float(v)
+        with self._cursor() as cur:
+            cur.execute("SELECT serial, station_id, measured_at, judgment, reread_count FROM inspection"
+                        " WHERE measured_at >= %s AND measured_at < %s + INTERVAL 1 DAY ORDER BY measured_at",
+                        (day, day))
+            out = {r[0]: {"head": {"serial": r[0], "station_id": r[1], "measured_at": r[2], "judgment": r[3],
+                                   "reread_count": r[4]}, "points": []} for r in cur.fetchall()}
+            if out:
+                cur.execute("SELECT p.serial, device_key, probe_id, device_name, probe_description, measured_value,"
+                            " standard_value, lower_limit, upper_limit, p.judgment, raw_response, error_text,"
+                            " device_mac, zero_offset FROM inspection_point p JOIN inspection i USING (serial)"
+                            " WHERE i.measured_at >= %s AND i.measured_at < %s + INTERVAL 1 DAY"
+                            " ORDER BY p.serial, device_key, probe_id", (day, day))
+                for r in cur.fetchall():
+                    out[r[0]]["points"].append({
+                        "device_key": r[1], "probe_id": r[2], "device_name": r[3], "probe_description": r[4],
+                        "measured_value": num(r[5]), "standard_value": num(r[6]), "lower_limit": num(r[7]),
+                        "upper_limit": num(r[8]), "judgment": r[9], "raw_response": r[10], "error_text": r[11],
+                        "device_mac": r[12], "zero_offset": num(r[13])})
+            return list(out.values())
 
     def set_hidden(self, mac: str, hidden: bool) -> None:
         with self._cursor() as cur:

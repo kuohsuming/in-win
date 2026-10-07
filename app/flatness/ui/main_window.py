@@ -11,8 +11,9 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPolygonF
 from PySide6.QtWidgets import (
     QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
@@ -81,8 +82,16 @@ class MemorySink:
     def count(self, day) -> int:
         return sum(1 for r in self.rows if r.measured_at.date() == day)
 
-    def export(self, day, path):
-        raise NotImplementedError("取出測試數據（Excel）尚未實作")
+    def export(self, day, path) -> int:
+        from .. import export
+        from ..results import to_record
+        recs = []
+        for r in self.rows:
+            if r.measured_at.date() == day:
+                rec = to_record(r, "DEMO")
+                rec["head"]["measured_at"] = r.measured_at
+                recs.append(rec)
+        return export.write_xlsx(path, recs, day)
 
 
 class _Relay(QObject):
@@ -667,7 +676,13 @@ class ExportDialog(QDialog):
 
     def _update(self):
         day = self.date.date().toPython()
-        n = self.sink.count(day)
+        try:
+            n = self.sink.count(day)
+        except Exception as exc:  # 資料庫無法讀取
+            log.warning("取出測試數據：無法查詢 %s 的筆數：%s", day, exc)
+            self.info.setText(f"無法讀取資料庫，請稍後再試。<br>{html.escape(str(exc))}")
+            self.save.setEnabled(False)
+            return
         if n:
             self.info.setText(f"該日共 <b>{n}</b> 筆紀錄<br>預設檔名：平整檢查_{day:%Y-%m-%d}.xlsx")
         else:
@@ -676,15 +691,24 @@ class ExportDialog(QDialog):
 
     def _save(self):
         day = self.date.date().toPython()
-        path, _ = QFileDialog.getSaveFileName(self, "取出測試數據", f"平整檢查_{day:%Y-%m-%d}.xlsx", "Excel (*.xlsx)")
+        prefs = QSettings("flatness", "flatness")
+        folder = str(prefs.value("export_dir", "") or Path.home())
+        if not Path(folder).is_dir():  # 上次的隨身碟已拔除
+            folder = str(Path.home())
+        name = str(Path(folder) / f"平整檢查_{day:%Y-%m-%d}.xlsx")
+        path, _ = QFileDialog.getSaveFileName(self, "取出測試數據", name, "Excel (*.xlsx)")
         if not path:
             return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
         try:
-            self.sink.export(day, path)
-        except Exception as exc:
-            self.parent().toast.show_text(f"無法產生檔案：{exc}")
+            n = self.sink.export(day, path)
+        except Exception as exc:  # EXP-04：顯示原因，不中斷量測
+            log.error("取出測試數據失敗：%s", exc)
+            self.info.setText(f"<b>無法產生檔案</b><br>{html.escape(str(exc))}")
             return
-        self.parent().toast.show_text(f"已儲存 {path}")
+        prefs.setValue("export_dir", str(Path(path).parent))  # EXP-02：下次預設為這次的資料夾
+        self.parent().toast.show_text(f"已儲存 {n} 筆：{path}")
         self.accept()
 
 
