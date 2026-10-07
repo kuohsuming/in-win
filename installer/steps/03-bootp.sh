@@ -12,6 +12,8 @@ OLD_DNSMASQ_CONF=/etc/dnsmasq.d/flatness-dl-en1.conf   # 舊版安裝包（由�
 DNSMASQ_CMD="/usr/sbin/dnsmasq --keep-in-foreground --log-facility=- --conf-file=$DNSMASQ_CONF"
 # 與 app/flatness/dnsmasq.py 的 STOP_COMMAND 相同：停止 App 啟動的 dnsmasq（含 App 當掉後的殘留）
 STOP_HELPER=/usr/local/sbin/flatness-stop-dnsmasq
+# 與 app/flatness/arpwatch.py 的 COMMAND 相同：監聽設備網卡的 ARP 位址偵測封包（DSC-19）
+ARP_HELPER=/usr/local/sbin/flatness-arp-watch
 
 step_bootp() {
   log "步驟 3：BOOTP 服務（dnsmasq，由 App 啟動）"
@@ -86,10 +88,16 @@ EOF
     ok "已寫入 $STOP_HELPER"
   fi
 
-  # 6. sudoers：只允許 App 帳號以固定參數執行 dnsmasq，以及不帶參數執行停止程式（DSC-07-A5）
+  # 6. ARP 監聽程式：root 擁有、App 不可改；不接受參數，只監聽設備網卡（DSC-19）
+  #    DL-EN1 取得 IP 後上電不再送 BOOTP，只送 ARP 位址偵測封包；監聽網卡需要 root
+  if sed "s/@EQUIP_IF@/$EQUIP_IF/g" "$INSTALLER_DIR/files/flatness-arp-watch" | write_if_changed "$ARP_HELPER" 755; then
+    ok "已寫入 $ARP_HELPER（監聽 $EQUIP_IF）"
+  fi
+
+  # 7. sudoers：只允許 App 帳號以固定參數執行 dnsmasq，以及不帶參數執行停止程式與 ARP 監聽程式（DSC-07-A5）
   local sudoers_tmp
   sudoers_tmp=$(mktemp)
-  echo "$APP_USER ALL=(root) NOPASSWD: $DNSMASQ_CMD, $STOP_HELPER \"\"" > "$sudoers_tmp"
+  echo "$APP_USER ALL=(root) NOPASSWD: $DNSMASQ_CMD, $STOP_HELPER \"\", $ARP_HELPER \"\"" > "$sudoers_tmp"
   visudo -cf "$sudoers_tmp" >/dev/null || { rm -f "$sudoers_tmp"; fail "sudoers 內容錯誤"; }
   write_if_changed /etc/sudoers.d/flatness 440 < "$sudoers_tmp" && ok "已設定 /etc/sudoers.d/flatness"
   rm -f "$sudoers_tmp"

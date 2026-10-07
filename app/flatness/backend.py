@@ -1,6 +1,6 @@
 """App 的服務層：設定檔、資料庫、定義檔、dnsmasq 與探索，供畫面使用（3.10 DSC、DSC-06、DSC-07）。
 
-啟動順序（DSC-07-G1）：依資料庫產生定義檔與 BOOTP 主機對應 → 啟動 dnsmasq → 探索開始記錄。
+啟動順序（DSC-07-G1）：依資料庫產生定義檔與 BOOTP 主機對應 → 啟動 dnsmasq 與 ARP 監聽 → 探索開始記錄。
 畫面只透過本類別存取資料；背景執行緒的事件以 Qt signal 轉回畫面執行緒。
 """
 
@@ -12,7 +12,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 
-from . import lan, netinfo, sync
+from . import arpwatch, lan, netinfo, sync
 from .config import Config
 from .discovery import Recorder, RequestParser
 from .dnsmasq import DnsmasqService
@@ -29,7 +29,7 @@ class Backend(QObject):
 
     def __init__(self, cfg: Config, store, files: sync.Files, dnsmasq_cmd=None, *,
                  simulate: bool = False, equip_net: ipaddress.IPv4Interface | None = None,
-                 probe=None):
+                 probe=None, arp_cmd=None):
         super().__init__()
         self.cfg, self.store, self.files = cfg, store, files
         self.simulate = simulate
@@ -45,6 +45,11 @@ class Backend(QObject):
         self._recorder = Recorder(store, self._recorded, on_db_state=self.mark_db)
         cmd = None if simulate else dnsmasq_cmd  # 模擬模式不啟動 dnsmasq（DSC-07-A6）
         self.dnsmasq = DnsmasqService(cmd, self._on_line, self._on_dnsmasq_state)
+        # DSC-19：已有 IP 的設備上電只送 ARP 位址偵測封包；監聽程式結束後自動重新啟動，不需清除殘留
+        # （App 結束後它在下一個封包寫入失敗時自行結束）
+        self.arpwatch = DnsmasqService(None if simulate else arp_cmd, self._on_arp_line, None,
+                                       restart_delay=30.0, name="ARP 監聽", stop_command=None,
+                                       clear_old=False)
         self._cache: list[lan.LanDevice] = []
 
     # ------------------------------------------------------------ 生命週期
@@ -58,10 +63,12 @@ class Backend(QObject):
         if not self.simulate:
             self._recorder.start()
         self.dnsmasq.start()
+        self.arpwatch.start()
         return r
 
     def shutdown(self):
         self.dnsmasq.stop()
+        self.arpwatch.stop()
         if not self.simulate:
             self._recorder.stop()
 
@@ -72,6 +79,15 @@ class Backend(QObject):
         events = self._parser.feed(line)
         if events:
             self._recorder.put(events)
+
+    def _on_arp_line(self, line: str):
+        events = arpwatch.feed(line)
+        if events:
+            e = events[0]
+            log.info("ARP 位址偵測：%s 使用 %s", e.mac, e.ip)
+            self._recorder.put(events)
+        elif not line.startswith("ARP "):
+            log.info("ARP 監聽：%s", line)
 
     def _recorded(self, events):
         self.devices_seen.emit(events)

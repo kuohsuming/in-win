@@ -93,10 +93,11 @@ CREATE TABLE IF NOT EXISTS flatness.lan_device (
                                    COMMENT '不明設備／DL-EN1 使用中／維修中／已停用／其他設備',
   first_seen     DATETIME(3)           NULL COMMENT '首次收到請求的時間；匯入建立、尚未出現過者為 NULL',
   last_seen      DATETIME(3)           NULL COMMENT '最後一次收到請求的時間',
-  seen_count     INT UNSIGNED      NOT NULL DEFAULT 0 COMMENT '請求封包數，每個 BOOTP／DHCP 請求加 1',
-  last_request   ENUM('BOOTP','DHCP')  NULL COMMENT '最後一次請求的類型',
+  seen_count     INT UNSIGNED      NOT NULL DEFAULT 0 COMMENT '請求封包數，每個 BOOTP／DHCP 請求或 ARP 位址偵測封包加 1',
+  last_request   ENUM('BOOTP','DHCP','ARP') NULL COMMENT '最後一次請求的類型（ARP：位址偵測封包，DSC-19）',
   hostname       VARCHAR(64)           NULL COMMENT 'DHCP option 12 主機名稱',
   vendor_class   VARCHAR(64)           NULL COMMENT 'DHCP option 60 廠商識別',
+  seen_ip        VARCHAR(15)           NULL COMMENT '設備實際使用的 IP（ARP 位址偵測封包，DSC-19）',
   ipv4           VARCHAR(15)           NULL COMMENT '配發的 IP；DL-EN1 使用中與維修中必填，其他設備可留空',
   dl_en1_config  JSON                  NULL COMMENT 'DL-EN1 設定（3.7.1 去除 mac、ipv4；DSC-12）',
   sort_order     SMALLINT UNSIGNED     NULL COMMENT '主畫面由上而下的順序',
@@ -108,6 +109,21 @@ CREATE TABLE IF NOT EXISTS flatness.lan_device (
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='設備網路探索與 DL-EN1 設定';
+
+-- 舊版已建立的 lan_device：請求類型加入 ARP、補上 seen_ip（DSC-19；可重複執行）
+ALTER TABLE flatness.lan_device
+  MODIFY last_request ENUM('BOOTP','DHCP','ARP') NULL COMMENT '最後一次請求的類型（ARP：位址偵測封包，DSC-19）',
+  MODIFY seen_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '請求封包數，每個 BOOTP／DHCP 請求或 ARP 位址偵測封包加 1';
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'lan_device' AND COLUMN_NAME = 'seen_ip'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.lan_device ADD COLUMN seen_ip VARCHAR(15) NULL COMMENT ''設備實際使用的 IP（ARP 位址偵測封包，DSC-19）'' AFTER vendor_class',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- -----------------------------------------------------------------------------
 -- 3. 資料表（模擬資料庫，結構與正式相同；模擬模式不探索，不建 lan_device，3.10）

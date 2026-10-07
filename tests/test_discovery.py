@@ -237,3 +237,26 @@ class SingleInstanceTest(unittest.TestCase):  # NFR-14：啟動前停止其他�
         self.assertEqual(stop_other_apps(timeout=0.5, pids=[p.pid]), [])
         self.assertEqual(p.wait(3), -9)
         self.assertLess(time.monotonic() - t0, 3)
+
+
+class ArpWatchTest(unittest.TestCase):  # DSC-19：只記錄 ARP 位址偵測封包
+    def test_probe_and_announcement(self):
+        from flatness import arpwatch
+        (e,) = arpwatch.feed("ARP 1 00:01:fc:de:3a:75 0.0.0.0 192.168.10.11", now=T0)      # 探測
+        self.assertEqual((e.mac, e.kind, e.ip, e.count, e.at), ("00:01:FC:DE:3A:75", "ARP", "192.168.10.11", 1, T0))
+        (e,) = arpwatch.feed("ARP 1 00:01:FC:DE:3A:75 192.168.10.11 192.168.10.11", now=T0)  # 宣告
+        self.assertEqual(e.ip, "192.168.10.11")
+
+    def test_ordinary_arp_ignored(self):
+        from flatness import arpwatch
+        for line in ("ARP 1 00:01:FC:DE:3A:75 192.168.10.11 192.168.10.1",   # 一般查詢
+                     "ARP 2 00:01:FC:DE:3A:75 192.168.10.11 192.168.10.1",   # 回應
+                     "ARP 1 00:01:FC:DE:3A:75 0.0.0.0 0.0.0.0",
+                     "ARP 1 00:00:00:00:00:00 0.0.0.0 192.168.10.11",
+                     "arp-watch: listening on eno2", "ARP garbage"):
+            self.assertEqual(arpwatch.feed(line, now=T0), [], line)
+
+    def test_helper_template_has_no_args_and_iface_placeholder(self):  # INS-04 步驟 3
+        text = (ROOT / "installer" / "files" / "flatness-arp-watch").read_text(encoding="utf-8")
+        self.assertIn('IFACE = "@EQUIP_IF@"', text)
+        self.assertIn("不接受參數", text)

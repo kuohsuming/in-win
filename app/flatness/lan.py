@@ -64,6 +64,7 @@ class LanDevice:
     last_request: str | None = None
     hostname: str | None = None
     vendor_class: str | None = None
+    seen_ip: str | None = None  # 設備實際使用的 IP（ARP 位址偵測封包，DSC-19）；不是配發的 IP
     ipv4: str | None = None
     config: dict | None = None  # lan_device.dl_en1_config：3.7.1 的 DL-EN1 物件去除 mac、ipv4
     sort_order: int | None = None

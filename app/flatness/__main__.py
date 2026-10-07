@@ -15,7 +15,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 from . import config as config_mod
-from . import dnsmasq, instance, sync
+from . import arpwatch, dnsmasq, instance, sync
 
 
 def parse_args(argv=None):
@@ -29,6 +29,9 @@ def parse_args(argv=None):
     p.add_argument("--dnsmasq-cmd", default=shlex.join(dnsmasq.COMMAND),
                    help="啟動 dnsmasq 的命令（開發機可改用 scripts/fake-dnsmasq.py）")
     p.add_argument("--no-dnsmasq", action="store_true", help="不啟動 dnsmasq（開發用）")
+    p.add_argument("--arp-cmd", default=shlex.join(arpwatch.COMMAND),
+                   help="啟動 ARP 監聽的命令（DSC-19）")
+    p.add_argument("--no-arp", action="store_true", help="不監聽 ARP 位址偵測封包（開發機沒有安裝監聽程式時）")
     p.add_argument("--simulate", action="store_true", help="模擬模式：不啟動 dnsmasq、不探索（SIM、DSC-07-A6）")
     p.add_argument("--equip-net", type=ipaddress.IPv4Interface,
                    help="指定設備網段（預設取設備網卡目前位址，沒有時用 config.toml 的 pc_ip／net_prefix）")
@@ -83,8 +86,9 @@ def main(argv=None) -> int:
     log.info("文字字型：%s", family)
 
     cmd = None if args.no_dnsmasq else shlex.split(args.dnsmasq_cmd)
+    arp_cmd = None if args.no_arp else shlex.split(args.arp_cmd)
     backend = Backend(cfg, make_store(args.db_env), sync.Files(args.def_file, args.hosts), cmd,
-                      simulate=args.simulate, equip_net=args.equip_net)
+                      simulate=args.simulate, equip_net=args.equip_net, arp_cmd=arp_cmd)
     result = backend.start()
     if result.problem:
         log.warning("啟動：%s", result.problem)

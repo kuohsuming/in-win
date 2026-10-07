@@ -597,6 +597,7 @@ class SettingsDialog(QDialog):
                     continue
                 d.first_seen, d.last_seen, d.seen_count = f.first_seen, f.last_seen, f.seen_count
                 d.last_request, d.hostname, d.vendor_class = f.last_request, f.hostname, f.vendor_class
+                d.seen_ip = f.seen_ip
                 if target is self.original or not d.is_dl_en1:  # 編輯中設為 DL-EN1 者已取消隱藏
                     d.hidden, d.hidden_at = f.hidden, f.hidden_at
         self._render_list()
@@ -651,7 +652,7 @@ class SettingsDialog(QDialog):
             if selected:
                 sel_row = r
             fg = C["ng"] if d.mac in bad else (C["ink"] if d.is_dl_en1 or d.status == UNCLASSIFIED else C["ink-2"])
-            ip = d.ipv4 if d.assigns_ip else "不配發"
+            ip = d.ipv4 if d.assigns_ip else (f"不配發・使用 {d.seen_ip}" if d.seen_ip else "不配發")
             if d.assigns_ip:
                 try:
                     if ipaddress.IPv4Address(d.ipv4) not in net:
@@ -700,6 +701,11 @@ class SettingsDialog(QDialog):
                 ("首次出現", fmt_time(d.first_seen, full=True) if d.first_seen else "尚未出現（匯入建立）"),
                 ("最後出現", f"{fmt_time(d.last_seen)}（{d.last_request or '—'}，共 {d.seen_count} 次）"
                  if d.last_seen else "—")]
+        if d.seen_ip:  # DSC-19：ARP 位址偵測封包中設備自己使用的 IP
+            seen = d.seen_ip
+            if d.assigns_ip and d.ipv4 and d.ipv4 != d.seen_ip:
+                seen += f'　<span style="color:{C["warn"]}">⚠ 與設定的 {d.ipv4} 不同</span>'
+            rows.append(("實際使用 IP", seen))
         if d.hostname:
             rows.append(("主機名稱", html.escape(d.hostname)))
         if d.vendor_class:

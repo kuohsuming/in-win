@@ -67,8 +67,12 @@ class DnsmasqError(RuntimeError):
 
 class DnsmasqService:
     def __init__(self, command=COMMAND, on_line=None, on_state=None,
-                 restart_delay: float = 2.0, settle: float = 1.5):
+                 restart_delay: float = 2.0, settle: float = 1.5, *,
+                 name: str = "dnsmasq", stop_command=STOP_COMMAND, clear_old: bool = True):
         self.command = list(command) if command else None
+        self.name = name                  # 日誌與訊息中的程式名稱
+        self.stop_command = stop_command  # 權限不足時停止 root 程序的命令；None 表示沒有
+        self.clear_old = clear_old        # 啟動前清除殘留（DSC-07）
         self.on_line = on_line
         self.on_state = on_state
         self.restart_delay = restart_delay
@@ -90,7 +94,8 @@ class DnsmasqService:
             self._wanted = True
             if self._proc is None or self._proc.poll() is not None:
                 try:
-                    self.clear_leftovers()
+                    if self.clear_old:
+                        self.clear_leftovers()
                     self._spawn()
                 except DnsmasqError as exc:
                     if self._proc is None:  # 清除殘留失敗：通知畫面，稍後再試
@@ -149,11 +154,13 @@ class DnsmasqService:
             self._run_stop_command()
 
     def _run_stop_command(self):
+        if not self.stop_command:
+            return
         try:
-            r = subprocess.run(STOP_COMMAND, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
-            log.info("執行 %s：結束碼 %s %s", " ".join(STOP_COMMAND), r.returncode, (r.stderr or "").strip())
+            r = subprocess.run(self.stop_command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+            log.info("執行 %s：結束碼 %s %s", " ".join(self.stop_command), r.returncode, (r.stderr or "").strip())
         except (OSError, subprocess.TimeoutExpired) as exc:
-            log.error("無法執行 %s：%s", " ".join(STOP_COMMAND), exc)
+            log.error("無法執行 %s：%s", " ".join(self.stop_command), exc)
 
     @staticmethod
     def _wait_gone(pids, timeout: float) -> bool:
@@ -188,7 +195,7 @@ class DnsmasqService:
             time.sleep(0.05)
         if proc.poll() is not None:
             time.sleep(0.1)  # 讓讀取執行緒收完輸出
-            raise DnsmasqError(f"dnsmasq 啟動失敗（結束碼 {proc.returncode}）：{' / '.join(self._tail[-3:])}")
+            raise DnsmasqError(f"{self.name} 啟動失敗（結束碼 {proc.returncode}）：{' / '.join(self._tail[-3:])}")
 
     # ------------------------------------------------------------ 內部
 
@@ -204,13 +211,13 @@ class DnsmasqService:
                                     # 與 App 同群組時 terminate() 無效，要等逾時改用 STOP_COMMAND
                                     start_new_session=True)
         except OSError as exc:
-            self._notify(False, f"無法執行 dnsmasq：{exc}")
+            self._notify(False, f"無法執行 {self.name}：{exc}")
             self._schedule_retry(gen)
-            raise DnsmasqError(f"無法執行 dnsmasq：{exc}") from exc
+            raise DnsmasqError(f"無法執行 {self.name}：{exc}") from exc
         self._proc = proc
-        log.info("dnsmasq 已啟動 pid=%s", proc.pid)
+        log.info("%s 已啟動 pid=%s", self.name, proc.pid)
         self._notify(True, "")
-        threading.Thread(target=self._read, args=(proc, gen), name="dnsmasq-reader", daemon=True).start()
+        threading.Thread(target=self._read, args=(proc, gen), name=f"{self.name}-reader", daemon=True).start()
         return proc
 
     def _read(self, proc: subprocess.Popen, gen: int):
@@ -221,12 +228,12 @@ class DnsmasqService:
                 try:
                     self.on_line(line)
                 except Exception:
-                    log.exception("處理 dnsmasq 輸出失敗：%s", line)
+                    log.exception("處理 %s 輸出失敗：%s", self.name, line)
         rc = proc.wait()
         with self._lock:
             if gen != self._generation or not self._wanted:
                 return  # 正常停止或已重新啟動
-            reason = f"dnsmasq 異常結束（結束碼 {rc}）：{' / '.join(self._tail[-3:])}"
+            reason = f"{self.name} 異常結束（結束碼 {rc}）：{' / '.join(self._tail[-3:])}"
             log.error("%s；%.0f 秒後自動重新啟動", reason, self.restart_delay)
             self._notify(False, reason)
         self._schedule_retry(gen)
@@ -240,7 +247,7 @@ class DnsmasqService:
                         self._spawn()
                     except DnsmasqError:
                         pass
-        threading.Thread(target=retry, name="dnsmasq-retry", daemon=True).start()
+        threading.Thread(target=retry, name=f"{self.name}-retry", daemon=True).start()
 
     def _terminate(self, timeout: float):
         proc, self._proc = self._proc, None
@@ -263,8 +270,8 @@ class DnsmasqService:
             try:
                 proc.wait(timeout)
             except subprocess.TimeoutExpired:
-                log.error("dnsmasq（pid %s）未能在時限內停止", proc.pid)
-        log.info("dnsmasq 已停止")
+                log.error("%s（pid %s）未能在時限內停止", self.name, proc.pid)
+        log.info("%s 已停止", self.name)
         self._notify(False, "")
 
     def _notify(self, running: bool, reason: str):
@@ -273,4 +280,4 @@ class DnsmasqService:
             try:
                 self.on_state(running, reason)
             except Exception:
-                log.exception("dnsmasq 狀態通知失敗")
+                log.exception("%s 狀態通知失敗", self.name)

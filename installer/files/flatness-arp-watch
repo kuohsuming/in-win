@@ -1,0 +1,43 @@
+#!/usr/bin/python3 -I
+# 由表面平整檢查系統安裝包安裝（INS-04 步驟 3、DSC-19）：root 擁有、App 不可改、不接受參數。
+# 只監聽設備網卡 @EQUIP_IF@ 上「別人送來」的 ARP 封包，每個封包輸出一行：
+#     ARP <op> <傳送端 MAC> <傳送端 IP> <目標 IP>
+# App 以 sudo 執行並解析（app/flatness/arpwatch.py）；App 結束（stdout 關閉）時自行結束。
+import socket
+import struct
+import sys
+
+IFACE = "@EQUIP_IF@"
+ETH_P_ARP = 0x0806
+PACKET_OUTGOING = 4  # 本機送出的封包（量測 PC 自己的 ARP）不輸出
+
+
+def ip(b):
+    return ".".join(str(x) for x in b)
+
+
+def main():
+    if len(sys.argv) > 1:
+        sys.exit("flatness-arp-watch 不接受參數")
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ARP))
+    s.bind((IFACE, ETH_P_ARP))
+    print(f"arp-watch: listening on {IFACE}", flush=True)
+    while True:
+        data, addr = s.recvfrom(256)
+        if addr[2] == PACKET_OUTGOING or len(data) < 42:
+            continue
+        htype, ptype, hlen, plen, op = struct.unpack("!HHBBH", data[14:22])
+        if htype != 1 or ptype != 0x0800 or hlen != 6 or plen != 4:
+            continue
+        mac = ":".join(f"{x:02X}" for x in data[22:28])
+        try:
+            print(f"ARP {op} {mac} {ip(data[28:32])} {ip(data[38:42])}", flush=True)
+        except BrokenPipeError:
+            return
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

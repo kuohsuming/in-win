@@ -25,13 +25,14 @@ class StoreError(RuntimeError):
 
 @dataclass
 class SeenEvent:
-    """探索到的一個請求封包（DSC-01）；count 為 0 表示只補主機名稱或廠商識別。"""
+    """探索到的一個請求封包（DSC-01、DSC-19）；count 為 0 表示只補主機名稱或廠商識別。"""
     mac: str
-    kind: str                    # "BOOTP" 或 "DHCP"
+    kind: str                    # "BOOTP"、"DHCP" 或 "ARP"（位址偵測封包）
     at: datetime
     hostname: str | None = None
     vendor_class: str | None = None
     count: int = 1
+    ip: str | None = None        # ARP：設備實際使用的 IP（DSC-19）
 
 
 def read_env(path: Path) -> dict:
@@ -78,6 +79,7 @@ class MemoryStore:
                         d.hidden, d.hidden_at = False, None
                 d.hostname = e.hostname or d.hostname
                 d.vendor_class = e.vendor_class or d.vendor_class
+                d.seen_ip = e.ip or d.seen_ip
 
     def set_hidden(self, mac: str, hidden: bool) -> None:
         with self._lock:
@@ -129,7 +131,7 @@ class _MemoryTx:
 
 
 _COLUMNS = ("mac, status, first_seen, last_seen, seen_count, last_request, hostname, vendor_class, "
-            "ipv4, dl_en1_config, sort_order, hidden, hidden_at, updated_at")
+            "seen_ip, ipv4, dl_en1_config, sort_order, hidden, hidden_at, updated_at")
 
 
 class MySQLStore:
@@ -172,9 +174,9 @@ class MySQLStore:
 
     @staticmethod
     def _row(r) -> LanDevice:
-        (mac, status, first, last, count, req, host, vendor, ip, cfg, order, hidden, hidden_at, upd) = r
+        (mac, status, first, last, count, req, host, vendor, seen_ip, ip, cfg, order, hidden, hidden_at, upd) = r
         return LanDevice(mac=mac, status=status, first_seen=first, last_seen=last, seen_count=count,
-                         last_request=req, hostname=host, vendor_class=vendor, ipv4=ip,
+                         last_request=req, hostname=host, vendor_class=vendor, seen_ip=seen_ip, ipv4=ip,
                          config=json.loads(cfg) if cfg else None, sort_order=order,
                          hidden=bool(hidden), hidden_at=hidden_at, updated_at=upd)
 
@@ -193,8 +195,8 @@ class MySQLStore:
                 if e.count:
                     cur.execute(
                         "INSERT INTO lan_device (mac, first_seen, last_seen, seen_count, last_request,"
-                        " hostname, vendor_class, updated_at)"
-                        " VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(3)) AS n"
+                        " hostname, vendor_class, seen_ip, updated_at)"
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(3)) AS n"
                         " ON DUPLICATE KEY UPDATE"
                         "  first_seen = COALESCE(lan_device.first_seen, n.first_seen),"
                         "  last_seen = GREATEST(COALESCE(lan_device.last_seen, n.last_seen), n.last_seen),"
@@ -202,9 +204,10 @@ class MySQLStore:
                         "  last_request = n.last_request,"
                         "  hostname = COALESCE(n.hostname, lan_device.hostname),"
                         "  vendor_class = COALESCE(n.vendor_class, lan_device.vendor_class),"
+                        "  seen_ip = COALESCE(n.seen_ip, lan_device.seen_ip),"
                         "  hidden = IF(lan_device.status = 'unclassified', 0, lan_device.hidden),"
                         "  hidden_at = IF(lan_device.status = 'unclassified', NULL, lan_device.hidden_at)",
-                        (e.mac, e.at, e.at, e.count, e.kind, e.hostname, e.vendor_class))
+                        (e.mac, e.at, e.at, e.count, e.kind, e.hostname, e.vendor_class, e.ip))
                 else:
                     cur.execute(
                         "INSERT INTO lan_device (mac, hostname, vendor_class, updated_at)"

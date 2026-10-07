@@ -43,6 +43,18 @@ class StoreContract:
         (d,) = s.load()
         self.assertEqual((d.seen_count, d.hostname, d.vendor_class), (1, "eng-laptop", "MSFT 5.0"))
 
+    def test_arp_event_records_seen_ip(self):  # DSC-19：ARP 位址偵測封包計次並記錄實際使用的 IP
+        s = self.make_store(sample_devices())
+        front = "00:01:FC:DE:3A:75"
+        s.record([SeenEvent(front, "ARP", T0 + timedelta(hours=1), ip="192.168.10.11")] * 3)
+        d = by_mac(s.load())[front]
+        self.assertEqual((d.seen_count, d.last_request, d.seen_ip), (6, "ARP", "192.168.10.11"))
+        s.record([SeenEvent(front, "BOOTP", T0 + timedelta(hours=2))])   # BOOTP 不清除實際 IP
+        self.assertEqual(by_mac(s.load())[front].seen_ip, "192.168.10.11")
+        s.record([SeenEvent(MAC, "ARP", T0, ip="192.168.10.50")])         # 已有 IP 的新設備
+        d = by_mac(s.load())[MAC]
+        self.assertEqual((d.status, d.seen_count, d.seen_ip), (UNCLASSIFIED, 1, "192.168.10.50"))
+
     def test_hidden_unclassified_reappears(self):  # DSC-13
         s = self.make_store(sample_devices())
         s.set_hidden("00:01:FC:12:39:A0", True)
