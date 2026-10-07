@@ -560,7 +560,7 @@ class MainWindowTest(UiBase):
         self.assertLessEqual(abs(g.center().y() - host.height() / 2), 1)
         self.assertTrue(host.rect().contains(g))
 
-    def test_settings_dialog_centered(self):  # UI-09
+    def test_settings_dialog_centered(self):  # UI-09、UI-10
         from PySide6.QtCore import QTimer
         from flatness.ui.settings_dialog import SettingsDialog
         w = self.win
@@ -574,10 +574,12 @@ class MainWindowTest(UiBase):
             dlg.enter_edit()                    # 步驟二：對話框變大後仍置中
             pump(self.app, 0.05)
             self._centered(dlg)
+            self.assertEqual(dlg.size(), w.backdrop.size())  # UI-10：編輯步驟佔滿主畫面
             checks.append(dlg.size().width())
-            w.resize(1400, 900)                 # 主畫面改變大小後仍置中
+            w.resize(1400, 900)                 # 主畫面改變大小後仍佔滿、置中
             pump(self.app, 0.05)
             self._centered(dlg)
+            self.assertEqual(dlg.size(), w.backdrop.size())
             checks.append(dlg.size().width())
             dlg.done(0)
         QTimer.singleShot(0, check)

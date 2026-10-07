@@ -164,7 +164,10 @@ class SettingsDialog(QDialog):
         self.fit()
 
     def fit(self):
-        """依可用空間決定大小（5.10 容器）：嵌在主畫面時以主畫面為準，否則以螢幕為準。置中由遮罩負責（UI-09）。"""
+        """依可用空間決定大小（5.10 容器）：嵌在主畫面時以主畫面為準，否則以螢幕為準。置中由遮罩負責（UI-09）。
+
+        密碼步驟為小視窗；編輯與確認步驟佔滿主畫面（UI-10）。
+        """
         if self.isWindow():
             area = (self.parentWidget().screen() if self.parentWidget() else QGuiApplication.primaryScreen()
                     ).availableGeometry().size()
@@ -173,7 +176,7 @@ class SettingsDialog(QDialog):
         if getattr(self, "_page_size", 0) == 0:
             w, h = min(560, int(area.width() * 0.96)), 300
         else:
-            w, h = min(1240, int(area.width() * 0.97)), int(area.height() * 0.92)
+            w, h = area.width(), area.height()
         self.resize(w, h)
 
     def _header(self) -> QWidget:

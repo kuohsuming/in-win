@@ -33,7 +33,8 @@ def parse_args(argv=None):
     p.add_argument("--equip-net", type=ipaddress.IPv4Interface,
                    help="指定設備網段（預設取設備網卡目前位址，沒有時用 config.toml 的 pc_ip／net_prefix）")
     p.add_argument("--log-file", type=Path, default=Path("/var/log/flatness/flatness.log"))
-    p.add_argument("--fullscreen", action="store_true", help="產線全螢幕")
+    p.add_argument("--fullscreen", action="store_true", help="全螢幕（預設，保留此參數相容舊的啟動方式）")
+    p.add_argument("--windowed", action="store_true", help="以一般視窗執行（開發用；預設全螢幕，UI-10）")
     p.add_argument("--on-top", action="store_true", help="視窗保持在最上層（Wayland 下需搭配 QT_QPA_PLATFORM=xcb）")
     return p.parse_args(argv)
 
@@ -93,7 +94,7 @@ def main(argv=None) -> int:
     if args.on_top:
         from PySide6.QtCore import Qt
         win.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-    if args.fullscreen:
+    if not args.windowed:  # UI-10：預設全螢幕
         win.showFullScreen()
     else:
         win.resize(1600, 1000)

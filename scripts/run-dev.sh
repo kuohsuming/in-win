@@ -5,8 +5,8 @@
 #   - 設定檔：.dev/config.toml（由 installer/config.toml 產生；工程人員密碼 1234）
 #   - 量測：示範量測來源（DL-EN1 連線尚未實作）
 #
-#   ./scripts/run-dev.sh                 一般視窗
-#   ./scripts/run-dev.sh --fullscreen
+#   ./scripts/run-dev.sh                 全螢幕（與產線相同，UI-10）
+#   ./scripts/run-dev.sh --windowed      一般視窗
 #   ./scripts/run-dev.sh --no-dnsmasq    不啟動假 dnsmasq（不會探索到設備）
 set -euo pipefail
 cd "$(dirname "$0")/.."
