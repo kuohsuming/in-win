@@ -3,6 +3,7 @@
 #   - 桌面捷徑：點兩下啟動（已設為信任，不會跳出警告）
 #   - 應用程式清單：按 Super 搜尋「表面平整」，可釘選到 Dock
 #   - 開機自動啟動：登入後約 3 秒啟動
+#   - 螢幕：閒置 5 分鐘關閉螢幕，喚醒不需密碼（不鎖定）；電腦不自動睡眠（睡眠會中斷 DL-EN1 連線）
 #   ./scripts/install-desktop.sh          安裝
 #   ./scripts/install-desktop.sh remove   全部移除
 # 前提：已設定自動登入（/etc/gdm3/custom.conf）、已執行 sudo ./installer/setup-bootp.sh、.dev/db-system.env 存在。
@@ -12,9 +13,13 @@ DESKTOP_DIR=$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")
 MENU="$HOME/.local/share/applications/flatness.desktop"
 AUTO="$HOME/.config/autostart/flatness.desktop"
 DESK="$DESKTOP_DIR/flatness.desktop"
+POWER_KEYS=("org.gnome.desktop.screensaver lock-enabled" "org.gnome.desktop.screensaver ubuntu-lock-on-suspend"
+            "org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type"
+            "org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type")
 if [[ ${1:-} == remove ]]; then
   rm -f "$MENU" "$AUTO" "$DESK"
-  echo "已移除 $MENU、$AUTO、$DESK"
+  for k in "${POWER_KEYS[@]}"; do gsettings reset $k; done  # 恢復鎖定與睡眠的系統預設
+  echo "已移除 $MENU、$AUTO、$DESK，螢幕鎖定與睡眠恢復系統預設"
   exit 0
 fi
 entry() {  # $1 = launch.sh 的參數（記在日誌）
@@ -38,4 +43,9 @@ entry 桌面 > "$DESK"
 chmod +x "$MENU" "$DESK"
 gio set "$DESK" metadata::trusted true 2>/dev/null || true  # GNOME 桌面：允許點兩下執行
 update-desktop-database "$(dirname "$MENU")" 2>/dev/null || true
-echo "已安裝：$DESK、$MENU、$AUTO"
+gsettings set org.gnome.desktop.session idle-delay 300                       # 閒置 5 分鐘關閉螢幕
+gsettings set org.gnome.desktop.screensaver lock-enabled false               # 喚醒不需密碼
+gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend false
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'       # 不自動睡眠
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+echo "已安裝：$DESK、$MENU、$AUTO；螢幕閒置 5 分鐘關閉、喚醒不需密碼、電腦不自動睡眠"

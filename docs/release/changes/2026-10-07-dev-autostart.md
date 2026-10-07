@@ -16,3 +16,4 @@ requirements: INS-07
 - `scripts/run-dev.sh --system-db`：改用系統 MySQL（連線資訊 `.dev/db-system.env`），不啟動拋棄式 MySQL。拋棄式 MySQL 放在 `/tmp`，重開機會清空，不適合開機自動啟動。
 - 2026-10-07：已在系統 MySQL 以 `sql/in-win.sql` 建立 `flatness` 資料庫與 App 帳號，並把開發資料庫的資料搬過去（lan_device 4、inspection 20、inspection_point 40、calibration 17 筆，皆一致）。
 - 正式工站的開機自動登入與自動啟動（INS-07）仍由安裝包負責，尚未實作。
+- 螢幕與電源（2026-10-08，PO 要求「螢幕睡眠喚醒後直接登入」）：`install-desktop.sh` 設定閒置 5 分鐘關閉螢幕、喚醒不鎖定、電腦不自動睡眠（睡眠會中斷 DL-EN1 連線）；`remove` 時恢復系統預設。對應 INS-07「關閉螢幕鎖定」。
