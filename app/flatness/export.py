@@ -1,7 +1,8 @@
 """取出測試數據：當日量測紀錄寫成 Excel（EXP-01～EXP-04、5.4）。
 
 records 與 results.to_record 相同格式：{"head": {...}, "points": [...]}，measured_at 為 datetime。
-工作表一「量測紀錄」一片一列：編號（文字）、量測時間、判定、重讀次數、各量測點測量值、不合格點；
+工作表一「量測紀錄」一片一列：編號（文字）、量測時間、判定、重讀次數、各量測點測量值、不合格點、
+各排 DL-EN1 的 MAC（DAT-06，當日換過設備也看得出每片用哪一台）；
 偏高、偏低的儲存格紅底，設備異常的儲存格黃底並寫「異常」。工作表二「當日標準值」列出各點當日使用的
 標準值與上下限（同一點當日改過標準時列出每一組與開始使用的時間）。
 """
@@ -33,6 +34,11 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
         for p in r["points"]:
             names[(p["device_key"], p["probe_id"])] = f"{p['device_name']} {p['probe_description']}".strip()
     cols = sorted(names, key=lambda k: (row_no(k[0]) or 1 << 30, k[0], k[1]))
+    devs: dict[str, str] = {}  # 每排 DL-EN1 一欄 MAC（DAT-06）：key → 設備名稱（當日最後一次）
+    for r in records:
+        for p in r["points"]:
+            devs[p["device_key"]] = p["device_name"]
+    dev_cols = sorted(devs, key=lambda k: (row_no(k) or 1 << 30, k))
 
     red = PatternFill("solid", fgColor="FFC7CE")
     yellow = PatternFill("solid", fgColor="FFEB9C")
@@ -40,14 +46,16 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
     wb = Workbook()
     ws = wb.active
     ws.title = "量測紀錄"
-    ws.append(["編號", "量測時間", "判定", "重讀次數", *(names[k] for k in cols), "不合格點"])
+    ws.append(["編號", "量測時間", "判定", "重讀次數", *(names[k] for k in cols), "不合格點",
+               *(f"{devs[k]} DL-EN1 MAC" for k in dev_cols)])
     for r in records:
         h = r["head"]
         by = {(p["device_key"], p["probe_id"]): p for p in r["points"]}
         bad = [f"{names[k]}（{POINT_WORD[by[k]['judgment']]}）" for k in cols
                if k in by and by[k]["judgment"] in POINT_WORD]
+        mac = {p["device_key"]: p["device_mac"] for p in r["points"] if p.get("device_mac")}
         ws.append([h["serial"], h["measured_at"], JUDGMENT.get(h["judgment"], h["judgment"]), h["reread_count"],
-                   *(None for _ in cols), "、".join(bad)])
+                   *(None for _ in cols), "、".join(bad), *(mac.get(k) for k in dev_cols)])
         n = ws.max_row
         ws.cell(n, 1).number_format = "@"  # EXP-03：編號不被轉為數字或科學記號
         ws.cell(n, 2).number_format = "yyyy-mm-dd hh:mm:ss.000"
@@ -66,7 +74,7 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
                 c.fill = red
     for c in ws[1]:
         c.font, c.alignment = bold, Alignment(horizontal="center")
-    widths = [20, 25, 10, 9, *(max(12, len(names[k]) * 2 + 2) for k in cols), 40]
+    widths = [20, 25, 10, 9, *(max(12, len(names[k]) * 2 + 2) for k in cols), 40, *(22 for _ in dev_cols)]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "B2"
