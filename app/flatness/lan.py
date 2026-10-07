@@ -520,7 +520,8 @@ class ChangeItem:
 @dataclass
 class Preview:
     items: list[ChangeItem] = field(default_factory=list)
-    power_cycle: list[str] = field(default_factory=list)       # 需重新上電才會取得新 IP
+    reset: list[str] = field(default_factory=list)             # DL-EN1 須按住 RST 鍵 3 秒重設才會取得新 IP（UPL-09）
+    power_cycle: list[str] = field(default_factory=list)       # 其他設備須重新連線或重新上電才會取得新 IP
     no_standard: list[str] = field(default_factory=list)       # 尚未設定允收標準的探頭
     removed_points: list[str] = field(default_factory=list)    # 將從主畫面移除的量測點
     paused_points: list[str] = field(default_factory=list)     # 改為維修中、暫停量測的量測點（DSC-15）
@@ -571,7 +572,8 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
                     (f"舊機改為「{STATUS_NAME[RETIRED]}」並保留原設定", True),
                 ])
                 p.items.append(item)
-                p.power_cycle.append(f"{_title(n)} 新機 {n.mac}（{n.ipv4}）")
+                if n.seen_ip != n.ipv4:  # 新機已在使用此 IP 時不必重設（DSC-19）
+                    p.reset.append(f"{_title(n)} 新機 {n.mac}（{n.ipv4}）")
                 p.replaced.append((key, o.mac, n.mac))
                 handled |= {n.mac, o.mac}
                 break
@@ -587,11 +589,13 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
         ip_new = n.ipv4 if n.assigns_ip else None
         if mac not in handled and ip_old != ip_new:
             lines.append((f"IP：{ip_old or '不配發'} → {ip_new or '不配發'}", True))
-        if ip_new and ip_new != ip_old and mac not in handled:
-            p.power_cycle.append(f"{_title(n)}（{ip_new}）")
+        # 新配發或 IP 變更：DL-EN1 保存舊 IP、上電不送 BOOTP，須按 RST 3 秒重設（2026-10-07 真機驗證）；
+        # 設備實際使用的 IP 已是新 IP（DSC-19，例如沿用實際 IP）時不必重設
+        if ip_new and ip_new != ip_old and mac not in handled and n.seen_ip != ip_new:
+            (p.reset if n.is_dl_en1 else p.power_cycle).append(f"{_title(n)}（{ip_new}）")
         if n.is_dl_en1 and o.is_dl_en1 and mac not in handled:
             co, cn = o.config or {}, n.config or {}
-            for fld, nm in (("key", "位置"), ("name", "排名稱"), ("port", "埠"), ("max_probes", "最多探頭數")):
+            for fld, nm in (("key", "位置"), ("name", "排名稱"), ("port", "埠"), ("max_probes", "探頭數量")):
                 a, b = co.get(fld), cn.get(fld)
                 if fld == "key":
                     a, b = row_label(a), row_label(b)

@@ -81,7 +81,7 @@
 
 ![設備設定：確認儲存（替換的差異預覽）](images/app-settings-confirm.png)
 
-**儲存**：先寫入主畫面上未寫入的量測結果（`before_save`，UPL-02）→ `Backend.apply()`（交易內寫入資料庫 → 產生定義檔與 BOOTP 主機對應 → 主機對應有變更時重新啟動 dnsmasq；失敗全部還原）→ 發出 `saved(result, preview)` → 主畫面清除編號、重建排、自動偵測，並提示需重新上電的設備。
+**儲存**：先寫入主畫面上未寫入的量測結果（`before_save`，UPL-02）→ `Backend.apply()`（交易內寫入資料庫 → 產生定義檔與 BOOTP 主機對應 → 主機對應有變更時重新啟動 dnsmasq；失敗全部還原）→ 發出 `saved(result, preview)` → 主畫面清除編號、重建排、自動偵測，並提示須按住 RST 鍵 3 秒重設的 DL-EN1（其他設備為重新連線或重新上電）。
 
 ## 5. 整合介面
 

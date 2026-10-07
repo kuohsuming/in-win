@@ -1334,8 +1334,10 @@ class SettingsDialog(QDialog):
         conflicts = [i.text() for i in self._ip_warnings()]
         if conflicts:
             impacts.append(("網路上已有其他設備使用下列 IP，儲存後可能發生 IP 衝突：", conflicts))
+        if p.reset:
+            impacts.append(("請按住下列 DL-EN1 上的 RST 鍵 3 秒重設，才會取得新 IP：", p.reset))
         if p.power_cycle:
-            impacts.append(("需將下列設備重新上電才會取得新 IP：", p.power_cycle))
+            impacts.append(("下列設備須重新連線或重新上電，才會取得新 IP：", p.power_cycle))
         if p.no_standard:
             impacts.append(("下列探頭尚未設定允收標準，量測時將顯示設備異常：", p.no_standard))
         if p.paused_points:

@@ -1221,8 +1221,10 @@ class MainWindow(QMainWindow):
         self._meta()
         self.rebuild(result.layout)
         msg = "已儲存設定並更新 BOOTP 對應"
+        if preview.reset:
+            msg += "；請按住 " + "、".join(preview.reset) + " 上的 RST 鍵 3 秒重設，才會取得新 IP"
         if preview.power_cycle:
-            msg += "；請將 " + "、".join(preview.power_cycle) + " 重新上電"
+            msg += "；請將 " + "、".join(preview.power_cycle) + " 重新連線或重新上電"
         QTimer.singleShot(0, lambda: self.toast.show_text(msg, 6000))
         self.detect()
 

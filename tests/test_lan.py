@@ -285,7 +285,7 @@ class DiffTest(unittest.TestCase):
         self.assertEqual([i.tag for i in p.items], ["替換"])
         self.assertIn("MAC 00:01:FC:DE:3A:75 → 00:01:FC:12:39:A0", p.items[0].lines[0][0])
         self.assertEqual(p.replaced, [("row-1", "00:01:FC:DE:3A:75", "00:01:FC:12:39:A0")])
-        self.assertEqual(len(p.power_cycle), 1)
+        self.assertEqual((len(p.reset), p.power_cycle), (1, []))  # 新機須按 RST 3 秒
         self.assertEqual(p.removed_points, [])
 
     def test_retire_lists_removed_points(self):
@@ -314,7 +314,19 @@ class DiffTest(unittest.TestCase):
         self.assertIn("順序", [i.tag for i in p.items])
         self.assertIn("位置：第 2 排 → 第 1 排", texts)
         self.assertEqual(p.no_standard, ["中段 中央"])
-        self.assertEqual(len(p.power_cycle), 1)
+        self.assertEqual((len(p.reset), p.power_cycle), (1, []))
+        self.assertIn("探頭數量：4 → 5", texts)
+
+    def test_reset_only_when_device_not_already_on_new_ip(self):  # UPL-09、DSC-19
+        old = sample_devices()
+        new = [d.copy() for d in old]
+        by_mac(new)["00:01:FC:DE:3A:76"].ipv4 = "192.168.10.30"
+        by_mac(new)["00:01:FC:DE:3A:76"].seen_ip = "192.168.10.30"      # 已在使用新 IP
+        lan.set_status(new, "3C:52:82:11:22:33", OTHER, NET)
+        by_mac(new)["3C:52:82:11:22:33"].ipv4 = "192.168.10.150"
+        p = lan.diff(old, new)
+        self.assertEqual(p.reset, [])
+        self.assertEqual(len(p.power_cycle), 1)                            # 其他設備：重新連線
 
 
 if __name__ == "__main__":
