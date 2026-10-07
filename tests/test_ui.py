@@ -673,6 +673,21 @@ class MainWindowTest(UiBase):
         faded = [t for r in w.rows for t in r.tiles.values() if t.state == "ok"]
         self.assertTrue(faded and all(t._fx.opacity() == 0.55 for t in faded))  # 淡化規則
 
+    def test_short_wait_reads_without_countdown(self):  # MEA-03：0.5 秒後讀取，不顯示倒數數字
+        w = self.win
+        w.countdown_s = 0.5
+        w.detect()
+        self.wait_state("idle")
+        self.stations[-1].force = "pass"
+        t0 = time.monotonic()
+        w.next_piece()
+        self.assertEqual(w.banner.state, "reading")
+        self.assertIn("請勿移動表面", w.banner.say.text())
+        self.assertTrue(w.busy)
+        self.wait_state("pass")
+        self.assertGreaterEqual(time.monotonic() - t0, 0.45)
+        self.assertLess(time.monotonic() - t0, 2.5)
+
     def test_first_next_writes_nothing(self):  # MEA-02
         self.win.detect()
         self.wait_state("idle")

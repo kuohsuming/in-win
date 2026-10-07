@@ -5,7 +5,7 @@ station_id = "ST01"          # 工站代號（site.conf STATION_ID）
 equip_if = "eno2"            # 設備網卡（site.conf EQUIP_IF）
 pc_ip = "192.168.10.1"       # 設備網卡沒有位址時使用的網段（site.conf PC_IP／NET_PREFIX，DSC-08）
 net_prefix = 24
-countdown_seconds = 5        # 量測前倒數（MEA-03、MEA-07）
+countdown_seconds = 0.5      # 按「下一片」「重讀」後到讀取的秒數（MEA-03、MEA-07）；1 以上逐秒倒數
 redetect_seconds = 10        # 設備異常時重新偵測間隔（DEV-05）
 
 # 工程人員密碼（UPL-01）的 SHA-256；留空則無法進入「設備設定」

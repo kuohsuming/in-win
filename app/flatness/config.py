@@ -7,7 +7,7 @@
     equip_if = "eno2"
     pc_ip = "192.168.10.1"
     net_prefix = 24
-    countdown_seconds = 5
+    countdown_seconds = 0.5          # 按「下一片」「重讀」後到讀取的秒數；小於 1 秒不顯示倒數數字
     redetect_seconds = 10
     engineer_password_sha256 = "…"   # 工程人員密碼（UPL-01）的 SHA-256；留空則無法進入設備設定
 
@@ -60,7 +60,7 @@ class Config:
     equip_if: str = "eno2"
     pc_ip: str = "192.168.10.1"
     net_prefix: int = 24
-    countdown_seconds: int = 5
+    countdown_seconds: float = 0.5
     redetect_seconds: int = 10
     engineer_password_sha256: str = ""
     ip_range: dict = field(default_factory=lambda: {"dl_en1": (11, 99), "other": (100, 199)})
@@ -89,9 +89,11 @@ def load(path: Path | None) -> Config:
     for name in ("station_id", "equip_if", "pc_ip", "engineer_password_sha256"):
         if name in data:
             setattr(cfg, name, str(data[name]))
-    for name in ("net_prefix", "countdown_seconds", "redetect_seconds"):
+    for name in ("net_prefix", "redetect_seconds"):
         if name in data:
             setattr(cfg, name, int(data[name]))
+    if "countdown_seconds" in data:
+        cfg.countdown_seconds = float(data["countdown_seconds"])
     for kind, value in (data.get("ip_range") or {}).items():
         lo, hi = value
         cfg.ip_range[kind] = (int(lo), int(hi))

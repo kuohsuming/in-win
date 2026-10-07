@@ -696,13 +696,13 @@ def _obj(w, name):
 # ====================================================================== 主畫面
 
 class MainWindow(QMainWindow):
-    def __init__(self, backend, station_factory, sink=None, *, countdown: int | None = None,
+    def __init__(self, backend, station_factory, sink=None, *, countdown: float | None = None,
                  redetect: int | None = None):
         super().__init__()
         self.backend = backend
         self.station_factory = station_factory      # definition → Station（偵測、讀取）
         self.sink = sink or MemorySink()
-        self.countdown_s = countdown or backend.cfg.countdown_seconds
+        self.countdown_s = countdown if countdown is not None else backend.cfg.countdown_seconds
         self.redetect_s = redetect or backend.cfg.redetect_seconds
         self.setWindowTitle("表面平整檢查系統")
         self.serial: str | None = None
@@ -756,6 +756,7 @@ class MainWindow(QMainWindow):
         self._clock.start()
         self._tick()
         self._cd_timer = QTimer(self, interval=1000, timeout=self._countdown_tick)
+        self._settle_timer = QTimer(self, singleShot=True, timeout=self._read_now)  # 不到 1 秒：不倒數
         self._retry_timer = QTimer(self, interval=1000, timeout=self._retry_tick)
         self._boot_timer = QTimer(self, singleShot=True, timeout=self.detect)
         self._retry_left = 0
@@ -1234,7 +1235,11 @@ class MainWindow(QMainWindow):
         self._clear_tiles("go", "設備正常")
         self._fade_ok(False)
         self.result = None
-        self._cd_left = self.countdown_s
+        if self.countdown_s < 1:  # MEA-03：等待不到 1 秒，不顯示倒數數字
+            self.banner.set("reading", word="讀取中", say=f"請勿移動表面<br>正在讀取 {self.n_probes} 個探頭…")
+            self._settle_timer.start(round(self.countdown_s * 1000))
+            return
+        self._cd_left = round(self.countdown_s)
         self._show_countdown()
         self._cd_timer.start()
 
@@ -1249,6 +1254,9 @@ class MainWindow(QMainWindow):
             return
         self._cd_timer.stop()
         self.banner.set("reading", word="讀取中", say=f"正在讀取 {self.n_probes} 個探頭…")
+        self._read_now()
+
+    def _read_now(self):
         self._measured_at = datetime.now()
         self._run(self.station.read, self._relay.read_done)
 
