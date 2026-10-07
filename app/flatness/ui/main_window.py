@@ -318,7 +318,7 @@ class DeviceRow(QFrame):
         unit.setSpacing(4)
         unit.addStretch()
         self.unit_dot = Dot()
-        self.unit_text = QLabel(f"DL-EN1 #{index + 1}")
+        self.unit_text = QLabel(self.tag)
         self.unit_text.setAlignment(Qt.AlignCenter)
         unit.addWidget(self.unit_dot)
         unit.addWidget(self.unit_text)
@@ -367,8 +367,14 @@ class DeviceRow(QFrame):
         for t in self.tiles.values():
             t.set_scale(k)
 
+    @property
+    def tag(self) -> str:
+        """排的標示：位置標籤「第 N 排」（EDT-05），與設定頁一致；沒有位置標籤時用畫面上的序號。"""
+        key = self.dev.get("key")
+        return lan.row_label(key) if lan.row_no(key) else f"DL-EN1 #{self.index + 1}"
+
     def set_index(self, index: int):
-        """排的位置改變時更新「DL-EN1 #n」，維持目前的偵測狀態顯示。"""
+        """排的位置改變時更新標示，維持目前的偵測狀態顯示。"""
         self.index = index
         self.set_down(*self._down_args)
 
@@ -389,24 +395,24 @@ class DeviceRow(QFrame):
                                 f" background:transparent;")
         if self.seen_ip and not down:
             self.unit_dot.hide()
-            self.unit_text.setText(f"DL-EN1 #{self.index + 1}\nIP 不符" + ("・維修中" if self.maint else ""))
+            self.unit_text.setText(f"{self.tag}\nIP 不符" + ("・維修中" if self.maint else ""))
             self.unit_text.setStyleSheet(f"background:{C['warn']};color:white;font-weight:700;"
                                          f"padding:2px 8px;border-radius:3px;")
             return
         if self.maint:
             self.unit_dot.hide()
-            self.unit_text.setText(f"DL-EN1 #{self.index + 1}\n維修中")
+            self.unit_text.setText(f"{self.tag}\n維修中")
             self.unit_text.setStyleSheet(f"background:{C['warn-soft']};color:{C['warn']};font-weight:700;"
                                          f"padding:2px 8px;border-radius:3px;")
             return
         if down:
             self.unit_dot.hide()
-            self.unit_text.setText(f"DL-EN1 #{self.index + 1}\n偵測不到")
+            self.unit_text.setText(f"{self.tag}\n偵測不到")
             self.unit_text.setStyleSheet(f"background:{C['ng']};color:white;padding:2px 8px;border-radius:3px;")
         else:
             self.unit_dot.show()
             self.unit_dot.set_color(dot, blink)
-            self.unit_text.setText(f"DL-EN1 #{self.index + 1}")
+            self.unit_text.setText(self.tag)
             self.unit_text.setStyleSheet(f"color:{C['ink-2']};background:transparent;")
 
 
@@ -863,7 +869,7 @@ class MainWindow(QMainWindow):
             row.set_ip_mismatch(seen if bad else None)
             if bad:
                 why = lan.seen_ip_problem(seen, net)
-                notes.append(f"{row.dev.get('name') or mac}（DL-EN1 #{row.index + 1}）實際 IP {seen}"
+                notes.append(f"{row.dev.get('name') or mac}（{row.tag}）實際 IP {seen}"
                              + (f"（{why}）" if why else "") + f"，設定為 {want}")
         self.set_flag("ip", ("IP 不符：" + "；".join(notes) + "。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，"
                              "使其重新取得設定的 IP") if notes else None)

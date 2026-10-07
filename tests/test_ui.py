@@ -569,6 +569,14 @@ class MainWindowTest(UiBase):
     def test_layout_from_definition(self):  # DEF-04
         self.assertEqual([r.dev["key"] for r in self.win.rows], ["row-1", "row-2", "row-3"])
         self.assertEqual(sum(len(r.tiles) for r in self.win.rows), 12)
+        self.assertEqual([r.unit_text.text() for r in self.win.rows], ["第 1 排", "第 2 排", "第 3 排"])
+
+    def test_row_tag_follows_position_not_screen_order(self):  # EDT-05：與設定頁的「第 N 排」一致
+        from flatness.ui.main_window import DeviceRow
+        row = DeviceRow(0, {"key": "row-5", "name": "加排", "probes": []}, {})
+        self.assertEqual(row.unit_text.text(), "第 5 排")
+        row.set_down(True)
+        self.assertEqual(row.unit_text.text(), "第 5 排\n偵測不到")
 
     def test_ip_mismatch_highlights_row_and_asks_for_reset(self):  # DSC-20
         from flatness.store import SeenEvent
@@ -581,6 +589,7 @@ class MainWindowTest(UiBase):
         self.assertEqual(row.seen_ip, "192.168.10.99")
         self.assertIn("IP 不符", row.unit_text.text())
         self.assertIn("RST 鍵 3 秒", w.flags["ip"])
+        self.assertIn("（第 1 排）實際 IP", w.flags["ip"])
         self.assertIn("192.168.10.99", w.flags["ip"])
         self.assertIsNone(w.rows[1].seen_ip)                                       # 其他排不受影響
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="10.0.0.5")])  # 不同網段
@@ -678,7 +687,7 @@ class MainWindowTest(UiBase):
         result = self.be.apply(old, new)
         w = self.win
         w.rebuild(result.layout)
-        self.assertEqual(w.rows[1].unit_text.text(), "DL-EN1 #2\n維修中")
+        self.assertEqual(w.rows[1].unit_text.text(), "第 2 排\n維修中")
         self.assertEqual(w.rows[1].tiles, {})
         w.detect()
         self.wait_state("idle")
