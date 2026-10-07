@@ -688,10 +688,10 @@ class MainWindowTest(UiBase):
         self.assertGreaterEqual(time.monotonic() - t0, 0.45)
         self.assertLess(time.monotonic() - t0, 2.5)
 
-    def test_export_saves_file_and_closes(self):  # EXP-02、EXP-03
+    def test_export_custom_name_and_folder(self):  # EXP-02、EXP-03、EXP-06
         from unittest import mock
-        from flatness.ui import main_window as mw
         from PySide6.QtWidgets import QWidget
+        from flatness.ui import main_window as mw
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         w = self.win
@@ -701,19 +701,34 @@ class MainWindowTest(UiBase):
         self.wait_state("pass", "fail", "error")
         w.next_piece()                                    # 寫入第一片
         self.wait_state("pass", "fail", "error")
-        dlg = mw.ExportDialog(w.sink, w)
-        holder = QWidget()
-        self.addCleanup(holder.deleteLater)
-        dlg.setParent(holder, dlg.windowFlags())          # 同 _modal：顯示時移到遮罩層下
-        self.addCleanup(dlg.deleteLater)
-        out = Path(tmp.name) / "x.xlsx"
-        with mock.patch.object(mw.QFileDialog, "getSaveFileName", return_value=(str(out), "")), \
-                mock.patch.object(mw, "QSettings") as prefs:
+        with mock.patch.object(mw, "QSettings") as prefs:
             prefs.return_value.value.return_value = tmp.name
+            dlg = mw.ExportDialog(w.sink, w)
+            holder = QWidget()
+            self.addCleanup(holder.deleteLater)
+            dlg.setParent(holder, dlg.windowFlags())      # 同 _modal：顯示時移到遮罩層下
+            self.addCleanup(dlg.deleteLater)
+            self.assertEqual(dlg.name.text(), f"平整檢查_{datetime.now():%Y-%m-%d}")  # 預設檔名
+            self.assertEqual(dlg.folder_label.text(), tmp.name)                   # 上次的資料夾
+            dlg.name.setText("A線 第1班")                                          # 使用者改檔名
+            self.assertIn(str(Path(tmp.name) / "A線 第1班.xlsx"), dlg.info.text())
             dlg._save()
-        self.assertTrue(out.exists())
-        self.assertEqual(dlg.result(), mw.QDialog.Accepted)
-        self.assertIn("已儲存 1 筆", w.toast.history[-1])
+            out = Path(tmp.name) / "A線 第1班.xlsx"
+            self.assertTrue(out.exists())
+            self.assertIn("已儲存 1 筆", dlg.info.text())
+            self.assertIn(str(out), dlg.info.text())                             # 顯示完整路徑
+            self.assertTrue(dlg.open_folder.isVisibleTo(dlg))
+            self.assertIn("已儲存 1 筆", w.toast.history[-1])
+            prefs.return_value.setValue.assert_called_with("export_dir", tmp.name)
+            out.write_bytes(b"old")                                              # 同名檔案：要再按一次
+            dlg._save()
+            self.assertEqual(dlg.save.text(), "覆蓋儲存")
+            self.assertEqual(out.read_bytes(), b"old")
+            dlg._save()
+            self.assertNotEqual(out.read_bytes(), b"old")
+            dlg.name.setText("a/b")                                              # 不允許的字元
+            self.assertFalse(dlg.save.isEnabled())
+            self.assertIn("檔名不可包含 /", dlg.info.text())
 
     def test_first_next_writes_nothing(self):  # MEA-02
         self.win.detect()

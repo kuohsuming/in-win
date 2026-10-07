@@ -17,7 +17,7 @@ from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSettings, QSize, Q
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPolygonF
 from PySide6.QtWidgets import (
     QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
-    QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QLineEdit, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from .. import lan, measure
@@ -638,18 +638,25 @@ class Banner(QFrame):
 
 
 class ExportDialog(QDialog):
-    """取出測試數據（5.8、EXP-01～EXP-04）。"""
+    """取出測試數據（5.8、EXP-01～EXP-04）：選日期、檔名可改、可換資料夾；存好後顯示完整路徑。"""
+
+    BAD_CHARS = set('/\\:*?"<>|')  # 隨身碟（FAT／exFAT）不允許的字元
 
     def __init__(self, sink, parent=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.sink = sink
         self.main = parent  # 顯示時會被移到遮罩層下，parent() 不再是主畫面
+        self.prefs = QSettings("flatness", "flatness")
+        folder = str(self.prefs.value("export_dir", "") or "")
+        self.folder = Path(folder) if folder and Path(folder).is_dir() else Path.home()  # 上次的隨身碟已拔除時用家目錄
+        self.saved_path: Path | None = None
+        self._confirm: Path | None = None  # 同名檔案已存在：再按一次才覆蓋
         self.setObjectName("export")
         self.setStyleSheet(f"#export {{ background:{C['panel']}; border:1px solid {C['line']}; border-radius:8px; }}")
-        self.setFixedWidth(460)
+        self.setFixedWidth(560)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(22, 20, 22, 20)
-        lay.setSpacing(14)
+        lay.setSpacing(10)
         lay.addWidget(_obj(QLabel("取出測試數據"), "h1"))
         lay.addWidget(_obj(QLabel("日期"), "label"))
         self.date = QDateEdit()
@@ -657,25 +664,67 @@ class ExportDialog(QDialog):
         self.date.setDisplayFormat("yyyy-MM-dd")
         self.date.setDate(datetime.now().date())
         self.date.setFont(num_font(20))
-        self.date.dateChanged.connect(self._update)
+        self.date.dateChanged.connect(self._date_changed)
         lay.addWidget(self.date)
+        lay.addWidget(_obj(QLabel("檔名"), "label"))
+        name_row = QHBoxLayout()
+        self.name = QLineEdit()
+        self.name.textChanged.connect(self._update)
+        name_row.addWidget(self.name, 1)
+        name_row.addWidget(QLabel(".xlsx"))
+        lay.addLayout(name_row)
+        lay.addWidget(_obj(QLabel("存放資料夾"), "label"))
+        folder_row = QHBoxLayout()
+        self.folder_label = QLabel()
+        self.folder_label.setWordWrap(True)
+        self.folder_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.folder_label.setStyleSheet("font-size:16px;")
+        folder_row.addWidget(self.folder_label, 1)
+        change = QPushButton("變更資料夾")
+        change.clicked.connect(self._choose_folder)
+        folder_row.addWidget(change)
+        lay.addLayout(folder_row)
         self.info = QLabel()
         self.info.setTextFormat(Qt.RichText)
+        self.info.setWordWrap(True)
+        self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.info.setStyleSheet(f"background:{C['panel-2']};border-radius:4px;padding:10px 12px;font-size:16px;")
         lay.addWidget(self.info)
         row = QHBoxLayout()
+        self.open_folder = QPushButton("開啟資料夾")
+        self.open_folder.clicked.connect(self._open_folder)
+        self.open_folder.hide()
+        row.addWidget(self.open_folder)
         row.addStretch()
-        cancel = QPushButton("取消")
-        cancel.clicked.connect(self.reject)
-        self.save = QPushButton("選擇位置並儲存")
+        close = QPushButton("關閉")
+        close.clicked.connect(self.reject)
+        self.save = QPushButton("儲存")
         self.save.setProperty("kind", "primary")
         self.save.clicked.connect(self._save)
-        row.addWidget(cancel)
+        row.addWidget(close)
         row.addWidget(self.save)
         lay.addLayout(row)
+        self._date_changed()
+
+    def _date_changed(self):
+        self.name.setText(f"平整檢查_{self.date.date().toPython():%Y-%m-%d}")  # EXP-02 預設檔名
         self._update()
 
+    def _target(self) -> tuple[Path | None, str | None]:
+        name = self.name.text().strip()
+        if name.lower().endswith(".xlsx"):
+            name = name[:-5].rstrip()
+        if not name:
+            return None, "請輸入檔名"
+        bad = sorted(set(name) & self.BAD_CHARS)
+        if bad or name.startswith("."):
+            return None, "檔名不可包含 " + " ".join(bad or ["開頭的 ."])
+        return self.folder / f"{name}.xlsx", None
+
     def _update(self):
+        self._confirm = None
+        self.save.setText("儲存")
+        self.folder_label.setText(str(self.folder))
         day = self.date.date().toPython()
         try:
             n = self.sink.count(day)
@@ -684,34 +733,50 @@ class ExportDialog(QDialog):
             self.info.setText(f"無法讀取資料庫，請稍後再試。<br>{html.escape(str(exc))}")
             self.save.setEnabled(False)
             return
-        if n:
-            self.info.setText(f"該日共 <b>{n}</b> 筆紀錄<br>預設檔名：平整檢查_{day:%Y-%m-%d}.xlsx")
-        else:
+        path, why = self._target()
+        if not n:
             self.info.setText("該日沒有紀錄，不會產生檔案。")
-        self.save.setEnabled(n > 0)
+        elif why:
+            self.info.setText(f"<span style='color:{C['ng']}'>{why}</span>")
+        else:
+            self.info.setText(f"該日共 <b>{n}</b> 筆紀錄<br>將儲存為：{html.escape(str(path))}")
+        self.save.setEnabled(bool(n) and why is None)
+
+    def _choose_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "選擇存放資料夾", str(self.folder))
+        if folder:
+            self.folder = Path(folder)
+            self._update()
+
+    def _open_folder(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
 
     def _save(self):
         day = self.date.date().toPython()
-        prefs = QSettings("flatness", "flatness")
-        folder = str(prefs.value("export_dir", "") or Path.home())
-        if not Path(folder).is_dir():  # 上次的隨身碟已拔除
-            folder = str(Path.home())
-        name = str(Path(folder) / f"平整檢查_{day:%Y-%m-%d}.xlsx")
-        path, _ = QFileDialog.getSaveFileName(self, "取出測試數據", name, "Excel (*.xlsx)")
-        if not path:
+        path, why = self._target()
+        if why:
             return
-        if not path.lower().endswith(".xlsx"):
-            path += ".xlsx"
+        if path.exists() and self._confirm != path:  # 同名檔案：提示後再按一次才覆蓋
+            self._confirm = path
+            self.info.setText(f"<b>{html.escape(path.name)}</b> 已存在，再按一次「覆蓋儲存」會取代原檔案。")
+            self.save.setText("覆蓋儲存")
+            return
         try:
             n = self.sink.export(day, path)
         except Exception as exc:  # EXP-04：顯示原因，不中斷量測
             log.error("取出測試數據失敗：%s", exc)
             self.info.setText(f"<b>無法產生檔案</b><br>{html.escape(str(exc))}")
             return
-        prefs.setValue("export_dir", str(Path(path).parent))  # EXP-02：下次預設為這次的資料夾
+        self._confirm = None
+        self.save.setText("儲存")
+        self.saved_path = path
+        self.prefs.setValue("export_dir", str(self.folder))  # EXP-02：下次預設為這次的資料夾
+        self.info.setText(f"<b>已儲存 {n} 筆</b><br>{html.escape(str(path))}")
+        self.open_folder.show()
         if self.main is not None:
             self.main.toast.show_text(f"已儲存 {n} 筆：{path}")
-        self.accept()
 
 
 def _obj(w, name):
