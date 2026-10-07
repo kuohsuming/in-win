@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QDialog, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QFileDialog, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget,
 )
 
 from .theme import C
@@ -194,3 +194,28 @@ def show_message(origin: QWidget, text: str, *, title: str = "設備設定", but
     finally:
         backdrop.release()
         backdrop.deleteLater()
+
+
+def pick_path(parent: QWidget, title: str, start: str, *, mode: str = "open", name_filter: str = "") -> str | None:
+    """選檔／存檔／選資料夾（mode："open"、"save"、"dir"）；取消回傳 None。
+
+    不用系統（GTK／portal）視窗：App 全螢幕時系統視窗會被擋在後面，看不到也關不掉，整個 App 像卡住
+    （2026-10-07 實測）。改用 Qt 內建視窗並固定在最上層。
+    """
+    dlg = QFileDialog(parent, title, start)
+    dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+    if mode == "dir":
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setOption(QFileDialog.ShowDirsOnly, True)
+    elif mode == "save":
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setFileMode(QFileDialog.AnyFile)
+    else:
+        dlg.setFileMode(QFileDialog.ExistingFile)
+    if name_filter:
+        dlg.setNameFilter(name_filter)
+    dlg.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+    dlg.resize(900, 600)
+    if dlg.exec() != QDialog.Accepted or not dlg.selectedFiles():
+        return None
+    return dlg.selectedFiles()[0]

@@ -24,7 +24,7 @@ from .. import lan, measure
 from ..measure import ERR, HI, LO, OK
 from . import icons
 from .theme import C, num_font, text_font
-from .widgets import Backdrop, Dot, Toast
+from .widgets import Backdrop, Dot, Toast, pick_path
 
 log = logging.getLogger(__name__)
 
@@ -746,16 +746,11 @@ class ExportDialog(QDialog):
         self.save.setEnabled(bool(n) and why is None)
 
     def _choose_folder(self):
-        # 不用系統（portal）視窗：全螢幕時會被 App 擋住或選擇結果沒有傳回（2026-10-07 實測）
-        dlg = QFileDialog(self, "選擇存放資料夾", str(self.folder if self.folder.is_dir() else Path.home()))
-        dlg.setFileMode(QFileDialog.Directory)
-        dlg.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
-        dlg.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-        dlg.resize(900, 600)
-        if dlg.exec() != QDialog.Accepted or not dlg.selectedFiles():
+        folder = pick_path(self, "選擇存放資料夾", str(self.folder if self.folder.is_dir() else Path.home()), mode="dir")
+        if not folder:
             log.info("取出測試數據：取消變更資料夾（仍為 %s）", self.folder)
             return
-        self.folder = Path(dlg.selectedFiles()[0])
+        self.folder = Path(folder)
         self.folder_edit.setText(str(self.folder))
         log.info("取出測試數據：存放資料夾改為 %s", self.folder)
         self._update()

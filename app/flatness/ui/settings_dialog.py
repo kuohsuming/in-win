@@ -18,7 +18,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QAbstractSpinBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
     QTableWidget, QTableWidgetItem,
@@ -29,7 +29,7 @@ from .. import bootp, calibrate, definition, lan, netinfo
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
 from .theme import C, tag_style
-from .widgets import Backdrop, MessageDialog, Toast, show_message
+from .widgets import Backdrop, MessageDialog, Toast, pick_path, show_message
 
 log = logging.getLogger(__name__)
 
@@ -1453,7 +1453,7 @@ class SettingsDialog(QDialog):
     # ---------------------------------------------------------------- 匯入、還原、下載（UPL）
 
     def _import(self):
-        path, _ = QFileDialog.getOpenFileName(self, "匯入定義檔", str(Path.home()), "DL-EN1 定義檔 (*.json)")
+        path = pick_path(self, "匯入定義檔", str(Path.home()), name_filter="DL-EN1 定義檔 (*.json)")
         if path:
             self.import_file(Path(path))
 
@@ -1494,8 +1494,8 @@ class SettingsDialog(QDialog):
 
     def _download(self):
         defn = lan.definition_from(self.original.values())
-        path, _ = QFileDialog.getSaveFileName(self, "下載目前設定", str(Path.home() / "dl-en1.json"),
-                                              "DL-EN1 定義檔 (*.json)")
+        path = pick_path(self, "下載目前設定", str(Path.home() / "dl-en1.json"), mode="save",
+                         name_filter="DL-EN1 定義檔 (*.json)")
         if not path:
             return
         try:

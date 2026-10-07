@@ -204,6 +204,21 @@ class SettingsDialogTest(UiBase):
         self.save()
         self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].config.get("port"), before)  # 原值保留
 
+    def test_file_pickers_are_in_app_and_on_top(self):  # 2026-10-07：系統選檔視窗被全螢幕擋住，App 像卡住
+        from unittest import mock
+        from flatness.ui import widgets
+        seen = []
+
+        def fake_exec(dlg):
+            seen.append((dlg.windowTitle(), dlg.testOption(widgets.QFileDialog.DontUseNativeDialog),
+                         bool(dlg.windowFlags() & Qt.WindowStaysOnTopHint), dlg.acceptMode()))
+            return widgets.QDialog.Rejected
+        with mock.patch.object(widgets.QFileDialog, "exec", fake_exec):
+            self.dlg._import()                            # 匯入…
+            self.dlg._download()                          # 下載目前設定
+        self.assertEqual([x[:3] for x in seen], [("匯入定義檔", True, True), ("下載目前設定", True, True)])
+        self.assertEqual(seen[1][3], widgets.QFileDialog.AcceptSave)
+
     def test_nothing_written_before_save(self):  # EDT-02、DSC-12-A1
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
