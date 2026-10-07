@@ -507,6 +507,28 @@ class ScreenFitTest(UiBase):
         vp = win.rows_area.viewport()
         return row.mapTo(vp, row.rect().bottomLeft()).y()
 
+    def test_tiles_never_squeezed(self):  # UI-11：出現結果、說明或粗邊框時，測量值不被壓扁裁切
+        from flatness import measure
+        from flatness.measure import ERR, LO, OK
+        for n in (1, 4, 6):
+            win = self.window(n, probes=2 if n == 1 else 4)
+            for state in ("blank", OK, LO, ERR, "down", "ip"):
+                for row in win.rows:
+                    row.set_down(state == "down")
+                    row.set_ip_mismatch("192.168.10.99" if state == "ip" else None)
+                    for t in row.tiles.values():
+                        if state == "blank":
+                            t.set_blank("go", "設備正常")
+                        elif state == ERR:
+                            t.set_result(ERR, None, "放大器未連接", "探頭無回應", True)
+                        elif state in (OK, LO):
+                            t.set_result(state, -0.2971, "低於下限 12.747" if state == LO else "")
+                pump(self.app, 0.05)
+                for row in win.rows:
+                    for t in row.tiles.values():
+                        self.assertGreaterEqual(t.height(), t.sizeHint().height(), (n, state, win.scale_k))
+                        self.assertGreaterEqual(t.m.height(), t.m.sizeHint().height(), (n, state, win.scale_k))
+
     def test_four_rows_fit_1080p(self):
         win = self.window(4)
         self.assertLess(win.scale_k, 1.0)                                # 已縮小

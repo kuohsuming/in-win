@@ -229,6 +229,15 @@ class ProbeTile(QFrame):
         big = QFontMetrics(num_font(self._fpx(44), 700)).horizontalAdvance("-88.888")
         unit = QFontMetrics(num_font(self._fpx(18), 500)).horizontalAdvance(" mm")
         self.m.setMinimumWidth(big + unit + 4)
+        # 預留測量值高度：數值與「mm」混排的行比單獨的「—」高；排高在空白狀態決定（_apply_scale），
+        # 不預留時出現結果後測量值被壓扁裁切
+        self.m.setMinimumHeight(0)
+        self.m.setFont(num_font(self._fpx(44), 700))
+        self.m.setText(self._value_html(-88.888))
+        self.m.setMinimumHeight(self.m.sizeHint().height())
+        # 預留設備狀態列高度：結果的紅字說明（18px 粗體）比「設備正常」（14px）高
+        self.note.setText("低於下限 88.888")
+        self.dev_text.setMinimumHeight(self.note.sizeHint().height())
         fn, args, kw = self._last
         fn(*args, **kw)
 
@@ -278,8 +287,7 @@ class ProbeTile(QFrame):
             self.scale.hide()
         else:
             self.m.setFont(num_font(self._fpx(44), 700))
-            self.m.setText(f'{f3(value)}<span style="font-size:{self._fpx(18)}px;font-weight:500;color:{C["ink-2"]}">'
-                           f'&nbsp;mm</span>')
+            self.m.setText(self._value_html(value))
             self.m.setStyleSheet(f"color:{C['ink'] if state == OK else C['ng']}")
             self.scale.show()
             self.scale.set(value, self.std, C["ink"] if state == OK else C["ng"])
@@ -289,6 +297,10 @@ class ProbeTile(QFrame):
             self._device("ng", device_text, bold=True)
         else:
             self._device("go", device_text)
+
+    def _value_html(self, value: float) -> str:
+        return (f'{f3(value)}<span style="font-size:{self._fpx(18)}px;font-weight:500;color:{C["ink-2"]}">'
+                f'&nbsp;mm</span>')
 
     def fade(self, on: bool):
         self._fx.setOpacity(0.55 if on else 1.0)
@@ -302,6 +314,7 @@ class DeviceRow(QFrame):
         self.index, self.dev = index, dev
         self.maint = bool(dev.get("maint"))  # 維修中：顯示但不連線、不量測（DSC-15）
         self.seen_ip: str | None = None      # 實際使用 IP 與設定不同時為實際 IP（DSC-20）
+        self.border_px = 1                   # 目前的邊框粗細（set_down）
         self.setObjectName("row")
         lay = self._lay = QHBoxLayout(self)
         left = self._left = QFrame()
@@ -351,10 +364,23 @@ class DeviceRow(QFrame):
         self.set_scale(1.0)
         self.set_down(False)
 
+    BORDER_MAX = 4  # 偵測不到、IP 不符時的邊框粗細
+
+    def _margins(self):
+        """邊框粗細不同時以內距補足，排內探頭方塊的高度不變（UI-11）。"""
+        m = max(1, round(12 * self._k) + 1 - self.border_px)  # 內距 ＋ 邊框 固定為 12 ＋ 1
+        self._lay.setContentsMargins(m, m, m, m)
+
+    @property
+    def fixed_height(self) -> int:
+        """此比例下排的固定高度：內容 ＋ 內距 ＋ 最粗的邊框（_apply_scale）。"""
+        return self._lay.sizeHint().height() + 2 * self.border_px
+
     def set_scale(self, k: float):
         """排與探頭方塊依縮放比例調整（UI-11）。"""
         px = lambda v: max(1, round(v * k))  # noqa: E731
-        self._lay.setContentsMargins(px(12), px(12), px(12), px(12))
+        self._k = k
+        self._margins()
         self._lay.setSpacing(px(12))
         self._left.setFixedWidth(max(84, px(110)))
         self.name.setFont(text_font(max(14, px(26)), 900))
@@ -386,6 +412,9 @@ class DeviceRow(QFrame):
 
     def set_down(self, down: bool, dot="stale", blink=False):
         self._down_args = (down, dot, blink)
+        self.border_px = self.BORDER_MAX if down or self.seen_ip else 1
+        if hasattr(self, "_k"):
+            self._margins()
         border = (f"4px solid {C['ng']}" if down else f"4px solid {C['warn']}" if self.seen_ip
                   else f"1px solid {C['line']}")
         self.setStyleSheet(
@@ -698,7 +727,7 @@ class MainWindow(QMainWindow):
         self.banner.set_scale(min(1.0, 0.4 + 0.6 * k))  # 橫幅是主要結果，縮得比排少
         for r in self.rows:
             r.set_scale(k)
-            r.setFixedHeight(r.layout().sizeHint().height())  # 排高固定為此比例所需，不被捲動區拉伸或壓縮
+            r.setFixedHeight(r.fixed_height)  # 排高固定為此比例所需，不被捲動區拉伸或壓縮
         holder = self.rows_area.widget()
         if holder is not None:  # 立即重新排版，避免沿用上一個比例的高度
             holder.layout().invalidate()
