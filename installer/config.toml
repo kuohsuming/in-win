@@ -16,22 +16,30 @@ engineer_password_sha256 = ""
 dl_en1 = [11, 99]
 other = [100, 199]
 
+[calibration]                # 探頭校準（CAL-02、CAL-04）
+samples = 20                 # 取樣次數
+interval_ms = 50             # 每次間隔（毫秒）
+verify = 5                   # 驗證次數
+tolerance = 0.002            # 驗證容許值（mm）：驗證平均須在 0 ± 此值內；取樣標準差上限為其一半
+                             # ⚠ 假設值（TBD-01）
+
 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id，單位 mm
-# ⚠ 以下為假設值（TBD-01，待品保提供正式標準值與上下限）；未設定的探頭量測時顯示「未設定允收標準」
+# 探頭以標準件校準歸零後讀值為 0（CAL-03），標準值為 0、上下限為 ± 公差
+# ⚠ 以下公差為假設值（TBD-01，待品保提供）；未設定的探頭量測時顯示「未設定允收標準」
 [standards.row-1]
-1 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
-2 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
-3 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
-4 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
 
 [standards.row-2]
-1 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
-2 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
-3 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
-4 = { nominal = 12.480, lower = 12.440, upper = 12.520 }
+1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
 
 [standards.row-3]
-1 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
-2 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
-3 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
-4 = { nominal = 12.520, lower = 12.470, upper = 12.570 }
+1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+2 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+3 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
+4 = { nominal = 0.000, lower = -0.050, upper = 0.050 }

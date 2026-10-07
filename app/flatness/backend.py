@@ -135,6 +135,15 @@ class Backend(QObject):
     def set_hidden(self, mac: str, hidden: bool):
         self.store.set_hidden(mac, hidden)
 
+    def record_calibration(self, rec: dict) -> bool:
+        """CAL-08：寫入校準紀錄；資料庫無法寫入時記錄日誌，不影響校準流程。"""
+        try:
+            self.store.write_calibration(rec)
+            return True
+        except (StoreError, AttributeError) as exc:
+            log.error("校準紀錄無法寫入資料庫：%s；內容=%s", exc, rec)
+            return False
+
     def apply(self, old, new, summary: str = "", deleted=()) -> sync.ApplyResult:
         restart = self.dnsmasq.restart if self.dnsmasq.command else None
         result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary, deleted)

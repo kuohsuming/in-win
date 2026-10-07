@@ -128,8 +128,9 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                     if not isinstance(probe, dict):
                         errors.append((pat, "必須是物件"))
                         continue
-                    for extra in sorted(set(probe) - {"id", "description"}):
+                    for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at"}):
                         errors.append((f"{pat}.{extra}", "不允許的欄位"))
+                    _check_zero(errors, pat, probe)
                     pid = probe.get("id")
                     if not (_is_int(pid) and 1 <= pid <= 15):
                         errors.append((f"{pat}.id", "須為 1～15 的整數"))
@@ -173,6 +174,22 @@ def render_hosts(devices: list[dict]) -> str:
     lines = ["# 由 DL-EN1 定義檔自動產生，請勿手動修改；修改請改定義檔後重新套用"]
     lines += [f"{d['mac'].lower()},{d['ipv4']},{d['key']}" for d in devices]
     return "\n".join(lines) + "\n"
+
+
+def _check_zero(errors, pat: str, probe: dict):
+    """校準偏移量（CAL-06）：zero_offset 為有限數值、zeroed_at 為日期時間，兩者同時存在。"""
+    has_off, has_at = "zero_offset" in probe, "zeroed_at" in probe
+    if has_off != has_at:
+        errors.append((f"{pat}.{'zeroed_at' if has_off else 'zero_offset'}", "zero_offset 與 zeroed_at 須同時存在"))
+    if has_off:
+        v = probe["zero_offset"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+            errors.append((f"{pat}.zero_offset", "須為數值"))
+    if has_at:
+        try:
+            datetime.fromisoformat(probe["zeroed_at"])
+        except (TypeError, ValueError):
+            errors.append((f"{pat}.zeroed_at", "須為日期時間（ISO 8601）"))
 
 
 def atomic_write(path: Path, text: str) -> None:

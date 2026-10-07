@@ -41,6 +41,18 @@ class ValidateTest(unittest.TestCase):
         ]}
         self.assertEqual(len(bootp.validate(spec, NET)), 2)
 
+    def test_zero_offset_fields(self):  # CAL-06、3.7.1
+        ok = {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
+            {"id": 1, "description": "左", "zero_offset": 12.4987, "zeroed_at": "2026-10-07T15:30:00"}])]}
+        self.assertEqual(len(bootp.validate(ok, NET)), 1)
+        bad = copy.deepcopy(ok)
+        p = bad["dl_en1"][0]["probes"][0]
+        del p["zeroed_at"]
+        p["zero_offset"] = "x"
+        with self.assertRaises(bootp.DefinitionError) as cm:
+            bootp.validate(bad, NET)
+        self.assertTrue({"dl_en1[0].probes[0].zeroed_at", "dl_en1[0].probes[0].zero_offset"} <= where(cm.exception))
+
     def test_reports_all_errors_with_locations(self):
         bad = {"version": 1, "dl_en1": [
             device("row-1", "00:01:FC:00:00:01", "192.168.10.11"),

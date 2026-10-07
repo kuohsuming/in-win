@@ -15,8 +15,14 @@
     dl_en1 = [11, 99]
     other = [100, 199]
 
-    [standards.row-1]                 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id
-    1 = { nominal = 12.500, lower = 12.450, upper = 12.550 }
+    [calibration]                     # 探頭校準（CAL-02、CAL-04）
+    samples = 20                      # 取樣次數
+    interval_ms = 50                  # 每次間隔
+    verify = 5                        # 驗證次數
+    tolerance = 0.002                 # 驗證容許值（mm）；取樣標準差上限為其一半
+
+    [standards.row-1]                 # 允收標準（JDG-05、DEF-09）：DL-EN1 key → 探頭 id；校準後以 0 為基準（CAL-03）
+    1 = { nominal = 0.000, lower = -0.050, upper = 0.050 }
 """
 
 from __future__ import annotations
@@ -41,6 +47,14 @@ class Standard:
 
 
 @dataclass
+class Calibration:
+    samples: int = 20
+    interval_ms: int = 50
+    verify: int = 5
+    tolerance: float = 0.002
+
+
+@dataclass
 class Config:
     station_id: str = "ST01"
     equip_if: str = "eno2"
@@ -51,6 +65,7 @@ class Config:
     engineer_password_sha256: str = ""
     ip_range: dict = field(default_factory=lambda: {"dl_en1": (11, 99), "other": (100, 199)})
     standards: dict = field(default_factory=dict)  # {key: {probe_id: Standard}}
+    calibration: Calibration = field(default_factory=Calibration)
 
     @property
     def fallback_net(self) -> ipaddress.IPv4Interface:
@@ -80,6 +95,12 @@ def load(path: Path | None) -> Config:
     for kind, value in (data.get("ip_range") or {}).items():
         lo, hi = value
         cfg.ip_range[kind] = (int(lo), int(hi))
+    cal = data.get("calibration") or {}
+    for name in ("samples", "interval_ms", "verify"):
+        if name in cal:
+            setattr(cfg.calibration, name, int(cal[name]))
+    if "tolerance" in cal:
+        cfg.calibration.tolerance = float(cal["tolerance"])
     for key, probes in (data.get("standards") or {}).items():
         cfg.standards[key] = {int(pid): Standard(float(v["nominal"]), float(v["lower"]), float(v["upper"]))
                               for pid, v in probes.items()}

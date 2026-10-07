@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS flatness.inspection_point (
   raw_response       VARCHAR(64)           NULL COMMENT 'DL-EN1 原始回傳字串（DAT-03）',
   error_text         VARCHAR(255)          NULL COMMENT '設備異常原因（3.0.6）',
   device_mac         CHAR(17)              NULL COMMENT '量測當時該排 DL-EN1 的 MAC（DAT-06）',
+  zero_offset        DECIMAL(12,6)         NULL COMMENT '量測當時的校準偏移量（CAL-09）；測量值 ＝ 原始值 − 偏移量',
   PRIMARY KEY (serial, device_key, probe_id),
   CONSTRAINT fk_point_inspection
     FOREIGN KEY (serial) REFERENCES flatness.inspection (serial)
@@ -83,6 +84,42 @@ SET @sql := IF(@col_missing,
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- 舊版已建立的明細表補上 zero_offset（CAL-09；可重複執行）
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'zero_offset'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.inspection_point ADD COLUMN zero_offset DECIMAL(12,6) NULL COMMENT ''量測當時的校準偏移量（CAL-09）；測量值 ＝ 原始值 − 偏移量'' AFTER device_mac',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 探頭校準紀錄（CAL-08）：每次校準（成功、失敗、取消）1 筆；App 帳號只新增與查詢
+CREATE TABLE IF NOT EXISTS flatness.calibration (
+  id               BIGINT UNSIGNED   NOT NULL AUTO_INCREMENT,
+  calibrated_at    DATETIME(3)       NOT NULL COMMENT '校準時間',
+  station_id       VARCHAR(16)       NOT NULL COMMENT '工站代號',
+  device_key       VARCHAR(30)       NOT NULL COMMENT '排（DL-EN1 key）',
+  probe_id         TINYINT UNSIGNED  NOT NULL COMMENT '探頭 id（放大器 ID）',
+  device_mac       CHAR(17)              NULL COMMENT 'DL-EN1 MAC',
+  samples          SMALLINT UNSIGNED NOT NULL COMMENT '取樣次數（實際讀到的筆數）',
+  mean             DECIMAL(12,6)         NULL COMMENT '取樣平均（原始值）',
+  sigma            DECIMAL(12,6)         NULL COMMENT '取樣標準差',
+  old_offset       DECIMAL(12,6)         NULL COMMENT '校準前的偏移量；未校準為 NULL',
+  new_offset       DECIMAL(12,6)         NULL COMMENT '新偏移量（＝ 取樣平均）',
+  verify_mean      DECIMAL(12,6)         NULL COMMENT '驗證平均（扣除新偏移量）',
+  verify_max_dev   DECIMAL(12,6)         NULL COMMENT '驗證讀值與 0 的最大偏差',
+  result           ENUM('PASS','FAIL','CANCEL') NOT NULL COMMENT '校準結果',
+  reason           VARCHAR(255)          NULL COMMENT '失敗或取消原因',
+  adopted          TINYINT(1)        NOT NULL DEFAULT 0 COMMENT '工程人員是否採用（CAL-05）',
+  PRIMARY KEY (id),
+  KEY idx_calibration_probe (device_key, probe_id, calibrated_at)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='探頭校準紀錄';
 
 -- 設備網路探索與 DL-EN1 設定（3.10 DSC；DL-EN1 設定的主檔，DEF-01）
 -- 每個 MAC 一筆；App 帳號沒有 DELETE 權限，設備只會新增或更新

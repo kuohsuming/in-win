@@ -433,6 +433,17 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
     return d
 
 
+ZERO_FIELDS = ("zero_offset", "zeroed_at")
+
+
+def clear_zero(cfg, ids=None) -> None:
+    """清除探頭的校準偏移量（CAL-06）；ids 為 None 時清除全部。"""
+    for p in (cfg or {}).get("probes") or []:
+        if ids is None or p.get("id") in ids:
+            for f in ZERO_FIELDS:
+                p.pop(f, None)
+
+
 def replace(devices, old_mac: str, new_mac: str) -> LanDevice:
     """替換（DSC-14）：新機取得舊機全部設定並設為使用中；舊機改為已停用並保留原設定。"""
     old = next(x for x in devices if x.mac == old_mac)
@@ -443,6 +454,7 @@ def replace(devices, old_mac: str, new_mac: str) -> LanDevice:
         raise ValueError("新機不可為使用中，也不可與舊機相同")
     new_pos = new.sort_order
     new.status, new.config, new.ipv4, new.sort_order = LIVE, copy.deepcopy(old.config), old.ipv4, old.sort_order
+    clear_zero(new.config)  # CAL-06：新機的探頭須重新校準
     new.hidden, new.hidden_at = False, None
     old.status = RETIRED
     # 舊機移到新機原本的位置，順序不重複

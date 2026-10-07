@@ -852,3 +852,84 @@ class MainWindowTest(UiBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
+    MAC = "00:01:FC:DE:3A:76"
+
+    class Station:
+        def __init__(self, base=12.4987, noise=0.0):
+            self.base, self.noise, self.calls = base, noise, []
+
+        def sample(self, key, pid, n, interval, cancel=None):
+            self.calls.append((key, pid, n))
+            return [self.base + (self.noise if i % 2 else -self.noise) for i in range(n)]
+
+        def resolution(self, key, pid):
+            return 0.0001
+
+    def dialog(self, station):
+        from flatness.ui import settings_dialog
+        from flatness.ui.settings_dialog import SettingsDialog
+        self.be = self.make_backend()
+        self.msgs = []
+
+        def answer(origin, text, **kw):  # 「開始校準」「採用」皆按右側主要按鍵
+            self.msgs.append((kw.get("title"), text, kw.get("buttons")))
+            return len(kw.get("buttons", ("確定",))) - 1
+        orig = settings_dialog.show_message
+        settings_dialog.show_message = answer
+        self.addCleanup(setattr, settings_dialog, "show_message", orig)
+        d = SettingsDialog(self.be, calibrator=lambda: station)
+        self.addCleanup(d.deleteLater)
+        self.saved = []
+        d.saved.connect(lambda r, p: self.saved.append(r))
+        d.enter_edit()
+        d.select(self.MAC)
+        return d
+
+    def btn(self, d, row):
+        return d.probe_table.cellWidget(row, 3)
+
+    def test_calibrate_adopt_and_clear_on_renumber(self):
+        st = self.Station()
+        d = self.dialog(st)
+        self.assertEqual(d.probe_table.item(1, 2).text(), "未校準")
+        self.assertTrue(self.btn(d, 1).isEnabled())
+        self.btn(d, 1).click()                                   # 只校準探頭 2（CAL-A7）
+        self.assertEqual(st.calls, [("row-2", 2, 20), ("row-2", 2, 5)])
+        probes = by_mac(self.store.load())[self.MAC].config["probes"]
+        self.assertAlmostEqual(probes[1]["zero_offset"], 12.4987)
+        self.assertIn("zeroed_at", probes[1])
+        self.assertNotIn("zero_offset", probes[0])
+        self.assertEqual(len(self.saved), 1)                     # 主畫面以新偏移量重建
+        self.assertNotEqual(d.probe_table.item(1, 2).text(), "未校準")
+        (rec,) = self.store.calibrations
+        self.assertEqual((rec["probe_id"], rec["result"], rec["adopted"]), (2, "PASS", True))
+        self.assertFalse(d.is_dirty())                           # 採用即寫入，不需儲存
+        d.probe_table.setCurrentCell(0, 1)                       # 刪除探頭 1：原探頭 2 遞補為 1，偏移量清除
+        d.btn_probe_del.click()
+        self.assertEqual(d.probe_table.item(0, 2).text(), "未校準")
+        self.assertIsNone(d.probe_table.item(0, 0).data(Qt.UserRole))
+        for r in range(d.probe_table.rowCount()):                # 有未儲存變更：不可校準
+            self.assertFalse(self.btn(d, r).isEnabled())
+        self.assertIn("先儲存", self.btn(d, 0).toolTip())
+
+    def test_failed_calibration_changes_nothing(self):
+        d = self.dialog(self.Station(noise=0.01))
+        before = by_mac(self.store.load())[self.MAC].config
+        self.btn(d, 0).click()
+        self.assertEqual(by_mac(self.store.load())[self.MAC].config, before)
+        self.assertIn("讀值不穩定", self.msgs[-1][1])
+        self.assertEqual(self.saved, [])
+        (rec,) = self.store.calibrations
+        self.assertEqual((rec["result"], rec["adopted"]), ("FAIL", False))
+
+    def test_no_calibrator_or_not_live(self):
+        from flatness.ui.settings_dialog import SettingsDialog
+        self.be = self.make_backend()
+        d = SettingsDialog(self.be)
+        self.addCleanup(d.deleteLater)
+        d.enter_edit()
+        d.select(self.MAC)
+        self.assertFalse(d.probe_table.cellWidget(0, 3).isEnabled())   # 示範以外沒有校準來源

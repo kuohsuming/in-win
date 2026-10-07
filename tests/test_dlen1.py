@@ -65,11 +65,19 @@ REAL = {  # 真機回應（2 台放大器、4 位小數）
 }
 
 
-def definition(port, probes=(1, 2), max_probes=None, ip="127.0.0.1"):
+def definition(port, probes=(1, 2), max_probes=None, ip="127.0.0.1", offsets=None):
+    """offsets：探頭 id → 校準偏移量；預設全部以 0 校準，None 值表示未校準。"""
+    offsets = {i: 0.0 for i in probes} if offsets is None else offsets
+
+    def probe(i):
+        p = {"id": i, "description": f"P{i}"}
+        if offsets.get(i) is not None:
+            p.update(zero_offset=offsets[i], zeroed_at="2026-10-07T15:00:00")
+        return p
     return {"version": 1, "dl_en1": [{
         "key": "row-1", "name": "前排", "ipv4": ip, "port": port,
         "max_probes": max_probes or len(probes),
-        "probes": [{"id": i, "description": f"P{i}"} for i in probes]}]}
+        "probes": [probe(i) for i in probes]}]}
 
 
 class DlEn1StationTest(unittest.TestCase):
@@ -129,6 +137,31 @@ class DlEn1StationTest(unittest.TestCase):
         _, st = self.station(replies)
         (s,) = st.detect()
         self.assertIn("錯誤代碼 51", s.error)
+
+    def test_offset_applied_and_uncalibrated(self):  # CAL-03、CAL-07、CAL-09
+        _, st = self.station(REAL, offsets={1: -0.3, 2: None})
+        (s,) = st.detect()
+        self.assertEqual(s.uncalibrated, {2})
+        r1, r2 = st.read()
+        self.assertAlmostEqual(r1.value, 0.0029)          # −0.2971 − (−0.3)
+        self.assertEqual((r1.offset, r1.raw), (-0.3, "-000002971"))
+        self.assertEqual((r2.value, r2.error, r2.raw), (None, "未校準", "+000000358"))
+
+    def test_sample_raw_values(self):  # CAL-02：原始值、不扣偏移量、間隔
+        import time
+        dev, st = self.station(REAL, offsets={1: 5.0, 2: 5.0})
+        st.detect()
+        t0 = time.monotonic()
+        self.assertEqual(st.sample("row-1", 2, 4, 0.05), [0.0358] * 4)
+        self.assertGreaterEqual(time.monotonic() - t0, 0.14)  # 3 個間隔
+        self.assertEqual(st.resolution("row-1", 2), 0.0001)
+        self.assertNotIn("SW", " ".join(dev.received))        # NFR-11
+
+    def test_sample_errors(self):  # CAL-02：無有效數據即失敗
+        from flatness.calibrate import SampleError
+        _, st = self.station(dict(REAL, MS="MS,02,+099999999,02,+000000358"))
+        with self.assertRaises(SampleError):
+            st.sample("row-1", 1, 3, 0.0)
 
     def test_unreachable(self):  # DEV-04
         srv = socket.socket()

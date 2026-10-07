@@ -54,6 +54,7 @@ class MemoryStore:
         self._lock = threading.RLock()
         self.available = True
         self.inspections: dict[str, tuple[dict, list[dict]]] = {}  # serial → (主檔, 明細)
+        self.calibrations: list[dict] = []
 
     def _check(self):
         if not self.available:
@@ -89,6 +90,11 @@ class MemoryStore:
                 return False
             self.inspections[head["serial"]] = (dict(head, written_at=datetime.now()), [dict(p) for p in points])
             return True
+
+    def write_calibration(self, rec: dict) -> None:
+        with self._lock:
+            self._check()
+            self.calibrations.append(dict(rec))
 
     def count_inspections(self, day) -> int:
         with self._lock:
@@ -247,10 +253,12 @@ class MySQLStore:
                 cur.executemany(
                     "INSERT INTO inspection_point (serial, device_key, probe_id, device_name, probe_description,"
                     " measured_value, standard_value, lower_limit, upper_limit, judgment, raw_response,"
-                    " error_text, device_mac) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " error_text, device_mac, zero_offset)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     [(head["serial"], p["device_key"], p["probe_id"], p["device_name"], p["probe_description"],
                       p["measured_value"], p["standard_value"], p["lower_limit"], p["upper_limit"], p["judgment"],
-                      p["raw_response"], p["error_text"], p["device_mac"]) for p in points])
+                      p["raw_response"], p["error_text"], p["device_mac"], p.get("zero_offset"))
+                     for p in points])
             conn.commit()
             return True
         except pymysql.IntegrityError as exc:
@@ -263,6 +271,14 @@ class MySQLStore:
             raise StoreError(f"資料庫寫入失敗：{exc}") from exc
         finally:
             conn.close()
+
+    def write_calibration(self, rec: dict) -> None:
+        """CAL-08：校準紀錄 1 筆。"""
+        cols = ("calibrated_at", "station_id", "device_key", "probe_id", "device_mac", "samples", "mean", "sigma",
+                "old_offset", "new_offset", "verify_mean", "verify_max_dev", "result", "reason", "adopted")
+        with self._cursor() as cur:
+            cur.execute(f"INSERT INTO calibration ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})",
+                        [int(rec[c]) if c == "adopted" else rec[c] for c in cols])
 
     def count_inspections(self, day) -> int:
         with self._cursor() as cur:

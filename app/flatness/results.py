@@ -38,6 +38,7 @@ def to_record(result, station_id: str) -> dict:
             "lower_limit": std.lower if std else None, "upper_limit": std.upper if std else None,
             "judgment": POINT_JUDGMENT[p.state], "raw_response": (p.raw or None) and p.raw[:64],
             "error_text": p.error[:255] if p.error else None, "device_mac": p.device_mac or None,
+            "zero_offset": p.zero_offset,
         })
     return {"head": {"serial": result.serial, "station_id": station_id,
                      "measured_at": result.measured_at.isoformat(timespec="milliseconds"),

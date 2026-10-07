@@ -53,6 +53,7 @@ class PointResult:
     std: object = None
     raw: str = ""
     error: str | None = None
+    zero_offset: float | None = None  # 量測當時的校準偏移量（CAL-09）
 
 
 @dataclass
@@ -1115,11 +1116,15 @@ class MainWindow(QMainWindow):
                     n_err += 1
                 continue
             row.set_down(False, "go")
-            missing = 0
+            missing = uncal = 0
             for pid, t in row.tiles.items():
                 if pid in s.probe_errors:
                     t.set_result(ERR, note=s.probe_errors[pid], device_text="探頭無回應", device_error=True)
                     errs.append(f"{d['name']} {self._desc(d, pid)}探頭無回應（{s.probe_errors[pid]}）")
+                    n_err += 1
+                elif pid in s.uncalibrated:  # CAL-07：未校準不量測
+                    t.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
+                    uncal += 1
                     n_err += 1
                 elif (std.get(d["key"]) or {}).get(pid) is None:
                     t.set_result(ERR, note="未設定允收標準", device_text="未設定允收標準", device_error=True)
@@ -1129,6 +1134,8 @@ class MainWindow(QMainWindow):
                     t.set_blank("go", "設備正常")
             if missing:
                 errs.append(f"{d['name']} 有 {missing} 個探頭未設定允收標準")
+            if uncal:
+                errs.append(f"{d['name']} 有 {uncal} 個探頭未校準，請在設備設定以標準件校準")
         if errs:
             self._summary("error", n_err)
             self.show_device_error(errs, [])
@@ -1263,7 +1270,12 @@ class MainWindow(QMainWindow):
                 r = by.get((d["key"], pid)) or measure.ProbeReading(d["key"], pid, None, "", "探頭無回應")
                 s = (std.get(d["key"]) or {}).get(pid)
                 desc = self._desc(d, pid)
-                if r.error or r.value is None:
+                if r.error == "未校準":  # CAL-07
+                    state = ERR
+                    tile.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
+                    errs.append(f"{d['name']} {desc}未校準")
+                    n_err += 1
+                elif r.error or r.value is None:
                     state = ERR
                     tile.set_result(ERR, note=r.error or "無有效數據", device_text="探頭無回應", device_error=True)
                     errs.append(f"{d['name']} {desc}探頭無回應（{r.error or '無有效數據'}）")
@@ -1281,7 +1293,8 @@ class MainWindow(QMainWindow):
                     if state != OK:
                         outs.append(f"{d['name']} {desc}{WORD[state]}")
                 points.append(PointResult(d["key"], pid, d["name"], desc, mac.get(d["key"], ""), state,
-                                          r.value, s, r.raw, r.error or ("未設定允收標準" if s is None else None)))
+                                          r.value, s, r.raw, r.error or ("未設定允收標準" if s is None else None),
+                                          r.offset))
             if missing:
                 errs.append(f"{d['name']} 有 {missing} 個探頭未設定允收標準")
         verdict = measure.overall(p.state for p in points)
@@ -1327,8 +1340,10 @@ class MainWindow(QMainWindow):
         if self.busy:
             return
         from .settings_dialog import SettingsDialog
+        station = self.station if hasattr(self.station, "sample") else None
         dlg = SettingsDialog(self.backend, self, pending_serial=self.pending_serial(),
-                             before_save=self.flush_result)
+                             before_save=self.flush_result,
+                             calibrator=(lambda: self.station) if station is not None else None)  # CAL-02
         dlg.saved.connect(self._on_settings_saved)
         self._modal(dlg)
 

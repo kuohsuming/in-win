@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import ipaddress
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -24,11 +25,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import bootp, definition, lan, netinfo
+from .. import bootp, calibrate, definition, lan, netinfo
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
 from .theme import C, tag_style
-from .widgets import Toast, show_message
+from .widgets import Backdrop, MessageDialog, Toast, show_message
 
 log = logging.getLogger(__name__)
 
@@ -117,18 +118,21 @@ class HtmlDelegate(QStyledItemDelegate):
 class _Relay(QObject):
     """背景執行緒（ARP 探測）回到畫面執行緒。"""
     probed = Signal(str, object)
+    calibrated = Signal(object)    # 校準完成（calibrate.CalResult）
 
 
 class SettingsDialog(QDialog):
     saved = Signal(object, object)  # (sync.ApplyResult, lan.Preview)
 
-    def __init__(self, backend, parent=None, *, pending_serial: str | None = None, before_save=None):
+    def __init__(self, backend, parent=None, *, pending_serial: str | None = None, before_save=None,
+                 calibrator=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setObjectName("settings")
         self.setModal(True)
         self.backend = backend
         self.pending_serial = pending_serial      # 畫面上尚未寫入的量測結果編號（UPL-02）
         self.before_save = before_save            # 儲存前先寫入該結果
+        self.calibrator = calibrator              # () → 量測用 Station（校準取樣，CAL-02）；None 表示不可校準
         self.original: dict[str, lan.LanDevice] = {}
         self.work: dict[str, lan.LanDevice] = {}
         self.remembered: dict[str, dict] = {}
@@ -444,8 +448,8 @@ class SettingsDialog(QDialog):
         pb.setContentsMargins(0, 0, 0, 0)
         pb.setSpacing(6)
         pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N）", "label"))
-        pt = self.probe_table = QTableWidget(0, 2)
-        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱"))
+        pt = self.probe_table = QTableWidget(0, 4)
+        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "校準", ""))
         pt.verticalHeader().hide()
         pt.setSelectionBehavior(QAbstractItemView.SelectRows)
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -454,6 +458,10 @@ class SettingsDialog(QDialog):
         pt.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         pt.setColumnWidth(0, 110)
         pt.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        pt.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
+        pt.setColumnWidth(2, 200)
+        pt.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+        pt.setColumnWidth(3, 90)
         pt.itemChanged.connect(lambda _item: self._on_field_edited())
         pt.itemSelectionChanged.connect(self._update_probe_buttons)
         pb.addWidget(pt)
@@ -744,7 +752,8 @@ class SettingsDialog(QDialog):
         self.probe_box.setVisible(dl)
         self.probe_table.setRowCount(0)
         for p in cfg.get("probes") or []:
-            self._append_probe_row(p.get("id"), p.get("description", ""))
+            zero = {f: p[f] for f in lan.ZERO_FIELDS if f in p} or None
+            self._append_probe_row(p.get("id"), p.get("description", ""), zero)
         self.replace_row.setVisible(d.status == LIVE and self.original.get(d.mac) is not None
                                     and self.original[d.mac].status == LIVE)
         for w in (self.name_edit, self.ip_edit, self.port_edit):
@@ -787,7 +796,7 @@ class SettingsDialog(QDialog):
         idx = self.row_box.findData(key)
         self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
-    def _append_probe_row(self, pid, desc):
+    def _append_probe_row(self, pid, desc, zero=None):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
         id_item = QTableWidgetItem("" if pid is None else str(pid))
@@ -795,6 +804,36 @@ class SettingsDialog(QDialog):
         id_item.setFont(self._num_font())
         self.probe_table.setItem(r, 0, id_item)
         self.probe_table.setItem(r, 1, QTableWidgetItem(desc))
+        cal = QTableWidgetItem()
+        cal.setFlags(cal.flags() & ~Qt.ItemIsEditable)
+        self.probe_table.setItem(r, 2, cal)
+        self._set_zero(r, zero)
+        btn = QPushButton("校準")
+        btn.setProperty("kind", "small")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda _=False, b=btn: self._calibrate(self._button_row(b)))
+        self.probe_table.setCellWidget(r, 3, btn)
+
+    def _button_row(self, btn) -> int:
+        for r in range(self.probe_table.rowCount()):
+            if self.probe_table.cellWidget(r, 3) is btn:
+                return r
+        return -1
+
+    def _set_zero(self, r: int, zero: dict | None):
+        """探頭列的校準偏移量（CAL-06）：存於 ID 欄的資料，顯示於校準欄。"""
+        self.probe_table.item(r, 0).setData(Qt.UserRole, dict(zero) if zero else None)
+        item = self.probe_table.item(r, 2)
+        if zero:
+            try:
+                when = datetime.fromisoformat(zero["zeroed_at"]).strftime("%m/%d %H:%M")
+            except (KeyError, TypeError, ValueError):
+                when = "?"
+            item.setText(f"{when}（{zero.get('zero_offset', 0):+.4f}）")
+            item.setForeground(self._qcolor(C["ink-2"]))
+        else:
+            item.setText("未校準")
+            item.setForeground(self._qcolor(C["warn"]))
 
     def _render_field_errors(self):
         mine = {i.field for i in self.issues if i.mac == self.selected}
@@ -928,6 +967,153 @@ class SettingsDialog(QDialog):
         self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0 and self.probe_table.rowCount() > 1
                                       and not self.read_only)
         self.btn_probe_add.setEnabled(self.probe_table.rowCount() < 15 and not self.read_only)
+        why = self._cannot_calibrate()
+        saved_ids = self._saved_probe_ids()
+        for r in range(self.probe_table.rowCount()):
+            b = self.probe_table.cellWidget(r, 3)
+            if b is not None:
+                reason = why or (None if r + 1 in saved_ids else "新增的探頭請先儲存")
+                b.setEnabled(reason is None)
+                b.setToolTip(reason or "以標準件校準此探頭（歸零）")
+
+    # ================================================================ 校準（CAL）
+
+    def _saved_probe_ids(self) -> set:
+        o = self.original.get(self.selected)
+        return {p["id"] for p in ((o.config or {}).get("probes") or [])} if o else set()
+
+    def _cannot_calibrate(self) -> str | None:
+        """CAL-01：只有已儲存、沒有未儲存變更的「DL-EN1 使用中」設備可校準。"""
+        d, o = self.work.get(self.selected), self.original.get(self.selected)
+        if self.read_only:
+            return "資料庫無法連線，暫時不能校準"
+        if self.calibrator is None:
+            return "量測來源無法校準"
+        if d is None or o is None or o.status != LIVE or d.status != LIVE:
+            return "只有已儲存的「DL-EN1 使用中」設備可以校準"
+        if d.settings() != o.settings():
+            return "這台設備有尚未儲存的變更，請先儲存再校準"
+        return None
+
+    def _calibrate(self, row: int):
+        """CAL-01～CAL-05：提示放好標準件 → 取樣與驗證 → 顯示結果 → 採用才寫入。"""
+        if row < 0 or self._cannot_calibrate():
+            return
+        o = self.original[self.selected]
+        cfg = o.config or {}
+        pid = row + 1
+        probe = next((p for p in cfg.get("probes") or [] if p["id"] == pid), None)
+        if probe is None:
+            return
+        cs = self.backend.cfg.calibration
+        what = f"{cfg.get('name')}（{lan.row_label(cfg.get('key'))}）探頭 {pid}「{probe['description']}」"
+        if show_message(self, f"校準 {what}\n\n請將標準件放在治具上，確認放好、不再移動後按「開始校準」。\n"
+                              f"將讀取 {cs.samples} 次取平均作為歸零基準，再讀 {cs.verify} 次驗證。",
+                        title="探頭校準", buttons=("取消", "開始校準"), primary=1, kind="ask") != 1:
+            return
+        dev = {"key": cfg.get("key"), "name": cfg.get("name"), "mac": o.mac, "probes": cfg.get("probes") or []}
+        res = self._run_calibration(dev, pid, what)
+        self._finish_calibration(o, pid, what, res)
+
+    def _run_calibration(self, dev: dict, pid: int, what: str):
+        """背景執行取樣，期間顯示進度與「取消校準」（CAL-01）。"""
+        cs = self.backend.cfg.calibration
+        cancel = threading.Event()
+        box: dict = {}
+        secs = (cs.samples + cs.verify) * cs.interval_ms / 1000
+        dlg = MessageDialog("探頭校準", f"校準中：{what}\n約 {secs:.1f} 秒，請勿移動標準件…", ("取消校準",), 0, "ask")
+
+        def done(res):
+            box["res"] = res
+            dlg.done(100)
+
+        self._relay.calibrated.connect(done)
+        station = self.calibrator()
+
+        def work():
+            try:
+                res = calibrate.run(station, dev, pid, cs, cancel)
+            except Exception as exc:  # 背景工作失敗不可讓畫面卡住
+                log.exception("校準失敗")
+                res = calibrate.CalResult(dev["key"], pid, dev.get("mac"), None, reason=f"校準失敗：{exc}")
+            self._relay.calibrated.emit(res)
+
+        threading.Thread(target=work, daemon=True, name="calibrate").start()
+        backdrop = Backdrop(self.window())
+        backdrop.host(dlg)
+        try:
+            if dlg.exec() != 100:  # 按下取消：通知背景停止，等它結束（下一次讀取前即停止）
+                cancel.set()
+                end = datetime.now().timestamp() + 5
+                while "res" not in box and datetime.now().timestamp() < end:
+                    QGuiApplication.processEvents()
+        finally:
+            backdrop.release()
+            backdrop.deleteLater()
+            self._relay.calibrated.disconnect(done)
+        return box.get("res") or calibrate.CalResult(dev["key"], pid, dev.get("mac"), None,
+                                                     result=calibrate.CANCEL, reason="工程人員取消")
+
+    def _finish_calibration(self, o, pid: int, what: str, res):
+        """CAL-05：顯示結果；通過且按「採用」才寫入資料庫與定義檔。CAL-08：每次皆留紀錄。"""
+        lines = [what]
+        if res.mean is not None:
+            lines.append(f"取樣 {len(res.samples)} 次：平均 {res.mean:.4f} mm，標準差 {res.sigma:.4f} mm")
+        if res.new_offset is not None:
+            old = "未校準" if res.old_offset is None else f"{res.old_offset:+.4f}"
+            lines.append(f"偏移量：{old} → {res.new_offset:+.4f}")
+        if res.verify:
+            lines.append("驗證：" + "、".join(f"{v:+.4f}" for v in res.verify)
+                         + f"（平均 {res.verify_mean:+.4f}，每次須在 ±{res.bound:.4f} 內）")
+        station_id = self.backend.cfg.station_id
+        if res.result == calibrate.CANCEL:
+            self.backend.record_calibration(calibrate.record(res, station_id, False))
+            self.toast.show_text("已取消校準，偏移量不變")
+            return
+        if not res.ok:
+            lines.append(f"\n✘ 校準未通過：{res.reason}\n偏移量不變。")
+            self.backend.record_calibration(calibrate.record(res, station_id, False))
+            show_message(self, "\n".join(lines), title="探頭校準", buttons=("關閉",), kind="warn")
+            return
+        lines.append("\n✔ 驗證通過。按「採用」立即寫入（不需再按「儲存」）。")
+        adopt = show_message(self, "\n".join(lines), title="探頭校準", buttons=("取消", "採用"),
+                             primary=1, kind="ask") == 1
+        if adopt:
+            adopt = self._adopt_calibration(o, pid, res)
+        self.backend.record_calibration(calibrate.record(res, station_id, adopt))
+        if not adopt:
+            self.toast.show_text("未採用，偏移量不變")
+
+    def _adopt_calibration(self, o, pid: int, res) -> bool:
+        """立即寫入資料庫並更新定義檔（同 DSC-18）；本次其他設備尚未儲存的編輯保留。"""
+        if self.before_save:
+            try:
+                self.before_save()  # 主畫面將重建：先寫入畫面上未寫入的結果（UPL-02）
+            except Exception as exc:
+                log.exception("採用校準前寫入量測結果失敗")
+                self._warn(f"畫面上的量測結果寫入失敗，未採用：{exc}")
+                return False
+            self.pending_serial = None
+        old = [x.copy() for x in self.original.values()]
+        new = [x.copy() for x in old]
+        nd = next(x for x in new if x.mac == o.mac)
+        for p in nd.config["probes"]:
+            if p["id"] == pid:
+                p["zero_offset"] = round(res.new_offset, 6)
+                p["zeroed_at"] = res.at.isoformat(timespec="seconds")
+        try:
+            result = self.backend.apply(old, new, summary=f"校準 {o.label()} 探頭 {pid}")
+        except Exception as exc:
+            log.error("採用校準失敗：%s", exc)
+            self._warn(f"無法寫入校準結果，資料庫與檔案維持原狀。\n\n原因：{exc}")
+            return False
+        log.info("校準採用：%s 探頭 %d 偏移量 %s → %.6f", o.label(), pid, res.old_offset, res.new_offset)
+        self.original[o.mac] = nd.copy()
+        self.work[o.mac] = nd.copy()
+        self.saved.emit(result, lan.Preview())  # 主畫面以新偏移量重建
+        self.toast.show_text(f"已採用校準：探頭 {pid} 偏移量 {res.new_offset:+.4f}")
+        self._render_all()
+        return True
 
     # ================================================================ 操作
 
@@ -980,7 +1166,8 @@ class SettingsDialog(QDialog):
             probes = []
             for r in range(self.probe_table.rowCount()):  # ID 依串接順序 1～N（EDT-06）
                 desc = (self.probe_table.item(r, 1).text() if self.probe_table.item(r, 1) else "").strip()
-                probes.append({"id": r + 1, "description": desc})
+                zero = self.probe_table.item(r, 0).data(Qt.UserRole) if self.probe_table.item(r, 0) else None
+                probes.append({"id": r + 1, "description": desc, **(zero or {})})
             cfg["probes"] = probes
             cfg["max_probes"] = len(probes)
             # 保持 3.7.1 欄位順序
@@ -1035,6 +1222,8 @@ class SettingsDialog(QDialog):
             return
         self._filling = True
         self.probe_table.removeRow(r)
+        for k in range(r, self.probe_table.rowCount()):  # CAL-06：ID 遞補的探頭對應的實體已改變
+            self._set_zero(k, None)
         self._renumber_probes()
         self.max_spin.setValue(self.probe_table.rowCount())
         self._filling = False

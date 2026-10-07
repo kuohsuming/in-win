@@ -23,7 +23,10 @@ import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import time
+
 from .bootp import DEFAULT_PORT
+from .calibrate import Cancelled, SampleError
 from .measure import DeviceStatus, ProbeReading
 
 log = logging.getLogger(__name__)
@@ -119,6 +122,9 @@ class DlEn1Station:
         self.links = {d["key"]: Link(d["ipv4"], d.get("port") or DEFAULT_PORT, connect_timeout, timeout)
                       for d in self.devices}
         self.decimals: dict[tuple[str, int], int] = {}  # DEV-03：(key, 放大器 ID) → 小數位數
+        # CAL-03：(key, 探頭 id) → 校準偏移量；沒有的探頭為未校準（CAL-07）
+        self.offsets = {(d["key"], p["id"]): p["zero_offset"] for d in self.devices for p in d["probes"]
+                        if p.get("zero_offset") is not None}
         self._pool = ThreadPoolExecutor(max_workers=max(1, len(self.devices)), thread_name_prefix="dlen1")
 
     def close(self):
@@ -154,6 +160,7 @@ class DlEn1Station:
                 if pid <= len(outs) and outs[pid - 1][0] == OUT_ERROR and pid not in st.probe_errors:
                     code = _int(link.ask(f"SR,00,{AMP_ERROR_BASE + pid}"))
                     st.probe_errors[pid] = f"放大器錯誤（錯誤代碼 {code}）"
+            st.uncalibrated = {pid for pid in ids if (key, pid) not in self.offsets}  # CAL-07
             log.info("偵測 %s（%s）：連接 %d 台，整體狀態 %d，小數位數 %s", d["name"], link.ip, count, state,
                      {pid: self.decimals.get((key, pid)) for pid in ids})
         except CommandError as exc:
@@ -207,5 +214,44 @@ class DlEn1Station:
                     except (OSError, CommandError) as exc:
                         res.append(ProbeReading(key, pid, None, raw, f"無法讀取小數位數（{exc}）"))
                         continue
-                res.append(ProbeReading(key, pid, int(raw) / 10 ** dec, raw))
+                value = int(raw) / 10 ** dec
+                offset = self.offsets.get((key, pid))
+                if offset is None:  # CAL-07：未校準不判定
+                    res.append(ProbeReading(key, pid, None, raw, "未校準"))
+                else:               # CAL-03：顯示值 ＝ 原始值 − 偏移量
+                    res.append(ProbeReading(key, pid, round(value - offset, 6), raw, None, offset))
         return res
+
+    # ------------------------------------------------------------ 校準（CAL-02）
+
+    def resolution(self, key: str, probe_id: int) -> float:
+        dec = self.decimals.get((key, probe_id))
+        return 10 ** -(dec if dec is not None else 4)
+
+    def sample(self, key: str, probe_id: int, n: int, interval: float, cancel=None) -> list[float]:
+        """讀取一個探頭的原始值 n 次（不扣偏移量），每次間隔 interval 秒；與量測共用同一條連線。"""
+        d = next(x for x in self.devices if x["key"] == key)
+        link = self.links[key]
+        out = []
+        try:
+            dec = self.decimals.get((key, probe_id))
+            if dec is None:
+                dec = self.decimals[(key, probe_id)] = _int(link.ask(f"FR,{probe_id:02d},037"))
+            for i in range(n):
+                if cancel is not None and cancel.is_set():
+                    raise Cancelled()
+                t0 = time.monotonic()
+                outs = self._ms(link)
+                if probe_id > len(outs):
+                    raise SampleError(f"放大器 ID {probe_id} 未連接")
+                status, raw = outs[probe_id - 1]
+                if status == OUT_ERROR:
+                    raise SampleError(f"第 {i + 1} 次：放大器錯誤")
+                if raw in NO_DATA:
+                    raise SampleError(f"第 {i + 1} 次：無有效數據（{raw}）")
+                out.append(int(raw) / 10 ** dec)
+                if i < n - 1:
+                    time.sleep(max(0.0, interval - (time.monotonic() - t0)))
+        except (OSError, CommandError) as exc:
+            raise SampleError(f"{d['name']} 通訊失敗（{exc}）") from exc
+        return out
