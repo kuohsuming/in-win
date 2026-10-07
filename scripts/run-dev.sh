@@ -10,24 +10,36 @@
 #   ./scripts/run-dev.sh --no-dnsmasq    不啟動假 dnsmasq（不會探索到設備）
 #   ./scripts/run-dev.sh --real          真機：以 sudo 執行真的 dnsmasq 與 ARP 監聽，BOOTP 對應寫到 /var/lib/flatness/bootp/
 #                                        （需先執行一次 sudo ./installer/setup-bootp.sh）
+#   ./scripts/run-dev.sh --system-db     改用系統的 MySQL（連線資訊 .dev/db-system.env；重開機資料不會清空），
+#                                        不啟動拋棄式 MySQL；開機自動啟動用（scripts/autostart.sh）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 REAL=no
+DB_ENV=.dev/db.env
 ARGS=()
 for a in "$@"; do
-  if [[ $a == --real ]]; then REAL=yes; else ARGS+=("$a"); fi
+  case $a in
+    --real) REAL=yes ;;
+    --system-db) DB_ENV=.dev/db-system.env ;;
+    *) ARGS+=("$a") ;;
+  esac
 done
 
 mkdir -p .dev/bootp
-./scripts/dev-mysql.sh start >/dev/null
+if [[ $DB_ENV == .dev/db.env ]]; then
+  ./scripts/dev-mysql.sh start >/dev/null
+elif [[ ! -f $DB_ENV ]]; then
+  echo "找不到 $DB_ENV（系統 MySQL 的連線資訊）" >&2
+  exit 1
+fi
 if [[ ! -f .dev/config.toml ]]; then
   hash=$(python3 -c 'import hashlib;print(hashlib.sha256(b"1234").hexdigest())')
   sed "s/^engineer_password_sha256 = \"\"/engineer_password_sha256 = \"$hash\"/" installer/config.toml > .dev/config.toml
 fi
 
 NET=$(sed -n 's/^pc_ip = "\(.*\)".*/\1/p' .dev/config.toml)/$(sed -n 's/^net_prefix = \([0-9]*\).*/\1/p' .dev/config.toml)
-PYTHONPATH=app .venv/bin/python -m flatness.initdb --db-env .dev/db.env --def installer/dl-en1.json --equip-net "$NET"
+PYTHONPATH=app .venv/bin/python -m flatness.initdb --db-env "$DB_ENV" --def installer/dl-en1.json --equip-net "$NET"
 
 if [[ $REAL == yes ]]; then
   # 真機：dnsmasq 主設定 /etc/flatness/dnsmasq.conf 固定讀 /var/lib/flatness/bootp/dl-en1.hosts
@@ -39,13 +51,13 @@ if [[ $REAL == yes ]]; then
     exit 1
   fi
   PYTHONPATH=app exec .venv/bin/python -m flatness \
-    --config .dev/config.toml --db-env .dev/db.env \
+    --config .dev/config.toml --db-env "$DB_ENV" \
     --def .dev/dl-en1.json --hosts "$HOSTS" \
     --log-file .dev/flatness.log --buffer .dev/buffer "${ARGS[@]}"
 fi
 
 PYTHONPATH=app exec .venv/bin/python -m flatness \
-  --config .dev/config.toml --db-env .dev/db.env \
+  --config .dev/config.toml --db-env "$DB_ENV" \
   --def .dev/dl-en1.json --hosts .dev/bootp/dl-en1.hosts \
   --dnsmasq-cmd "$PWD/.venv/bin/python $PWD/scripts/fake-dnsmasq.py --hosts $PWD/.dev/bootp/dl-en1.hosts" --no-arp --demo \
   --log-file .dev/flatness.log --buffer .dev/buffer "${ARGS[@]}"
