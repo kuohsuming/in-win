@@ -118,7 +118,7 @@ class DlEn1StationTest(unittest.TestCase):
 
     def test_no_data_and_amp_error(self):  # 5.1 特殊值、輸出狀態 03
         replies = dict(REAL, MS="MS,02,+099999999,03,+000000000")
-        replies["SR,00,669"] = "SR,00,669,+000000002"
+        replies["SR,00,670"] = "SR,00,670,+000000002"  # 放大器 ID 2 → 668 ＋ 2
         _, st = self.station(replies)
         (s,) = st.detect()
         self.assertEqual(s.probe_errors, {2: "放大器錯誤（錯誤代碼 2）"})
