@@ -356,6 +356,8 @@ tests/
 
 ---
 
+**進度（2026-10-13）**：M0～M4 完成（`app/flatness/plate3d/`、`tests/test_plate3d_*.py`、`tests/test_ui.py`）。M5：開發機即 DRP-A100，實測計算＋第一張圖平均 67 ms（最大 77 ms）、單張 43 ms；墊片方向確認待現場有 2 排以上探頭。
+
 ## 13. 待決事項
 
 | # | 事項 | 影響 | 建議 |

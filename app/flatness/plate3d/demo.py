@@ -79,7 +79,7 @@ def main(argv=None) -> int:
     w, h = (int(x) for x in a.size.split("x"))
     win = QMainWindow()
     central = QWidget()
-    central.setStyleSheet(f"background:{theme.C['bg']}")
+    central.setObjectName("page")  # 只對主畫面底色生效，不影響對話框內的元件
     win.setCentralWidget(central)
     win.resize(w, h)
     win.show()
