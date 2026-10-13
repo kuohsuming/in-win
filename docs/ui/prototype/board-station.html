@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>表面平整檢查 作業員畫面</title>
-<!-- UI 原型：依 App 2026-10-08 版的實際畫面與操作更新（主畫面、取出測試數據、設備設定、探頭校準、允許誤差） -->
+<!-- UI 原型：依 App 2026-10-13 版的實際畫面與操作更新（主畫面、取出測試數據、設備設定、探頭校準、允許誤差、板子尺寸、3D 繪圖） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -268,10 +268,57 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
 
 @media (max-width:1150px){.result{grid-template-columns:1fr}.row{grid-template-columns:1fr}.row h2{align-items:flex-start;background:none;font-size:22px}.md{grid-template-columns:1fr}}
 @media (max-width:680px){.probes{grid-template-columns:1fr 1fr!important}}
+
+/* 3D 繪圖（P3D-01～P3D-09；畫面設計規格 5.11）與板子尺寸（P3D-10；5.12） */
+.result .act.v3btn{display:inline-flex;align-items:center;gap:8px;margin-left:14px}
+.result .act.v3btn svg{width:26px;height:26px}
+dialog.v3{width:min(1280px,96vw);max-width:96vw;height:min(94vh,max(640px,calc(min(1280px,96vw)*.62)));max-height:94vh}
+.v3{display:flex;flex-direction:column;gap:12px;padding:16px 22px;height:100%}
+.v3-head{display:flex;align-items:center;gap:14px}
+.v3-head h3{margin:0;font-size:20px}
+.v3-sn{font-family:var(--num);font-size:20px;color:var(--ink-2)}
+.v3-rs{font-size:15px;font-weight:900;border-radius:4px;padding:3px 10px}
+.v3-rs.PASS{background:var(--go-soft);color:var(--go)} .v3-rs.FAIL,.v3-rs.ERROR{background:var(--ng-soft);color:var(--ng)}
+.v3-head .x{margin-left:auto;border:0;background:none;font-size:22px;color:var(--ink-2);padding:4px 10px;cursor:pointer}
+.v3-body{flex:1;display:flex;gap:16px;min-height:0}
+#v3cv{flex:1;min-width:0;width:100%;height:100%;min-height:320px;display:block;background:var(--panel-2);border:1px solid var(--line);border-radius:6px}
+.v3-side{width:260px;flex:none;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.v3-card{background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:4px;font-size:15px}
+.v3-card.red{border:2px solid var(--ng)}
+.v3-card .k{font-size:14px;color:var(--ink-2)} .v3-card .s{font-size:12px;color:var(--ink-2)} .v3-card .n{font-family:var(--num)}
+.v3-card .big{font-family:var(--num);font-size:44px;font-weight:700;line-height:1.1} .v3-card .big small{font-size:18px;color:var(--ink-2);font-weight:400}
+.v3-card .ng{color:var(--ng);font-size:14px}
+.v3-leg .bar{height:14px;border:1px solid var(--line);background:linear-gradient(90deg,rgb(140,140,140),rgb(228,228,228))}
+.v3-leg .tk{display:flex;justify-content:space-between;font-family:var(--num);font-size:13px;color:var(--ink-2)}
+.v3-note{margin:0;padding-left:16px;font-size:13px;color:var(--ink-2);line-height:1.5}
+.v3-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.v3-ctl button{font-size:16px;padding:8px 16px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer;min-width:96px}
+.v3-ctl .v3m{min-width:0}
+.v3-ctl .v3m[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:700}
+.v3-ctl .gap{width:16px}
+.v3-ang{font-family:var(--num);font-size:18px}
+.v3-ctl .primary{margin-left:auto;width:132px;background:var(--ink);color:var(--panel);border-color:var(--ink)}
+@media (max-width:937px){
+  dialog.v3{height:auto;overflow:auto}
+  .v3{height:auto}
+  .v3-body{flex-direction:column}
+  .v3-side{width:auto;overflow:visible}
+  #v3cv{flex:none;height:min(60vh,560px,90vw);min-height:260px}
+}
+.v3-head{flex-wrap:wrap} .v3-head h3,.v3-rs{white-space:nowrap}
+@media (max-width:520px){.v3{padding:12px}.v3-sn{font-size:15px}.v3-ctl button{min-width:0;padding:8px 12px}}
+dialog.pl{width:min(480px,92vw)}
+.pl-note{font-size:14px;color:var(--ink-2);line-height:1.5}
+.pl-grid{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center}
+.pl-grid label{font-size:16px;color:var(--ink);font-weight:700}
+.pl-grid .u{font-size:13px;color:var(--ink-2)}
+.pl-err{color:var(--ng);font-size:14px;font-weight:700;min-height:1em}
+@media (max-width:520px){.pl-grid{grid-template-columns:auto 1fr}.pl-grid .u{grid-column:2}}
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-cube" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5l8.5 4.8v9.4L12 21.5l-8.5-4.8V7.3z"/><path d="M3.5 7.3L12 12l8.5-4.7M12 12v9.5"/></g></symbol>
   <symbol id="i-ok" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="currentColor"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-ng" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="currentColor"/><path d="M10.5 10.5l11 11M21.5 10.5l-11 11" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></symbol>
   <symbol id="i-hi" viewBox="0 0 32 32"><path d="M16 2L31 29H1z" fill="currentColor"/><path d="M16 23V12M11 16.5l5-5 5 5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -294,6 +341,7 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
     <button type="button" data-sc="noprobe" aria-pressed="false">探頭無回應</button>
     <button type="button" data-sc="uncal" aria-pressed="false">探頭未校準</button>
     <button type="button" data-sc="mix" aria-pressed="false">不合格＋探頭無回應</button>
+    <button type="button" data-sc="only1" aria-pressed="false">只有 1 排有數據（3D 拒絕）</button>
     <span class="sep"></span>
     <button type="button" data-flag="bootp" aria-pressed="false">BOOTP 服務停止</button>
     <button type="button" data-flag="db" aria-pressed="false">資料庫無法連線</button>
@@ -308,6 +356,7 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
     <span class="devsum" id="devsum"></span>
     <button class="tbtn" type="button" id="detect"><svg><use href="#i-scan"/></svg>偵測設備</button>
     <button class="tbtn" type="button" id="export"><svg><use href="#i-xls"/></svg>取出測試數據</button>
+    <button class="tbtn" type="button" id="plateBtn" title="設定板子尺寸（長、寬、高 mm），只影響 3D 繪圖"><svg><use href="#i-cube"/></svg><span id="plateTxt"></span></button>
     <button class="editbtn" type="button" id="editBtn" title="設備設定" aria-label="設備設定"><svg><use href="#i-edit"/></svg></button>
   </div>
 
@@ -322,6 +371,7 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
     <div class="acts">
       <button class="act re" type="button" id="reread">重讀</button>
       <button class="act go" type="button" id="next">下一片</button>
+      <button class="act re v3btn" type="button" id="v3dBtn" disabled><svg><use href="#i-cube"/></svg>3D 繪圖</button>
     </div>
   </section>
 
@@ -353,6 +403,34 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
     <div class="ed-head"><h3 id="edTitle">設備設定</h3><button class="x" type="button" id="edClose" aria-label="關閉">✕</button></div>
     <div class="ed-body" id="edBody"></div>
     <div class="ed-foot" id="edFoot"></div>
+  </div>
+</dialog>
+
+<!-- 3D 繪圖（P3D-01～P3D-09）：嵌入主畫面中央，不另開系統視窗 -->
+<dialog id="v3Dlg" class="v3" aria-labelledby="v3Title">
+  <div class="v3">
+    <div class="v3-head"><h3 id="v3Title">3D 繪圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
+      <button class="x" type="button" id="v3x" aria-label="關閉">✕</button></div>
+    <div class="v3-body"><canvas id="v3cv" aria-label="板子立體圖"></canvas><div class="v3-side" id="v3side"></div></div>
+    <div class="v3-ctl">
+      <button class="v3m" type="button" data-mode="standard">相對標準件</button>
+      <button class="v3m" type="button" data-mode="detrended">扣除傾斜</button>
+      <span class="gap"></span>
+      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3play"></button><button type="button" id="v3next">30° ▶</button>
+      <span class="v3-ang" id="v3ang"></span>
+      <button class="primary" type="button" id="v3done" autofocus>關閉</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 板子尺寸（P3D-10） -->
+<dialog id="plDlg" class="pl" aria-labelledby="plTitle">
+  <div class="dlg">
+    <h3 id="plTitle">板子尺寸</h3>
+    <div class="pl-note">只影響 3D 繪圖，不影響判定。探頭在板子下方，依設備設定的第幾排與探頭 ID 平均分佈。</div>
+    <div class="pl-grid" id="plGrid"></div>
+    <div class="pl-err" id="plErr"></div>
+    <div class="btns"><button type="button" id="plCancel">取消</button><button type="button" class="primary" id="plSave">儲存</button></div>
   </div>
 </dialog>
 
@@ -415,7 +493,9 @@ const SC={
   uncal:  ()=>{const v=baseVals(); if(at(v,0,1)){ v[0][1]=null; return {vals:v,err:{"0-1":"uncal"}}; } return {vals:v,err:{}};},
   mix:    ()=>{const v=baseVals(),err={},L=live();
     if(at(v,1,2)) v[1][2]=+(tolOf(L[1].cfg.probes[2])+0.017).toFixed(3);
-    if(at(v,0,1)){ v[0][1]=null; err["0-1"]="FFFF"; } return {vals:v,err};}
+    if(at(v,0,1)){ v[0][1]=null; err["0-1"]="FFFF"; } return {vals:v,err};},
+  only1:  ()=>{const v=baseVals(),err={},down=[]; v.forEach((r,ri)=>{ if(!ri) return; down.push(ri); v[ri]=r.map(()=>null); r.forEach((_,i)=>err[`${ri}-${i}`]="down"); });
+    return {vals:v,err,down};}
 };
 /* 尚未校準的探頭一律為設備異常、不量測（CAL-07） */
 function scene_(){ const d=SC[scene==="booting"||scene==="detecting"?"pass":scene]();
@@ -506,6 +586,7 @@ function paint(data){
       `${nProbes()} 個量測點都在標準範圍內。<br>送往下一站，放上新的一片後按「下一片」。`);
   }
   $("#next").disabled=nErr>0; $("#reread").disabled=nErr>0;
+  if(serial){ lastData=data; lastJudg=errs.length?"ERROR":out.length?"FAIL":"PASS"; } upd3d();   // P3D-01：有這一片的結果時可按「3D 繪圖」
 }
 function summary(kind,n){
   $("#devsum").innerHTML=kind==="busy"?`<i class="dot busy"></i>偵測設備中（第 ${detectCount} 次）`
@@ -514,11 +595,11 @@ function summary(kind,n){
 }
 function banner(state,big,say){$("#result").className="result "+state;$("#big").innerHTML=big;$("#say").innerHTML=say;}
 function setMeta(){ $("#serial").textContent=serial||"—"; $("#rr").textContent=rereads?`重讀 ${rereads} 次`:""; }
-function lockTools(on){ ["#detect","#export","#editBtn"].forEach(k=>$(k).disabled=on); }
+function lockTools(on){ ["#detect","#export","#plateBtn","#editBtn"].forEach(k=>$(k).disabled=on); }
 
 /* 量測：按「下一片」或「重讀」後等待 0.5 秒（不顯示倒數）再讀取探頭（MEA-03、MEA-07） */
 async function measure(){
-  busy=true; $("#next").disabled=true; $("#reread").disabled=true; lockTools(true); clearRows();
+  busy=true; lastData=null; upd3d(); $("#next").disabled=true; $("#reread").disabled=true; lockTools(true); clearRows();
   if(CFG.countdown<1){
     banner("wait",`<div class="word">讀取中</div>`,`請勿移動表面<br>正在讀取 ${nProbes()} 個探頭…`); await sleep(CFG.countdown*1000);
   } else {
@@ -532,7 +613,7 @@ async function measure(){
 let detectCount=0, retryT=null, detecting=false;
 function stopRetry(){ if(retryT){clearInterval(retryT); retryT=null;} }
 function detectingView(){
-  clearRows("busy","偵測中…");
+  clearRows("busy","偵測中…"); lastData=null; upd3d();
   live().forEach((d,ri)=>setUnit(ri,"busy"));
   summary("busy");
   banner("wait",`<svg class="spin"><use href="#i-scan"/></svg><div class="word sm">偵測設備中</div>`,
@@ -541,7 +622,7 @@ function detectingView(){
 }
 async function runDetect(){
   if(detecting) return; detecting=true; stopRetry(); lockTools(true);
-  detectCount++; detectingView(); await sleep(1200); detecting=false; lockTools(false);
+  detectCount++; detectingView(); await sleep(1200); detecting=false; lockTools(false); upd3d();
   if(scene==="detecting") return;
   if(scene==="booting"){   // DL-EN1 剛上電、尚在開機（回應 ER 031／254）：每秒自動重試
     banner("wait",`<svg class="spin"><use href="#i-scan"/></svg><div class="word sm">設備啟動中</div>`,`DL-EN1 啟動中，自動重試`); return; }
@@ -553,7 +634,7 @@ async function runDetect(){
   if(!serial){
     clearRows("ok","設備正常"); live().forEach((dv,ri)=>setUnit(ri,"ok")); summary("ok");
     banner("idle",`<div class="word">待放置</div>`,`設備正常（第 ${detectCount} 次偵測），可以開始工作。<br>請將表面放到治具上，再按「下一片」。`);
-    $("#next").disabled=false; $("#reread").disabled=true; return;
+    $("#next").disabled=false; $("#reread").disabled=true; upd3d(); return;
   }
   paint(d);
 }
@@ -1045,6 +1126,209 @@ $("#dlgSave").addEventListener("click",()=>{
   $("#dlgInfo").className="info"; $("#dlgInfo").innerHTML=`<b>已儲存 ${n} 筆</b><br>${esc(p)}`;
   $("#dlgSave").textContent="儲存"; $("#openDir").hidden=false; toast(`已儲存 ${n} 筆：${p}`); });
 
+/* ================= 板子尺寸（P3D-10）：長、寬、高 mm，只影響 3D 繪圖；存在本機（正式版為 QSettings） ================= */
+const PL_LIM={length:[1,5000],width:[1,5000],height:[0.1,100]}, PL_DEF={length:1000,width:600,height:5};
+const PL_LABEL={length:"長",width:"寬",height:"高"}, PL_HINT={length:"左右（作業員看過去）",width:"前到後",height:"板厚，圖上為示意"};
+const fmm=v=>Number.isInteger(v)?String(v):String(+v.toFixed(1));
+const plateText=p=>`板子 ${fmm(p.length)}×${fmm(p.width)}×${fmm(p.height)} mm`;
+function plCheck(k,t){ const [lo,hi]=PL_LIM[k], s=String(t??"").trim();
+  if(!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)||!isFinite(+s)) return [null,`${PL_LABEL[k]}須為數字`];
+  const v=+s;
+  if(Math.abs(Math.round(v*10)/10-v)>1e-9) return [null,`${PL_LABEL[k]}最多小數 1 位`];
+  if(v<lo||v>hi) return [null,`${PL_LABEL[k]}須為 ${fmm(lo)}～${fmm(hi)} mm`];
+  return [v,null]; }
+function plLoad(){ try{ const o=JSON.parse(localStorage.getItem("flatness.plate")||"null");
+    if(o&&Object.keys(PL_DEF).every(k=>!plCheck(k,o[k])[1])) return {length:+o.length,width:+o.width,height:+o.height}; }catch(e){}
+  return {...PL_DEF}; }
+let PLATE=plLoad();
+function plSave(p){ PLATE=p; try{ localStorage.setItem("flatness.plate",JSON.stringify(p)); }catch(e){} }
+function plRefreshBtn(){ $("#plateTxt").textContent=plateText(PLATE); }
+function plUpdate(){ const errs=[];
+  Object.keys(PL_DEF).forEach(k=>{ const e=$(`#pl_${k}`), [,err]=plCheck(k,e.value); e.classList.toggle("bad",!!err); if(err) errs.push(err); });
+  $("#plErr").textContent=errs.join("、"); $("#plSave").disabled=errs.length>0; return errs; }
+function openPlate(){ if(busy||detecting) return;
+  $("#plGrid").innerHTML=Object.keys(PL_DEF).map(k=>{ const [lo,hi]=PL_LIM[k];
+    return `<label for="pl_${k}">${PL_LABEL[k]}</label><input id="pl_${k}" inputmode="decimal" autocomplete="off" value="${fmm(PLATE[k])}" placeholder="${fmm(lo)}～${fmm(hi)}">
+      <span class="u">mm（${fmm(lo)}～${fmm(hi)}，${PL_HINT[k]}）</span>`; }).join("");
+  $("#plGrid").querySelectorAll("input").forEach(e=>e.addEventListener("input",plUpdate));
+  plUpdate(); $("#plDlg").showModal(); }
+$("#plateBtn").addEventListener("click",openPlate);
+$("#plCancel").addEventListener("click",()=>$("#plDlg").close());
+$("#plSave").addEventListener("click",()=>{ if(plUpdate().length) return;
+  const p={}; Object.keys(PL_DEF).forEach(k=>p[k]=plCheck(k,$(`#pl_${k}`).value)[0]);
+  plSave(p); plRefreshBtn(); $("#plDlg").close(); toast(`已設定${plateText(p)}`); });
+$("#plDlg").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("#plSave").click(); } });
+
+/* ================= 3D 繪圖（P3D-01～P3D-09；與 App 的 flatness/plate3d 同一套計算與常數） ================= */
+let lastData=null, lastJudg="";
+const STANDARD="standard", DETRENDED="detrended", MODE_NAME={standard:"相對標準件",detrended:"扣除傾斜"};
+const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9;
+const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如只有 1 排），至少需要 2 排探頭。";
+const EL3=15, AZ0=-45, STEP_DEG=30, STEP_MS=700, SHADE3={lo:140,hi:228,relief:6,light:[-0.55,0.75,0.6]}, FADE_GRAY=184, FADE_KEEP=0.4;
+
+/* P3D-05：前後依第 n 排（R 為使用中與維修中最大的排號），左右依探頭 ID：x = 長 ×(序 − 0.5)/N，y = 寬 ×(n − 0.5)/R */
+function probeXY(){ const S=shown(), R=Math.max(0,...S.map(d=>rowNo(d.cfg.key)||0)), out={};
+  S.forEach(d=>{ if(d.status!=="active"||!R) return; const n=rowNo(d.cfg.key), ids=d.cfg.probes.map(p=>p.id).sort((a,b)=>a-b);
+    ids.forEach((id,i)=>out[`${d.cfg.key}#${id}`]=[PLATE.length*(i+.5)/ids.length, PLATE.width*(n-.5)/R]); });
+  return out; }
+/* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據 */
+function snapshot3d(){ const xy=probeXY(), pts=[];
+  live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const pos=xy[`${d.cfg.key}#${p.id}`]; if(!pos) return;
+    const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i], s=stdOf(p), v=e||m==null?null:m;
+    pts.push({key:`${rowNo(d.cfg.key)}-${p.id}`,name:`${d.cfg.name} ${p.description}`,x:pos[0],y:pos[1],v,tol:s.hi,st:v==null?"err":judge(s,v)}); }));
+  return pts; }
+/* P3D-02、P3D-03：有效點不足或同一直線 → 回傳警告文字 */
+function check3d(pts){ const ok=pts.filter(p=>p.v!=null);
+  if(ok.length<MIN3) return `無法繪製 3D：本次只有 ${ok.length} 個有效量測點，至少需要 ${MIN3} 個。\n`+
+    (pts.length<MIN3?`（目前設定只有 ${pts.length} 個探頭）`:`（設定 ${pts.length} 個探頭；無數據：${pts.filter(p=>p.v==null).map(p=>p.name).join("、")}）`);
+  return spreadMinor(ok.map(p=>[p.x,p.y]))<LINE_MM?LINE_MSG:null; }
+function spreadMinor(P){ const n=P.length, mx=P.reduce((a,p)=>a+p[0],0)/n, my=P.reduce((a,p)=>a+p[1],0)/n;
+  let sxx=0,syy=0,sxy=0; P.forEach(([x,y])=>{ sxx+=(x-mx)**2; syy+=(y-my)**2; sxy+=(x-mx)*(y-my); }); sxx/=n; syy/=n; sxy/=n;
+  const tr=sxx+syy, det=sxx*syy-sxy*sxy, disc=Math.sqrt(Math.max(0,tr*tr/4-det)); return Math.sqrt(Math.max(0,tr/2-disc)); }
+function solve(a,b){ const n=b.length, m=a.map((r,i)=>[...r,b[i]]), scale=Math.max(0,...a.flat().map(Math.abs))||1;
+  for(let c=0;c<n;c++){ let p=c; for(let r=c+1;r<n;r++) if(Math.abs(m[r][c])>Math.abs(m[p][c])) p=r;
+    if(Math.abs(m[p][c])<1e-12*scale) return null; [m[c],m[p]]=[m[p],m[c]];
+    for(let r=c+1;r<n;r++){ const f=m[r][c]/m[c][c]; if(f) for(let k=c;k<=n;k++) m[r][k]-=f*m[c][k]; } }
+  const x=new Array(n).fill(0); for(let r=n-1;r>=0;r--){ let s=m[r][n]; for(let k=r+1;k<n;k++) s-=m[r][k]*x[k]; x[r]=s/m[r][r]; } return x; }
+function hull(P){ const pts=[...new Map(P.map(p=>[p.join(","),p])).values()].sort((a,b)=>a[0]-b[0]||a[1]-b[1]); if(pts.length<=2) return pts;
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]), lo=[], up=[];
+  for(const p of pts){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  for(const p of [...pts].reverse()){ while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  return lo.slice(0,-1).concat(up.slice(0,-1)); }
+function inHull(H,p,tol){ if(H.length<3) return false;
+  for(let i=0;i<H.length;i++){ const a=H[i], b=H[(i+1)%H.length]; if((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])<-tol) return false; } return true; }
+/* 最小平方平面 h = a + b·X + c·Y（X、Y 為公尺） */
+function fitPlane(P){ const s=[[0,0,0],[0,0,0],[0,0,0]], t=[0,0,0];
+  P.forEach(([x,y,h])=>{ const r=[1,x/1000,y/1000]; for(let i=0;i<3;i++){ t[i]+=r[i]*h; for(let j=0;j<3;j++) s[i][j]+=r[i]*r[j]; } }); return solve(s,t); }
+/* 薄板樣條：只用來畫點與點之間的形狀，不得用於判定 */
+function tps(P){ const n=P.length, N=n+3, A=Array.from({length:N},()=>new Array(N).fill(0)), b=new Array(N).fill(0), U=r=>r<1e-12?0:r*r*Math.log(r);
+  P.forEach((p,i)=>{ P.forEach((q,j)=>A[i][j]=U(Math.hypot(p[0]-q[0],p[1]-q[1]))); A[i][n]=A[n][i]=1; A[i][n+1]=A[n+1][i]=p[0]; A[i][n+2]=A[n+2][i]=p[1]; b[i]=p[2]; });
+  const w=solve(A,b); if(!w) return null;
+  return (x,y)=>{ let z=w[n]+w[n+1]*x+w[n+2]*y; P.forEach((p,i)=>z+=w[i]*U(Math.hypot(x-p[0],y-p[1]))); return z; }; }
+const gridSize=(L,W)=>L>=W?[GRID_LONG,Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*W/L)+1)]:[Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*L/W)+1),GRID_LONG];
+/* P3D-05～P3D-07：探頭在下方，高度 h = −讀值；相對標準件 z = h，扣除傾斜 z = h − 平面 */
+function build3d(pts,mode){
+  const ok=pts.filter(p=>p.v!=null), L=PLATE.length, W=PLATE.width, h={}; ok.forEach(p=>h[p.key]=-p.v);
+  let z=h;
+  if(mode===DETRENDED){ const c=fitPlane(ok.map(p=>[p.x,p.y,h[p.key]])); if(!c) throw LINE_MSG;
+    z={}; ok.forEach(p=>z[p.key]=h[p.key]-(c[0]+c[1]*p.x/1000+c[2]*p.y/1000)); }
+  const unit=Math.max(L,W), f=tps(ok.map(p=>[p.x/unit,p.y/unit,z[p.key]])); if(!f) throw LINE_MSG;
+  const [nx,ny]=gridSize(L,W), H=hull(ok.map(p=>[p.x,p.y])), tol=1e-9*unit*unit, g=[], ins=[];
+  for(let j=0;j<ny;j++){ const y=W*j/(ny-1), gr=[], ir=[];
+    for(let i=0;i<nx;i++){ const x=L*i/(nx-1); gr.push(f(x/unit,y/unit)); ir.push(inHull(H,[x,y],tol)); } g.push(gr); ins.push(ir); }
+  const keys=Object.keys(z), hiK=keys.reduce((a,k)=>z[k]>z[a]?k:a), loK=keys.reduce((a,k)=>z[k]<z[a]?k:a);
+  const lim=Math.max(...ok.map(p=>p.tol),...g.flat().map(Math.abs),...keys.map(k=>Math.abs(z[k]))), tv=0.05*unit;
+  return {pts,mode,L,W,T:PLATE.height,z,g,ins,nx,ny,hi:[hiK,z[hiK]],lo:[loK,z[loK]],spread:z[hiK]-z[loK],lim,tv,ex:0.4*tv/lim,
+          by:Object.fromEntries(pts.map(p=>[p.key,p])),ok}; }
+/* 標籤數值：相對標準件為讀值（與主畫面相同），扣除傾斜為殘差（表面向上為正） */
+const labelValue=(m,k)=>{ const p=m.by[k]; return p.v==null?null:m.mode===STANDARD?p.v:m.z[k]; };
+const sgn3=v=>`${v>=0?"+":""}${v.toFixed(3)}`;
+
+/* 繪製：正交投影、畫家演算法；越高越白、光從左上方；量測點範圍外（凸包外）往中間灰拉近（推估） */
+function draw3d(){
+  const cv=$("#v3cv"), m=V3.models?.[V3.mode]; if(!cv||!m) return;
+  const dpr=window.devicePixelRatio||1, w=cv.clientWidth, hh=cv.clientHeight; if(!w||!hh) return;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(hh*dpr);
+  const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,hh);
+  const css=getComputedStyle(document.documentElement), C3=k=>css.getPropertyValue(k).trim(), TXT=C3("--txt"), NUM=C3("--num");
+  const {L,W,tv,ex,g,nx,ny}=m, hmax=0.4*tv, az=(AZ0+V3.rot)*Math.PI/180, el=EL3*Math.PI/180;
+  const v=[Math.cos(el)*Math.cos(az),Math.cos(el)*Math.sin(az),Math.sin(el)], rt=[-Math.sin(az),Math.cos(az)];
+  const up=[-Math.sin(el)*Math.cos(az),-Math.sin(el)*Math.sin(az),Math.cos(el)], lv=SHADE3.light;
+  let lw=[lv[0]*rt[0]+lv[1]*up[0]+lv[2]*v[0], lv[0]*rt[1]+lv[1]*up[1]+lv[2]*v[1], lv[1]*up[2]+lv[2]*v[2]]; const nl=Math.hypot(...lw); lw=lw.map(c=>c/nl);
+  const diag=Math.hypot(L,W), sc=Math.min(w*0.92/diag, hh*0.84/(diag*Math.sin(el)+(tv+2*hmax)*Math.cos(el))), cx=w/2, cy=hh/2;
+  const pr=(x,y,zz)=>{ const X=x-L/2,Y=y-W/2,Z=zz+tv/2; return [cx+sc*(X*rt[0]+Y*rt[1]), cy-sc*(X*up[0]+Y*up[1]+Z*up[2]), X*v[0]+Y*v[1]+Z*v[2]]; };
+  const gx=i=>L*i/(nx-1), gy=j=>W*j/(ny-1), Z=(i,j)=>g[j][i]*ex, top=[];
+  for(let j=0;j<ny;j++){ top.push([]); for(let i=0;i<nx;i++) top[j].push(pr(gx(i),gy(j),Z(i,j))); }
+  const dx=L/(nx-1), dy=W/(ny-1), polys=[];
+  for(let j=0;j<ny-1;j++) for(let i=0;i<nx-1;i++){
+    const q=[top[j][i],top[j][i+1],top[j+1][i+1],top[j+1][i]], r=(g[j][i]+g[j][i+1]+g[j+1][i+1]+g[j+1][i])/4;
+    const base=SHADE3.lo+(SHADE3.hi-SHADE3.lo)*Math.max(0,Math.min(1,(r/m.lim+1)/2));
+    const dzx=(Z(i+1,j)+Z(i+1,j+1)-Z(i,j)-Z(i,j+1))/2*SHADE3.relief, dzy=(Z(i,j+1)+Z(i+1,j+1)-Z(i,j)-Z(i+1,j))/2*SHADE3.relief;
+    const n=[-dzx*dy,-dzy*dx,dx*dy], lit=(n[0]*lw[0]+n[1]*lw[1]+n[2]*lw[2])/Math.hypot(...n), k=Math.max(0.5,Math.min(1.14,1+1.8*(lit-lw[2])));
+    let gray=Math.min(255,base*k); const I=m.ins;
+    if(!(I[j][i]||I[j][i+1]||I[j+1][i+1]||I[j+1][i])) gray=FADE_GRAY+FADE_KEEP*(gray-FADE_GRAY);
+    const gv=Math.round(gray); polys.push([(q[0][2]+q[2][2])/2,`rgb(${gv},${gv},${gv})`,q]); }
+  const seq=n=>[...Array(n).keys()];
+  const faces=[[[0,-1],seq(nx).map(i=>[i,0])],[[0,1],seq(nx).map(i=>[i,ny-1])],[[-1,0],seq(ny).map(j=>[0,j])],[[1,0],seq(ny).map(j=>[nx-1,j])]];
+  const vis=faces.filter(([fn])=>fn[0]*v[0]+fn[1]*v[1]>1e-6);
+  vis.forEach(([fn,edge])=>{ const s=0.45+0.35*Math.min(1,(fn[0]*v[0]+fn[1]*v[1])/Math.cos(el));
+    const col=`rgb(${[0.5*s+.12,0.5*s+.12,0.5*s+.14].map(c=>Math.round(Math.min(1,c)*255))})`;
+    for(let t=0;t<edge.length-1;t++){ const [i1,j1]=edge[t],[i2,j2]=edge[t+1];
+      const q=[top[j1][i1],top[j2][i2],pr(gx(i2),gy(j2),Z(i2,j2)-tv),pr(gx(i1),gy(j1),Z(i1,j1)-tv)]; polys.push([(q[0][2]+q[2][2])/2-1e-3,col,q]); } });
+  polys.sort((a,b)=>a[0]-b[0]);
+  ctx.lineJoin="round"; ctx.lineWidth=0.7;
+  for(const [,col,q] of polys){ ctx.beginPath(); q.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); ctx.fillStyle=col; ctx.strokeStyle=col; ctx.fill(); ctx.stroke(); }
+  ctx.strokeStyle="rgba(0,0,0,.75)"; ctx.lineWidth=1.1;
+  const line=(edge,dz)=>{ ctx.beginPath(); edge.forEach(([i,j],k)=>{ const [x,y]=pr(gx(i),gy(j),Z(i,j)+dz); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
+  faces.forEach(([,e])=>line(e,0));
+  vis.forEach(([,e])=>{ line(e,-tv); [e[0],e[e.length-1]].forEach(([i,j])=>{ const a=top[j][i], b=pr(gx(i),gy(j),Z(i,j)-tv);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); }); });
+  /* 尺寸文字（板子尺寸設定） */
+  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink"); ctx.textAlign="center"; ctx.textBaseline="middle";
+  vis.forEach(([fn,e])=>{ const [i,j]=e[Math.floor(e.length/2)], [x,y]=pr(gx(i)+fn[0]*W*.12,gy(j)+fn[1]*W*.12,-tv);
+    ctx.fillText(fn[1]?`長 ${fmm(L)} mm`:`寬 ${fmm(W)} mm`,x,y+8); });
+  /* 量測點與標籤：依深度由近到遠放置（避讓），再由遠到近畫 */
+  const nameF=`700 13px ${TXT}`, valF=`700 13px ${NUM}`, labs=m.pts.map(p=>{ const zz=m.z[p.key], [x,y,d]=pr(p.x,p.y,zz==null?0:zz*ex), lv2=labelValue(m,p.key);
+    return {p,x,y,d,t1:p.name,t2:lv2==null?"無數據":sgn3(lv2),bad:p.st==="hi"||p.st==="lo",miss:zz==null}; });
+  const placed=[], hit=r=>placed.some(o=>r.x-2<o.x+o.w&&r.x+r.w+2>o.x&&r.y-2<o.y+o.h&&r.y+r.h+2>o.y);
+  [...labs].sort((a,b)=>b.d-a.d).forEach(o=>{ ctx.font=nameF; const w1=ctx.measureText(o.t1).width; ctx.font=valF;
+    const bw=Math.max(w1,ctx.measureText(o.t2).width)+10, bh=34, cand=[[-bw/2,-bh-10],[-bw/2,10],[-bw-10,-bh/2],[10,-bh/2],[-bw/2,-2*bh-14],[-bw/2,bh+14]];
+    let box=null; for(const [ox,oy] of cand){ const r={x:o.x+ox,y:o.y+oy,w:bw,h:bh}; if(!hit(r)){ box=r; break; } }
+    o.box=box||{x:o.x+cand[0][0],y:o.y+cand[0][1],w:bw,h:bh}; placed.push(o.box); });
+  labs.sort((a,b)=>a.d-b.d).forEach(({x,y,box:b,t1,t2,bad,miss})=>{
+    ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,y);
+    ctx.lineTo(Math.max(b.x,Math.min(x,b.x+b.w)),Math.max(b.y,Math.min(y,b.y+b.h))); ctx.stroke();
+    if(miss){ ctx.strokeStyle=C3("--ng"); ctx.lineWidth=3; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(x-6,y-6); ctx.lineTo(x+6,y+6); ctx.moveTo(x+6,y-6); ctx.lineTo(x-6,y+6); ctx.stroke(); ctx.lineCap="butt"; }
+    else { ctx.beginPath(); ctx.arc(x,y,4.5,0,2*Math.PI); ctx.fillStyle="#FF7A00"; ctx.fill(); ctx.lineWidth=1.2; ctx.strokeStyle="#111"; ctx.stroke(); }
+    const red=bad||miss; ctx.fillStyle=red?"rgba(200,50,43,.94)":"rgba(255,255,255,.9)"; ctx.beginPath();
+    ctx.roundRect?ctx.roundRect(b.x,b.y,b.w,b.h,4):ctx.rect(b.x,b.y,b.w,b.h); ctx.fill();
+    ctx.fillStyle=red?"#FFFFFF":"#1C2326"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.font=nameF; ctx.fillText(t1,b.x+b.w/2,b.y+9.5); ctx.font=valF; ctx.fillText(t2,b.x+b.w/2,b.y+24.5); });
+  /* 左下角：板厚（示意）與放大倍數 */
+  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink-2"); ctx.textAlign="left"; ctx.textBaseline="middle";
+  ctx.fillText(`板厚 ${fmm(m.T)} mm（示意，不按比例）　高度放大約 ×${Math.round(ex).toLocaleString()} 倍　標籤：${m.mode===STANDARD?"讀值（相對標準件）":"殘差（扣除傾斜）"} mm`,10,hh-16);
+  $("#v3ang").textContent=`旋轉 ${V3.rot}°`;
+}
+function side3d(){ const m=V3.models[V3.mode], std=m.mode===STANDARD;
+  const hl=([k])=>`<div>${k===m.hi[0]?"最高點":"最低點"}　<b>${esc(m.by[k].name)}</b>　<span class="n">${sgn3(labelValue(m,k))}</span></div>`;
+  const sideW={hi:"偏高（表面較低）",lo:"偏低（表面較高）"};
+  const out=m.pts.filter(p=>sideW[p.st]&&p.v!=null).map(p=>`${p.name} ${sideW[p.st]}`), miss=m.pts.filter(p=>p.v==null).map(p=>p.name);
+  const notes=[`使用 ${m.ok.length}/${m.pts.length} 點。`,`高度放大約 ×${Math.round(m.ex).toLocaleString()} 倍，厚度為示意。`,
+    "點與點之間的形狀是推估；淡色區為量測點範圍外的推估，判定以實測點為準。","探頭在板子下方，已換算成由上往下看的高度。"];
+  if(!std) notes.splice(1,0,"已扣除整片傾斜與高低。");
+  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">${std?"讀值差（最高 − 最低）":"平面度（最小平方）"}</span>
+      <span class="big">${m.spread.toFixed(3)}<small> mm</small></span>${std?"":`<span class="s">允許值：未定（TBD-07）；只供檢視，不用於判定</span>`}</div>
+    <div class="v3-card">${hl(m.hi)}${hl(m.lo)}<span class="s">${std?"單位 mm；數值為讀值，以標準件為 0（探頭在下方，讀值越小表面越高）":"單位 mm；相對於擬合平面，表面向上為正"}</span></div>
+    <div class="v3-card v3-leg"><span class="s">越高越白、越低越灰；光從左上方照射</span><div class="bar"></div>
+      <div class="tk"><span>${(-m.lim).toFixed(3)}</span><span>0</span><span>+${m.lim.toFixed(3)}</span></div></div>
+    ${out.length||miss.length?`<div class="v3-card red">${out.length?`<span class="ng"><b>超出允收：</b>${esc(out.join("、"))}</span>`:""}
+      ${miss.length?`<span class="ng"><b>無數據（不參與繪圖）：</b>${esc(miss.join("、"))}</span>`:""}
+      <span class="s">探頭在下方：讀值偏高＝表面較低，讀值偏低＝表面較高</span></div>`:""}
+    <ul class="v3-note">${notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`; }
+const V3={models:null,mode:STANDARD,rot:0,timer:null};
+function v3Mode(mode){ V3.mode=mode; document.querySelectorAll(".v3m").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===mode)); side3d(); draw3d(); }
+function v3Play(on){ clearInterval(V3.timer); V3.timer=on?setInterval(()=>{ V3.rot=(V3.rot+STEP_DEG)%360; draw3d(); },STEP_MS):null;
+  $("#v3play").textContent=on?"❚❚ 暫停":"▶ 播放"; }
+function v3Turn(d){ v3Play(false); V3.rot=(V3.rot+d+360)%360; draw3d(); }
+function upd3d(){ const b=$("#v3dBtn"), on=!!lastData&&!busy&&!detecting; b.disabled=!on;
+  b.title=on?"以立體圖檢視這一片的表面高低":"量測完成後可檢視這一片的 3D 圖"; }
+async function open3d(){ if(!lastData||busy||detecting) return;
+  const pts=snapshot3d(), why=check3d(pts);
+  let models=null; if(!why){ try{ models={[STANDARD]:build3d(pts,STANDARD),[DETRENDED]:build3d(pts,DETRENDED)}; }catch(e){ return showMsg("3D 繪圖",String(e),["關閉"],"warn"); } }
+  if(why) return showMsg("3D 繪圖",why,["關閉"],"warn");
+  V3.models=models; V3.rot=0;
+  $("#v3sn").textContent=serial||""; const rs=$("#v3rs"); rs.className="v3-rs "+lastJudg; rs.textContent={PASS:"合格",FAIL:"不合格",ERROR:"設備異常"}[lastJudg];
+  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ v3Mode(STANDARD); v3Play(true); }); }
+$("#v3dBtn").addEventListener("click",open3d);
+document.querySelectorAll(".v3m").forEach(b=>b.addEventListener("click",()=>v3Mode(b.dataset.mode)));
+$("#v3prev").addEventListener("click",()=>v3Turn(-STEP_DEG)); $("#v3next").addEventListener("click",()=>v3Turn(STEP_DEG));
+$("#v3play").addEventListener("click",()=>v3Play(!V3.timer));
+[$("#v3x"),$("#v3done")].forEach(b=>b.addEventListener("click",()=>$("#v3Dlg").close()));
+$("#v3Dlg").addEventListener("close",()=>v3Play(false));
+$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG);
+  else if(e.key===" "){ e.preventDefault(); v3Play(!V3.timer); } else if(e.key==="m"||e.key==="M") v3Mode(V3.mode===STANDARD?DETRENDED:STANDARD); });
+window.addEventListener("resize",()=>{ if($("#v3Dlg").open) draw3d(); });
+
 /* ================= 其他按鍵 ================= */
 document.querySelectorAll("[data-sc]").forEach(b=>b.addEventListener("click",()=>{
   if(busy||detecting) return; scene=b.dataset.sc;
@@ -1056,7 +1340,7 @@ $("#detect").addEventListener("click",()=>{ if(busy||scene==="detecting") return
 let tt; function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),3400);}
 function tick(){$("#clock").textContent=new Date().toLocaleString("zh-TW",{hour12:false});}
 setInterval(tick,1000); tick();
-buildRows(); renderFlags(); runDetect();   // 開機自動偵測
+plRefreshBtn(); buildRows(); renderFlags(); runDetect();   // 開機自動偵測
 </script>
 </body>
 </html>
