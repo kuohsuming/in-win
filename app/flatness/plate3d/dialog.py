@@ -212,7 +212,9 @@ class Plate3DDialog(QDialog):
         self.legend.lim = m.lim_mm
         c3.lay.addWidget(self.legend)
         self.side_lay.addWidget(c3)
-        out = [p.name for p in m.points if p.state in ("hi", "lo") and p.value_mm is not None]
+        # 探頭在下方：讀值偏高＝該處表面較低，讀值偏低＝該處表面較高
+        side = {"hi": "偏高（表面較低）", "lo": "偏低（表面較高）"}
+        out = [f"{p.name} {side[p.state]}" for p in m.points if p.state in side and p.value_mm is not None]
         miss = [p.name for p in m.points if p.value_mm is None]
         if out or miss:
             c4 = Card(red=True)
@@ -220,7 +222,7 @@ class Plate3DDialog(QDialog):
                 c4.lay.addWidget(_label(f"<b>超出允收：</b>{html.escape('、'.join(out))}", px=14, color="ng"))
             if miss:
                 c4.lay.addWidget(_label(f"<b>無數據（不參與繪圖）：</b>{html.escape('、'.join(miss))}", px=14, color="ng"))
-            c4.lay.addWidget(_label("探頭在下方：讀值「偏高」＝該處表面較低", px=12, color="ink-2"))
+            c4.lay.addWidget(_label("探頭在下方：讀值偏高＝表面較低，讀值偏低＝表面較高", px=12, color="ink-2"))
             self.side_lay.addWidget(c4)
         notes = [f"使用 {len(m.valid)}/{len(m.points)} 點。",
                  f"高度放大約 ×{round(m.exaggeration):,} 倍，厚度為示意。",
