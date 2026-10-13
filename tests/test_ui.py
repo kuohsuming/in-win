@@ -736,6 +736,92 @@ class MainWindowTest(UiBase):
         faded = [t for r in w.rows for t in r.tiles.values() if t.state == "ok"]
         self.assertTrue(faded and all(t._fx.opacity() == 0.55 for t in faded))  # 淡化規則
 
+    def test_3d_button_states_and_snapshot(self):  # P3D-01、P3D-04、P3D-05
+        from unittest import mock
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        self.assertFalse(w.banner.btn_3d.isEnabled())          # 待放置：尚無結果
+        self.stations[-1].force = "fail"
+        w.next_piece()
+        self.assertFalse(w.banner.btn_3d.isEnabled())          # 等待中
+        self.wait_state("fail")
+        self.assertTrue(w.banner.btn_3d.isEnabled())
+        snap, plate = w.plate_snapshot()
+        self.assertEqual(snap.serial, w.serial)
+        self.assertEqual(snap.judgment, "FAIL")
+        self.assertEqual(len(snap.points), 12)
+        first = snap.points[0]
+        self.assertEqual((first.name, first.x, first.y), ("前排 左", 125.0, 100.0))
+        self.assertEqual(snap.points[-1].name, "後排 右")
+        self.assertEqual(snap.points[-1].tolerance_mm, w.result.points[-1].std.upper)
+        with mock.patch("flatness.plate3d.open_plate3d") as op:
+            w.banner.btn_3d.click()
+        op.assert_called_once()
+        self.assertIs(op.call_args[0][0], w)
+        w.result.points[0].value = 99.0                       # 快照之後主畫面改變，不影響快照
+        self.assertNotEqual(snap.points[0].value_mm, 99.0)
+
+    def test_3d_error_points_are_no_data(self):  # P3D-04：設備異常、未校準的點視為無數據
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        self.stations[-1].force = "error"
+        w.next_piece()
+        self.wait_state("error")
+        self.assertTrue(w.banner.btn_3d.isEnabled())           # 設備異常的結果也可檢視
+        snap, _ = w.plate_snapshot()
+        errs = [p for p in w.result.points if p.state == "err"]
+        self.assertTrue(errs)
+        by = {p.name: p for p in snap.points}
+        for e in errs:
+            self.assertIsNone(by[f"{e.device_name} {e.description}"].value_mm)
+
+    def test_3d_refuse_message(self):  # P3D-02：有效點不足 → 警告，不開視窗
+        from unittest import mock
+        from flatness import plate3d
+        from flatness.plate3d import dialog
+        snap = plate3d.Snapshot("1", "PASS", (plate3d.ProbeReading("1-1", "前排 左", 250, 300, 0.01, 0.2, "ok"),
+                                               plate3d.ProbeReading("1-2", "前排 右", 750, 300, 0.0, 0.2, "ok")))
+        with mock.patch.object(dialog, "show_message", return_value=0) as sm, \
+                mock.patch.object(dialog.Plate3DDialog, "exec", return_value=0) as ex:
+            self.assertIsNone(plate3d.open_plate3d(self.win, snap, plate3d.PlateConfig()))
+        self.assertIn("目前設定只有 2 個探頭", sm.call_args[0][1])
+        self.assertEqual(sm.call_args[1]["kind"], "warn")
+        ex.assert_not_called()
+
+    def test_plate_size_button(self):  # P3D-10
+        from unittest import mock
+        from flatness.plate3d import config as pc
+        from flatness.plate3d.plate_dialog import PlateDialog
+        store = {}
+
+        class Fake:
+            def value(self, k):
+                return store.get(k)
+
+            def setValue(self, k, v):
+                store[k] = v
+        w = self.win
+        dlg = PlateDialog(pc.PlateConfig())
+        dlg.edits["length"].setText("0")
+        self.assertFalse(dlg.save.isEnabled())
+        self.assertIn("長須為 1～5000 mm", dlg.error.text())
+        dlg.edits["length"].setText("abc")
+        self.assertIn("長須為數字", dlg.error.text())
+        for f, v in (("length", "800"), ("width", "400"), ("height", "3")):
+            dlg.edits[f].setText(v)
+        self.assertTrue(dlg.save.isEnabled())
+        dlg.save.click()
+        self.assertEqual(dlg.result_plate, pc.PlateConfig(800, 400, 3))
+        with mock.patch.object(pc, "_settings", return_value=Fake()), \
+                mock.patch("flatness.plate3d.plate_dialog.PlateDialog") as PD, \
+                mock.patch.object(w, "_modal", return_value=1):
+            PD.return_value.result_plate = pc.PlateConfig(800, 400, 3)
+            w.open_plate_size()
+            self.assertEqual(w.btn_plate.text(), "板子 800×400×3 mm")
+            self.assertEqual(pc.load(), pc.PlateConfig(800, 400, 3))   # 重新啟動後保留
+
     def test_short_wait_reads_without_countdown(self):  # MEA-03：0.5 秒後讀取，不顯示倒數數字
         w = self.win
         w.countdown_s = 0.5

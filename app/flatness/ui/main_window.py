@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from .. import lan, measure
+from .. import lan, measure, plate3d
+from ..plate3d import config as plate3d_config
 from ..measure import ERR, HI, LO, OK
 from . import icons
 from .theme import C, num_font, text_font
@@ -521,9 +522,12 @@ class TightText(QWidget):
 class Banner(QFrame):
     """結果橫幅（5.3）。"""
 
-    def __init__(self, on_reread, on_next):
+    BUSY_STATES = ("countdown", "reading", "detecting", "booting")
+
+    def __init__(self, on_reread, on_next, on_3d=None):
         super().__init__()
         self.setObjectName("banner")
+        self.has_result = lambda: False   # 主畫面提供：畫面上有這一片的結果（P3D-01）
         self.k = 1.0                     # 依螢幕自動縮放（UI-11）
         lay = self._lay = QHBoxLayout(self)
         left = self._left = QHBoxLayout()
@@ -550,8 +554,17 @@ class Banner(QFrame):
             b.setCursor(Qt.PointingHandCursor)
         self.btn_reread.clicked.connect(on_reread)
         self.btn_next.clicked.connect(on_next)
-        lay.addWidget(self.btn_reread)
-        lay.addWidget(self.btn_next)
+        self.btn_3d = QPushButton("3D 繪圖")  # P3D-01：與「下一片」間距多 14px，外觀同「重讀」
+        self.btn_3d.setCursor(Qt.PointingHandCursor)
+        if on_3d:
+            self.btn_3d.clicked.connect(on_3d)
+        acts = self._acts = QHBoxLayout()   # 按鍵間距 12px（5.3）
+        acts.addWidget(self.btn_reread)
+        acts.addWidget(self.btn_next)
+        acts.addSpacing(14)
+        self._gap_3d = acts.itemAt(acts.count() - 1).spacerItem()
+        acts.addWidget(self.btn_3d)
+        lay.addLayout(acts)
         self._spin_angle = 0
         self._spin = QTimer(self, interval=40, timeout=self._rotate)
         self.state = ""
@@ -573,9 +586,14 @@ class Banner(QFrame):
         self.setFixedHeight(px(190))  # 固定高度：狀態改變時排的大小不跳動（UI-11）
         self.sub.setFont(num_font(px(40), 700))
         self.say.setFont(text_font(px(28), 500))
-        for b in (self.btn_reread, self.btn_next):
+        for b in (self.btn_reread, self.btn_next, self.btn_3d):
             b.setFont(text_font(px(24), 700))
             b.setMinimumHeight(px(76))
+        self._acts.setSpacing(px(12))
+        self._gap_3d.changeSize(px(14), 0)
+        self._acts.invalidate()
+        self.btn_3d.setIcon(icons.icon("cube", C["ink"], px(28)))
+        self.btn_3d.setIconSize(QSize(px(28), px(28)))
         if self._last is not None:
             self.set(*self._last[0], **self._last[1])
 
@@ -609,6 +627,7 @@ class Banner(QFrame):
         self.say.setText(say)
         self.btn_reread.setEnabled(reread)
         self.btn_next.setEnabled(next_)
+        self.update_3d()
         primary = {"pass": C["go"], "fail": C["ng"], "error": C["ng"]}.get(state, C["ink"])
         self.btn_next.setStyleSheet(
             f"QPushButton {{ background:{primary}; color:white; border:none; border-radius:8px;"
@@ -619,6 +638,13 @@ class Banner(QFrame):
             f" border-radius:8px; padding:{px(18)}px {px(30)}px; font-size:{px(24)}px; font-weight:700; }}"
             f" QPushButton:hover {{ border-color:{C['ink']}; }}"
             f"QPushButton:disabled {{ color: rgba(28,35,38,0.35); border-color: rgba(86,97,106,0.35); }}")
+        self.btn_3d.setStyleSheet(self.btn_reread.styleSheet())
+
+    def update_3d(self):
+        """P3D-01：畫面上有這一片的結果時可按；等待、讀取中、偵測設備中停用。"""
+        on = self.has_result() and self.state not in self.BUSY_STATES
+        self.btn_3d.setEnabled(on)
+        self.btn_3d.setToolTip("以立體圖檢視這一片的表面高低" if on else "量測完成後可檢視這一片的 3D 圖")
 
     def _rotate(self):
         """偵測圖示每 1.6 秒旋轉一圈（第 7 節）。"""
@@ -836,7 +862,8 @@ class MainWindow(QMainWindow):
         self._serial = self._serialbar()
         self.body_lay.addWidget(self._top)
         self.body_lay.addWidget(self._serial)
-        self.banner = Banner(self.reread, self.next_piece)
+        self.banner = Banner(self.reread, self.next_piece, self.open_3d)
+        self.banner.has_result = lambda: self.result is not None
         self.body_lay.addWidget(self.banner)
         self.rows_area = QScrollArea()
         self.rows_area.setWidgetResizable(True)
@@ -962,8 +989,11 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.sum_text)
         self.btn_detect = self._tool("偵測設備", "detect", self.detect)
         self.btn_export = self._tool("取出測試數據", "excel", self.open_export)
+        self.btn_plate = self._tool(plate3d_config.load().text(), "cube", self.open_plate_size)  # P3D-10
+        self.btn_plate.setToolTip("設定板子尺寸（長、寬、高 mm），只影響 3D 繪圖")
         lay.addWidget(self.btn_detect)
         lay.addWidget(self.btn_export)
+        lay.addWidget(self.btn_plate)
         self.btn_settings = QPushButton()
         self.btn_settings.setProperty("kind", "icon")
         self.btn_settings.setIcon(icons.icon("edit", C["ink"], 22))
@@ -1126,7 +1156,7 @@ class MainWindow(QMainWindow):
     def _lock(self, busy: bool):
         """倒數、讀取、偵測中：工具按鍵與設備設定停用（5.1 停用規則、MEA-03）。"""
         self.busy = busy
-        for b in (self.btn_detect, self.btn_export, self.btn_settings):
+        for b in (self.btn_detect, self.btn_export, self.btn_plate, self.btn_settings):
             b.setEnabled(not busy)
 
     def _summary(self, mode: str, n_err: int = 0):
@@ -1440,6 +1470,40 @@ class MainWindow(QMainWindow):
     def open_export(self):
         if not self.busy:
             self._modal(ExportDialog(self.sink, self))
+
+    def plate_snapshot(self):
+        """P3D-01、P3D-04、P3D-05：以畫面上這一片的結果做成快照；位置依第幾排與探頭 ID，名稱為排名稱 位置名稱。"""
+        plate = plate3d_config.load()
+        pos = plate3d_config.probe_positions(self.layout.get("dl_en1", []), plate)
+        r = self.result
+        pts = []
+        for p in r.points:
+            xy = pos.get((p.key, p.probe_id))
+            if xy is None:
+                continue
+            value = None if p.state == ERR or p.value is None else p.value  # 設備異常、未校準等視為無數據
+            tol = p.std.upper if p.std is not None else lan.DEFAULT_TOLERANCE
+            pts.append(plate3d.ProbeReading(f"{lan.row_no(p.key)}-{p.probe_id}", f"{p.device_name} {p.description}",
+                                            xy[0], xy[1], value, tol, p.state))
+        return plate3d.Snapshot(r.serial, r.judgment, tuple(pts)), plate
+
+    def open_3d(self):
+        """P3D-01～P3D-03：有效點不足或同一直線時警告拒絕，否則開啟 3D 繪圖。"""
+        if self.busy or self.result is None:
+            return
+        snap, plate = self.plate_snapshot()
+        plate3d.open_plate3d(self, snap, plate)
+
+    def open_plate_size(self):
+        """P3D-10：板子尺寸（長、寬、高 mm），儲存後立即生效。"""
+        if self.busy:
+            return
+        from ..plate3d.plate_dialog import PlateDialog
+        dlg = PlateDialog(plate3d_config.load())
+        if self._modal(dlg) and dlg.result_plate is not None:
+            plate3d_config.save(dlg.result_plate)
+            self.btn_plate.setText(dlg.result_plate.text())
+            self.toast.show_text(f"已設定{dlg.result_plate.text()}")
 
     def open_settings(self):
         """設備設定（5.10）：只能在待放置或結果顯示時使用（UPL-02）。"""
