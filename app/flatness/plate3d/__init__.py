@@ -6,7 +6,7 @@
 """
 
 from .config import PlateConfig, probe_positions  # noqa: F401
-from .model import ProbeReading, RefuseError, SurfaceModel, build_model  # noqa: F401
+from .model import ProbeReading, RefuseError, Snapshot, SurfaceModel, build_model  # noqa: F401
 
 
 def open_plate3d(parent, snapshot, plate):

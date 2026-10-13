@@ -38,6 +38,14 @@ class ProbeReading:
     state: str                # ok／hi／lo／err（主畫面的單點判定）
 
 
+@dataclass(frozen=True)
+class Snapshot:
+    """按下「3D 繪圖」當下這一片的結果（P3D-01）：之後主畫面更新不影響。"""
+    serial: str
+    judgment: str             # PASS／FAIL／ERROR
+    points: tuple[ProbeReading, ...]
+
+
 @dataclass
 class SurfaceModel:
     points: list[ProbeReading]
