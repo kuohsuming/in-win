@@ -45,7 +45,7 @@ class WriteXlsxTest(unittest.TestCase):
         self.assertEqual(ws.cell(2, 6).fill.fill_type, None)              # 合格：無底色
         self.assertEqual(ws.cell(2, 7).fill.fgColor.rgb[-6:], "FFEB9C")    # 異常：黃底
         std = list(wb["當日標準值"].iter_rows(values_only=True))
-        self.assertEqual(std[1][:6], ("第 1 排", 1, "前排 左", 12.5, 12.45, 12.55))
+        self.assertEqual(std[1][:6], ("第 1 台", 1, "前排 左", 12.5, 12.45, 12.55))
         self.assertEqual(std[3][3], "未設定")                              # 探頭 3 沒有標準
         self.assertEqual(list(Path(self.tmp.name).iterdir()), [self.path])  # 沒有留下暫存檔
 

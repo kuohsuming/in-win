@@ -128,7 +128,7 @@ class SettingsDialogTest(UiBase):
         # 有變更儲存鍵就可按（EDT-04）；排名稱未填 → 按下列出錯誤，不進入確認頁、不寫入
         self.assertTrue(d.btn_save.isEnabled())
         self.assertIn("有 1 項錯誤，儲存前須修正", d.save_hint.text())
-        self.assertIn("排名稱", d.save_hint.toolTip())
+        self.assertIn("DL-EN1 名稱", d.save_hint.toolTip())
         d.btn_save.click()
         self.assertEqual(d.pages.currentIndex(), 1)
         self.assertIn("設定有 1 項錯誤，請修正後再儲存", self.warnings[-1])
@@ -171,8 +171,8 @@ class SettingsDialogTest(UiBase):
     def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 0.5 mm
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.horizontalHeaderItem(4).text(), "允許誤差")
-        box = d.probe_table.cellWidget(1, 4)
+        self.assertEqual(d.probe_table.horizontalHeaderItem(6).text(), "允許誤差")
+        box = d.probe_table.cellWidget(1, 6)
         self.assertEqual([box.itemText(i) for i in range(box.count())],
                          ["0.1 mm", "0.2 mm", "0.5 mm", "1 mm", "2 mm", "5 mm", "10 mm", "20 mm", "50 mm"])
         self.assertEqual(box.currentData(), 0.5)
@@ -180,7 +180,7 @@ class SettingsDialogTest(UiBase):
         box.setCurrentIndex(box.findText("0.2 mm"))
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
-        self.assertIn("探頭 ID 2「左中」允許誤差：0.5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
+        self.assertIn("第 2 台 中排 左中（ID 2）允許誤差：0.5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
         d.btn_commit.click()
         probes = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"]
         self.assertEqual(probes[1]["tolerance"], 0.2)
@@ -188,7 +188,7 @@ class SettingsDialogTest(UiBase):
         std = self.be.standards()["row-2"]
         self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.5, 0.5), (-0.2, 0.2)))
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.cellWidget(1, 4).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
+        self.assertEqual(d.probe_table.cellWidget(1, 6).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
 
     def test_port_field_hidden_but_kept(self):  # 2026-10-07 PO：設定頁不顯示 TCP 埠
         d = self.dlg
@@ -241,6 +241,108 @@ class SettingsDialogTest(UiBase):
         self.assertIn("192.168.10.200", self.warnings[-1])
         self.assertEqual(self.probes, [])  # 資料表衝突時不探測
 
+    # ---------------------------------------------------------------- 探頭位置（3.13 POS）
+
+    def pos_box(self, r, col):
+        from flatness.ui.settings_dialog import P_PT, P_ROW
+        return self.dlg.probe_table.cellWidget(r, {"row": P_ROW, "point": P_PT}[col])
+
+    def set_pos(self, r, row, point):
+        rb, pb = self.pos_box(r, "row"), self.pos_box(r, "point")
+        rb.setCurrentIndex(rb.findData(row) if row else 0)
+        pb.setCurrentIndex(pb.findData(point) if point else 0)
+
+    def test_position_columns_default_unset(self):  # POS-01
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        headers = [d.probe_table.horizontalHeaderItem(c).text() for c in range(d.probe_table.columnCount())]
+        self.assertEqual(headers, ["探頭 ID", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"])
+        self.assertEqual([self.pos_box(0, c).currentText() for c in ("row", "point")], ["未定", "未定"])
+        self.assertEqual(self.pos_box(0, "row").count(), 6)  # 未定、1～5
+
+    def test_position_incomplete_blocks_save(self):  # POS-01
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.set_pos(0, 2, None)
+        self.assertIn("第 1 列（ID 1）位置須同時設定排與點，或都設為未定", [i.message for i in d.issues])
+        d.btn_save.click()
+        self.assertEqual(d.pages.currentIndex(), 1)
+        self.set_pos(0, 2, 3)
+        self.assertFalse([i for i in d.issues if i.field == "probes"])
+        self.save()
+        p = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"][0]
+        self.assertEqual((p["row"], p["point"]), (2, 3))
+
+    def test_position_occupied_disabled_and_reset(self):  # POS-02、PROPOSAL §5.3 選單規則
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:75")
+        self.set_pos(3, 1, 3)                             # 前排「右」放在排1 點3
+        d.select("00:01:FC:DE:3A:76")
+        self.set_pos(0, 1, None)
+        pb = self.pos_box(0, "point")
+        self.assertEqual(pb.itemText(3), "3（已由 第 1 台 前排 右 使用）")  # 以設備稱呼標示佔用者
+        self.assertFalse(pb.model().item(3).isEnabled())
+        self.set_pos(0, 2, 3)                             # 先在排2 點3
+        self.pos_box(0, "row").setCurrentIndex(self.pos_box(0, "row").findData(1))  # 改到排1：點3 已被佔用
+        self.assertIsNone(self.pos_box(0, "point").currentData())
+
+    def test_auto_description(self):  # POS-09
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        d._add_probe()                                    # 新增探頭「探頭 5」
+        r = d.probe_table.rowCount() - 1
+        self.assertEqual(d.probe_table.item(r, 1).text(), "探頭 5")
+        self.set_pos(r, 4, 2)
+        self.assertEqual(d.probe_table.item(r, 1).text(), "點2")
+        self.set_pos(0, 4, 1)                             # 原本叫「左」：自己取的名稱不覆蓋
+        self.assertEqual(d.probe_table.item(0, 1).text(), "左")
+
+    def test_delete_middle_probe_keeps_positions(self):  # PROPOSAL §5.8：位置跟著原本那一列走
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.set_pos(2, 3, 3)
+        self.set_pos(3, 3, 4)
+        d.probe_table.setCurrentCell(1, 1)
+        d._del_probe()
+        cfg = d.work["00:01:FC:DE:3A:76"].config
+        self.assertEqual([(p["id"], p["description"], p.get("row"), p.get("point")) for p in cfg["probes"]],
+                         [(1, "左", None, None), (2, "右中", 3, 3), (3, "右", 3, 4)])
+
+    def test_names_edit_and_save(self):  # POS-03
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.assertEqual([e.text() for e in d.name_edits["rows"]], ["排1", "排2", "排3", "排4", "排5"])
+        self.type(d.name_edits["rows"][0], "前排")
+        self.assertTrue(d.is_dirty())
+        d.btn_save.click()
+        lines = [t for i in d.preview.items for t, _ in i.lines]
+        self.assertIn("第 1 排名稱：排1 → 前排", lines)
+        d.btn_commit.click()
+        self.assertEqual(self.store.load_names().rows[0], "前排")
+        self.assertEqual(self.be.names.rows[0], "前排")
+        self.assertEqual(self.saved[-1][0].layout["position_names"]["rows"][0], "前排")
+
+    def test_names_invalid_blocks_save(self):  # POS-03
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        self.type(d.name_edits["points"][1], "點1")
+        self.assertIn("第 2 點名稱與第 1 個重複", [i.message for i in d.issues])
+        self.assertTrue(d.name_edits["points"][1].property("error"))
+        d.btn_names_default["points"].click()
+        self.assertFalse([i for i in d.issues if i.field == "names"])
+        self.assertFalse(d.is_dirty())
+
+    def test_import_takes_names(self):  # POS-03：上傳的定義檔帶有名稱時一併套用
+        import json
+        from flatness import lan, positions
+        d = self.dlg
+        defn = lan.definition_from(self.store.load(), positions.Names(("前排", "排2", "排3", "排4", "後排"),
+                                                                      positions.DEFAULT_POINTS))
+        path = Path(self.tmp.name) / "named.json"
+        path.write_text(json.dumps(defn, ensure_ascii=False), encoding="utf-8")
+        d.import_file(path)
+        self.assertEqual(d.names.rows[0], "前排")
+
     def test_arp_taken_only_warns(self):  # DSC-10-G2：ARP 探測結果只提示，不阻擋儲存
         from flatness import netinfo
         self.dlg.deleteLater()
@@ -253,7 +355,9 @@ class SettingsDialogTest(UiBase):
         self.type(d.ip_edit, "192.168.10.50")
         self.assertTrue(d.btn_save.isEnabled())  # 檢查中也可儲存
         d.ip_edit.editingFinished.emit()
-        pump(self.app, 0.2)
+        end = time.monotonic() + 3  # 探測在背景執行緒，測試負載高時較慢
+        while "網路上已有設備" not in d.ip_note.text() and time.monotonic() < end:
+            pump(self.app, 0.05)
         self.assertIn("網路上已有設備使用此 IP（MAC 3C:52:82:44:55:66）", d.ip_note.text())
         self.assertTrue(d.btn_save.isEnabled())
         self.assertEqual(d.save_hint.text(), "")
@@ -519,7 +623,7 @@ class SettingsDialogTest(UiBase):
         self.dlg.import_file(path)
         self.assertEqual(self.dlg.pages.currentIndex(), 2)
         texts = [t for i in self.dlg.preview.items for t, _ in i.lines]
-        self.assertIn("排名稱：中排 → 中段", texts)
+        self.assertIn("DL-EN1 名稱：中排 → 中段", texts)
 
     def test_import_errors_listed(self):  # UPL-04
         path = Path(self.tmp.name, "bad.json")
@@ -679,14 +783,14 @@ class MainWindowTest(UiBase):
     def test_layout_from_definition(self):  # DEF-04
         self.assertEqual([r.dev["key"] for r in self.win.rows], ["row-1", "row-2", "row-3"])
         self.assertEqual(sum(len(r.tiles) for r in self.win.rows), 12)
-        self.assertEqual([r.unit_text.text() for r in self.win.rows], ["第 1 排", "第 2 排", "第 3 排"])
+        self.assertEqual([r.unit_text.text() for r in self.win.rows], ["第 1 台", "第 2 台", "第 3 台"])
 
     def test_row_tag_follows_position_not_screen_order(self):  # EDT-05：與設定頁的「第 N 排」一致
         from flatness.ui.main_window import DeviceRow
         row = DeviceRow(0, {"key": "row-5", "name": "加排", "probes": []}, {})
-        self.assertEqual(row.unit_text.text(), "第 5 排")
+        self.assertEqual(row.unit_text.text(), "第 5 台")
         row.set_down(True)
-        self.assertEqual(row.unit_text.text(), "第 5 排\n偵測不到")
+        self.assertEqual(row.unit_text.text(), "第 5 台\n偵測不到")
 
     def test_ip_mismatch_highlights_row_and_asks_for_reset(self):  # DSC-20
         from flatness.store import SeenEvent
@@ -699,7 +803,7 @@ class MainWindowTest(UiBase):
         self.assertEqual(row.seen_ip, "192.168.10.99")
         self.assertIn("IP 不符", row.unit_text.text())
         self.assertIn("RST 鍵 3 秒", w.flags["ip"])
-        self.assertIn("（第 1 排）實際 IP", w.flags["ip"])
+        self.assertIn("（第 1 台）實際 IP", w.flags["ip"])
         self.assertIn("192.168.10.99", w.flags["ip"])
         self.assertIsNone(w.rows[1].seen_ip)                                       # 其他排不受影響
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="10.0.0.5")])  # 不同網段
@@ -964,7 +1068,7 @@ class MainWindowTest(UiBase):
         result = self.be.apply(old, new)
         w = self.win
         w.rebuild(result.layout)
-        self.assertEqual(w.rows[1].unit_text.text(), "第 2 排\n維修中")
+        self.assertEqual(w.rows[1].unit_text.text(), "第 2 台\n維修中")
         self.assertEqual(w.rows[1].tiles, {})
         w.detect()
         self.wait_state("idle")
@@ -1131,12 +1235,12 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         return d
 
     def btn(self, d, row):
-        return d.probe_table.cellWidget(row, 3)
+        return d.probe_table.cellWidget(row, 5)
 
     def test_calibrate_adopt_and_clear_on_renumber(self):
         st = self.Station()
         d = self.dialog(st)
-        self.assertEqual(d.probe_table.item(1, 2).text(), "未校準")
+        self.assertEqual(d.probe_table.item(1, 4).text(), "未校準")
         self.assertTrue(self.btn(d, 1).isEnabled())
         self.btn(d, 1).click()                                   # 只校準探頭 2（CAL-A7）
         self.assertEqual(st.calls, [("row-2", 2, 20), ("row-2", 2, 5)])
@@ -1147,13 +1251,13 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.assertIn("zeroed_at", probes[1])
         self.assertNotIn("zero_offset", probes[0])
         self.assertEqual(len(self.saved), 1)                     # 主畫面以新的歸零基準重建
-        self.assertNotEqual(d.probe_table.item(1, 2).text(), "未校準")
+        self.assertNotEqual(d.probe_table.item(1, 4).text(), "未校準")
         (rec,) = self.store.calibrations
         self.assertEqual((rec["probe_id"], rec["result"], rec["adopted"]), (2, "PASS", True))
         self.assertFalse(d.is_dirty())                           # 通過即寫入，不需儲存
         d.probe_table.setCurrentCell(0, 1)                       # 刪除探頭 1：原探頭 2 遞補為 1，偏移量清除
         d.btn_probe_del.click()
-        self.assertEqual(d.probe_table.item(0, 2).text(), "未校準")
+        self.assertEqual(d.probe_table.item(0, 4).text(), "未校準")
         self.assertIsNone(d.probe_table.item(0, 0).data(Qt.UserRole))
         for r in range(d.probe_table.rowCount()):                # 有未儲存變更：不可校準
             self.assertFalse(self.btn(d, r).isEnabled())
@@ -1170,7 +1274,7 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.assertNotIn("zero_offset", by_mac(self.store.load())[self.MAC].config["probes"][0])
         self.assertIn("讀值不穩定", self.msgs[-1][1])
         self.assertIn("未校準", self.msgs[-1][1])
-        self.assertEqual(d.probe_table.item(0, 2).text(), "未校準")
+        self.assertEqual(d.probe_table.item(0, 4).text(), "未校準")
         self.assertEqual(len(self.saved), 2)
         self.assertEqual([(r["result"], r["adopted"]) for r in self.store.calibrations],
                          [("PASS", True), ("FAIL", False)])
@@ -1189,4 +1293,4 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.addCleanup(d.deleteLater)
         d.enter_edit()
         d.select(self.MAC)
-        self.assertFalse(d.probe_table.cellWidget(0, 3).isEnabled())   # 示範以外沒有校準來源
+        self.assertFalse(d.probe_table.cellWidget(0, 5).isEnabled())   # 示範以外沒有校準來源

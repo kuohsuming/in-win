@@ -91,7 +91,7 @@ class LanDevice:
 
     @property
     def name(self) -> str | None:
-        """清單上的名稱：DL-EN1 為排名稱（已停用者為原名稱）、其他為主機名稱。"""
+        """清單上的名稱：DL-EN1 為 DL-EN1 名稱（已停用者為原名稱）、其他為主機名稱。"""
         if self.status in (LIVE, MAINT, RETIRED) and self.config and self.config.get("name"):
             return self.config["name"]
         return self.hostname or None
@@ -152,8 +152,9 @@ def row_no(key) -> int | None:
 
 
 def row_label(key) -> str:
+    """DL-EN1 的位置標籤在畫面上稱「第 N 台」（POS-06；內部仍為 row-N）。"""
     n = row_no(key)
-    return f"第 {n} 排" if n else (key or "未設定")
+    return f"第 {n} 台" if n else (key or "未設定")
 
 
 def free_row(devices, exclude_mac: str | None = None) -> str | None:
@@ -220,8 +221,8 @@ def render_hosts(devices) -> str:
 
 # ---------------------------------------------------------------- 檢查
 
-FIELD_NAME = {"key": "位置", "name": "排名稱", "ipv4": "IPv4", "port": "TCP 埠",
-              "max_probes": "最多探頭數", "probes": "探頭", "status": "設備"}
+FIELD_NAME = {"key": "第幾台", "name": "DL-EN1 名稱", "ipv4": "IPv4", "port": "TCP 埠",
+              "max_probes": "最多探頭數", "probes": "探頭", "status": "設備", "names": "排與點名稱"}
 
 
 @dataclass
@@ -603,8 +604,13 @@ class Preview:
 def _title(d: LanDevice) -> str:
     cfg = d.config or {}
     if d.is_dl_en1 or (d.status == RETIRED and cfg):
-        return f"{cfg.get('name') or '（未命名）'}（{cfg.get('key') or '—'}）"
+        return positions.device_label(cfg.get("key"), cfg.get("name") or "（未命名）")
     return f"{d.hostname or STATUS_NAME[d.status]} {d.mac}"
+
+
+def _pos_text(names: positions.Names, probe: dict | None) -> str:
+    where = positions.pos(probe or {})
+    return f"{names.row(where[0])} {names.point(where[1])}" if where else positions.UNSET
 
 
 def _probes(cfg) -> dict:
@@ -615,13 +621,17 @@ def _tolerances(cfg) -> dict:
     return {p["id"]: probe_tolerance(p) for p in (cfg or {}).get("probes") or []}
 
 
-def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
+def diff(old_devices, new_devices, standards: dict | None = None,
+         old_names: positions.Names | None = None, new_names: positions.Names | None = None) -> Preview:
     """以 MAC 對應新舊資料，列出要確認的變更與影響（5.10 步驟三、UPL-05）。
 
     standards：{key: {probe_id: ...}}，用來列出尚未設定允收標準的探頭（DEF-09）。
+    old_names、new_names：排名稱與點名稱（POS-03）；有變更時列出。探頭以設備稱呼（第 N 台 名稱 位置名稱）稱呼。
     """
     old = {d.mac: d for d in old_devices}
     new = {d.mac: d for d in new_devices}
+    old_names = old_names or positions.Names.default()
+    new_names = new_names or old_names
     p = Preview()
     handled: set[str] = set()
 
@@ -664,7 +674,7 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
             (p.reset if n.is_dl_en1 else p.power_cycle).append(f"{_title(n)}（{ip_new}）")
         if n.is_dl_en1 and o.is_dl_en1 and mac not in handled:
             co, cn = o.config or {}, n.config or {}
-            for fld, nm in (("key", "位置"), ("name", "排名稱"), ("port", "埠"), ("max_probes", "探頭數量")):
+            for fld, nm in (("key", "第幾台"), ("name", "DL-EN1 名稱"), ("port", "埠"), ("max_probes", "探頭數量")):
                 a, b = co.get(fld), cn.get(fld)
                 if fld == "key":
                     a, b = row_label(a), row_label(b)
@@ -673,29 +683,44 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
                 if a != b:
                     lines.append((f"{nm}：{a} → {b}", False))
             pa, pb = _probes(co), _probes(cn)
+            call = lambda c, desc: positions.device_call(c.get("key"), c.get("name"), desc)  # noqa: E731
             for pid in sorted(pb.keys() - pa.keys()):
-                lines.append((f"新增探頭 ID {pid}「{pb[pid]}」", False))
+                lines.append((f"新增探頭：{call(cn, pb[pid])}（ID {pid}）", False))
             for pid in sorted(pa.keys() - pb.keys()):
-                lines.append((f"移除探頭 ID {pid}「{pa[pid]}」", False))
+                lines.append((f"移除探頭：{call(co, pa[pid])}（ID {pid}）", False))
             for pid in sorted(pa.keys() & pb.keys()):
                 if pa[pid] != pb[pid]:
-                    lines.append((f"探頭 ID {pid} 名稱：{pa[pid]} → {pb[pid]}", False))
+                    lines.append((f"{call(co, pa[pid])}（ID {pid}）位置名稱：{pa[pid]} → {pb[pid]}", False))
             ta, tb = _tolerances(co), _tolerances(cn)  # JDG-06
             for pid in sorted(ta.keys() & tb.keys()):
                 if ta[pid] != tb[pid]:
-                    lines.append((f"探頭 ID {pid}「{pb[pid]}」允許誤差：{ta[pid]:g} mm → {tb[pid]:g} mm", False))
+                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）允許誤差：{ta[pid]:g} mm → {tb[pid]:g} mm", False))
+            qa = {x["id"]: x for x in co.get("probes") or []}
+            qb = {x["id"]: x for x in cn.get("probes") or []}
+            for pid in sorted(qb):  # POS-01：位置變更（新增的探頭有設定位置時也列出）
+                a, b = _pos_text(old_names, qa.get(pid)), _pos_text(new_names, qb[pid])
+                if a != b and not (pid not in qa and b == positions.UNSET):
+                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）位置：{a} → {b}", False))
         elif n.is_dl_en1 and not o.is_dl_en1 and mac not in handled:
             cn = n.config or {}
-            lines.append((f"識別碼 {cn.get('key')}、排名稱 {cn.get('name')}、"
+            lines.append((f"{row_label(cn.get('key'))}、DL-EN1 名稱 {cn.get('name')}、"
                           f"{len(cn.get('probes') or [])} 個探頭", False))
         if lines:
             tag = "新增" if o.status == UNCLASSIFIED and n.is_dl_en1 else "變更"
             p.items.append(ChangeItem(tag, _title(n), lines))
 
+    name_lines = []  # POS-03：排名稱與點名稱
+    for label, a, b in (("排", old_names.rows, new_names.rows), ("點", old_names.points, new_names.points)):
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                name_lines.append((f"第 {i + 1} {label}名稱：{x} → {y}", False))
+    if name_lines:
+        p.items.append(ChangeItem("變更", "排與點名稱", name_lines))
+
     old_order = [d.mac for d in screen_devices(old.values()) if new.get(d.mac) and new[d.mac].is_dl_en1]
     new_order = [d.mac for d in screen_devices(new.values()) if old.get(d.mac) and old[d.mac].is_dl_en1]
     if old_order != new_order:
-        p.items.append(ChangeItem("順序", "主畫面排列順序", [
+        p.items.append(ChangeItem("順序", "DL-EN1 第幾台", [
             (" → ".join(_title(new[m]) for m in new_order), False)]))
 
     # 影響：將從主畫面移除的量測點、尚未設定允收標準的探頭（以 key ＋ 探頭 id 識別量測點，DEF-08）
@@ -704,7 +729,7 @@ def diff(old_devices, new_devices, standards: dict | None = None) -> Preview:
         for d in live_devices(devs):
             cfg = d.config or {}
             for pid, desc in _probes(cfg).items():
-                out[(cfg.get("key"), pid)] = f"{cfg.get('name')} {desc}"
+                out[(cfg.get("key"), pid)] = positions.device_call(cfg.get("key"), cfg.get("name"), desc)
         return out
     po, pn = points(old.values()), points(new.values())
     maint_keys = {(d.config or {}).get("key") for d in new.values() if d.status == MAINT}

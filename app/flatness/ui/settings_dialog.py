@@ -18,14 +18,14 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QAbstractSpinBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
     QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
-from .. import bootp, calibrate, definition, lan, netinfo
+from .. import bootp, calibrate, definition, lan, netinfo, positions
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
 from .theme import C, tag_style
@@ -37,11 +37,13 @@ STATUS_ORDER = (UNCLASSIFIED, LIVE, MAINT, RETIRED, OTHER)
 STATUS_HELP = {
     UNCLASSIFIED: "新偵測到、尚未確認身分。不配發 IP、不顯示在主畫面，紀錄保留在清單中。",
     LIVE: "配發固定 IP，連線讀取探頭，並顯示在主畫面。",
-    MAINT: "暫時不使用（例如送修）。主畫面保留該排並標示「維修中」，但不連線、不量測、不影響判定；保留設定與 IP 配發，key、名稱與 IP 仍保留給它。",
+    MAINT: "暫時不使用（例如送修）。主畫面保留該台的探頭並標示「維修中」，但不連線、不量測、不影響判定；保留設定與 IP 配發，第幾台、名稱、探頭位置與 IP 仍保留給它。",
     RETIRED: "已不再使用。不配發 IP、不顯示在主畫面；保留最後的設定供查詢，key、名稱與 IP 讓給其他設備。",
     OTHER: "不是 DL-EN1 的設備（例如協同合作設備、筆電）。只能設定 IP，留空表示不配發。",
 }
 COLS = ("", "設備", "名稱", "MAC", "IPv4", "最後出現", "次數")
+# 探頭清單的欄（POS-01：第幾排、第幾點）
+P_ID, P_DESC, P_ROW, P_PT, P_CAL, P_BTN, P_TOL = range(7)
 
 
 def fmt_time(ts: datetime | None, full: bool = False) -> str:
@@ -142,6 +144,8 @@ class SettingsDialog(QDialog):
         self.read_only = False
         self.issues: list[lan.Issue] = []
         self.preview: lan.Preview | None = None
+        self.names = positions.Names.default()           # 排名稱與點名稱（編輯中，POS-03）
+        self.names_original = positions.Names.default()  # 資料庫中的
         self._filling = False
         self._relay = _Relay()
         self._relay.probed.connect(self._on_probed)
@@ -413,16 +417,16 @@ class SettingsDialog(QDialog):
         status_col.addWidget(self.status_help)
         self._form_row("設備", status_col)
 
-        # 位置標籤（EDT-05）：第 1～10 排，決定主畫面由上而下的順序；已被其他使用中／維修中設備佔用的排不可選
+        # 位置標籤（EDT-05，畫面上稱「第 N 台」，POS-06）：第 1～10 台；已被其他使用中／維修中設備佔用的不可選
         self.row_box = QComboBox()
         self.row_box.setObjectName("key")
         self.row_box.addItem("請選擇", "")
         for k in lan.ROW_KEYS:
             self.row_box.addItem(lan.row_label(k), k)
         self.row_box.currentIndexChanged.connect(lambda _i: self._on_field_edited())
-        self._form_row("位置", self.row_box)
+        self._form_row("第幾台", self.row_box)
         self.name_edit = self._line("例：前排", "name")
-        self._form_row("排名稱 name", self.name_edit)
+        self._form_row("DL-EN1 名稱", self.name_edit)
         ip_col = QVBoxLayout()
         ip_col.setSpacing(4)
         self.ip_edit = self._line("例：192.168.10.11", "ipv4", num=True)
@@ -452,23 +456,19 @@ class SettingsDialog(QDialog):
         pb = QVBoxLayout(self.probe_box)
         pb.setContentsMargins(0, 0, 0, 0)
         pb.setSpacing(6)
-        pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N）", "label"))
-        pt = self.probe_table = QTableWidget(0, 5)
-        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "校準", "", "允許誤差"))
+        pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
+                            "label", True))
+        pt = self.probe_table = QTableWidget(0, 7)
+        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"))
         pt.verticalHeader().hide()
         pt.setSelectionBehavior(QAbstractItemView.SelectRows)
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
         pt.setMinimumHeight(180)
         pt.setMaximumHeight(180)
-        pt.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        pt.setColumnWidth(0, 110)
-        pt.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        pt.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        pt.setColumnWidth(2, 200)
-        pt.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        pt.setColumnWidth(3, 90)
-        pt.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
-        pt.setColumnWidth(4, 120)
+        for col, width in ((P_ID, 80), (P_ROW, 96), (P_PT, 96), (P_CAL, 190), (P_BTN, 90), (P_TOL, 120)):
+            pt.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
+            pt.setColumnWidth(col, width)
+        pt.horizontalHeader().setSectionResizeMode(P_DESC, QHeaderView.Stretch)
         pt.itemChanged.connect(lambda _item: self._on_field_edited())
         pt.itemSelectionChanged.connect(self._update_probe_buttons)
         pb.addWidget(pt)
@@ -479,6 +479,7 @@ class SettingsDialog(QDialog):
         prow.addWidget(self.btn_probe_del)
         prow.addStretch()
         pb.addLayout(prow)
+        pb.addWidget(self._names_block())
         d.addWidget(self.probe_box)
 
         self.replace_row = QWidget()
@@ -515,6 +516,35 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.detail, 1)
         self.detail.hide()
         return f
+
+    def _names_block(self) -> QWidget:
+        """排與點名稱（POS-03、POS-09）：全機共用一組，在任一台 DL-EN1 底下修改都是同一組。"""
+        box = QFrame()
+        box.setObjectName("namesBox")
+        box.setStyleSheet(f"QFrame#namesBox {{ border:1px solid {C['line']}; border-radius:6px; background:{C['panel']}; }}")
+        g = QGridLayout(box)
+        g.setContentsMargins(10, 8, 10, 8)
+        g.setHorizontalSpacing(6)
+        g.setVerticalSpacing(6)
+        g.addWidget(_label("排與點名稱（全機共用；主畫面排頭、3D 標籤、匯出檔使用）", "label", True), 0, 0, 1, 7)
+        self.name_edits: dict[str, list[QLineEdit]] = {}
+        self.btn_names_default: dict[str, QPushButton] = {}
+        for r, (kind, title) in enumerate((("rows", "排名稱"), ("points", "點名稱")), start=1):
+            g.addWidget(_label(title, "label"), r, 0)
+            edits = []
+            for i in range(positions.SIZE):
+                e = QLineEdit()
+                e.setObjectName(f"{kind}{i + 1}")
+                e.setMaxLength(positions.NAME_MAX)
+                e.setMinimumWidth(70)
+                e.textEdited.connect(lambda _t: self._on_names_edited())
+                g.addWidget(e, r, i + 1)
+                edits.append(e)
+            self.name_edits[kind] = edits
+            b = _btn("恢復預設", "small", lambda _=False, k=kind: self._names_default(k))
+            self.btn_names_default[kind] = b
+            g.addWidget(b, r, positions.SIZE + 1)
+        return box
 
     def _form_row(self, text, field):
         lb = _label(text, "label")
@@ -564,6 +594,8 @@ class SettingsDialog(QDialog):
             self.read_only = True
         self.original = {d.mac: d.copy() for d in devices}
         self.work = {d.mac: d.copy() for d in devices}
+        self.names_original = self.backend.names if self.read_only else self.backend.load_names()
+        self.names = self.names_original
         self.remembered.clear()
         self.replaced_from.clear()
         self._import_label = ""
@@ -586,6 +618,8 @@ class SettingsDialog(QDialog):
 
     def is_dirty(self) -> bool:
         if set(self.work) - set(self.original):
+            return True
+        if self.names != self.names_original:  # 只改排名稱、點名稱也算變更（POS-03）
             return True
         return any(self.work[m].settings() != self.original[m].settings() for m in self.work)
 
@@ -636,7 +670,18 @@ class SettingsDialog(QDialog):
         self._update_buttons()
 
     def _validate(self):
-        self.issues = lan.validate(self._devices(), self.backend.equip_net())
+        self.issues = lan.validate(self._devices(), self.backend.equip_net(), self.names) + self._name_issues()
+
+    def _name_issues(self) -> list:
+        """排名稱、點名稱：1～10 字、不可空白、同類不可重複（POS-03）。"""
+        out = []
+        for kind, label in (("rows", "排"), ("points", "點")):
+            for i, why in positions.name_errors(kind, self._name_values(kind)):
+                out.append(lan.Issue(None, "names", f"第 {i + 1} {label}名稱{why}"))
+        return out
+
+    def _name_values(self, kind: str) -> list[str]:
+        return list(getattr(self.names, kind))
 
     def _row_issue_macs(self) -> set:
         macs = {i.mac for i in self.issues if i.mac}
@@ -761,7 +806,10 @@ class SettingsDialog(QDialog):
         self.probe_table.setRowCount(0)
         for p in cfg.get("probes") or []:
             zero = {f: p[f] for f in lan.ZERO_FIELDS if f in p} or None
-            self._append_probe_row(p.get("id"), p.get("description", ""), zero, lan.probe_tolerance(p))
+            self._append_probe_row(p.get("id"), p.get("description", ""), zero, lan.probe_tolerance(p),
+                                   p.get("row"), p.get("point"))
+        self._refresh_pos_options()
+        self._fill_names()
         self.replace_row.setVisible(d.status == LIVE and self.original.get(d.mac) is not None
                                     and self.original[d.mac].status == LIVE)
         for w in (self.name_edit, self.ip_edit, self.port_edit):
@@ -778,9 +826,10 @@ class SettingsDialog(QDialog):
         elif d.status == RETIRED:
             if cfg:
                 self.note_box.setText(
-                    f"最後的設定：位置 {lan.row_label(cfg.get('key')) if cfg.get('key') else '—'}、排名稱 {cfg.get('name') or '—'}、"
+                    f"最後的設定：{lan.row_label(cfg.get('key')) if cfg.get('key') else '第幾台未設定'}、"
+                    f"DL-EN1 名稱 {cfg.get('name') or '—'}、"
                     f"IP {d.ipv4 or '—'}、探頭 {len(cfg.get('probes') or [])} 個。\n"
-                    "已停用的設備不佔用位置、名稱與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，"
+                    "已停用的設備不佔用第幾台、名稱、探頭位置與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，"
                     "並重新檢查是否與現有設備重複。")
             else:
                 self.note_box.setText("沒有保留的設定。改回「DL-EN1 使用中」或「維修中」後再填寫設定。")
@@ -804,23 +853,37 @@ class SettingsDialog(QDialog):
         idx = self.row_box.findData(key)
         self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
-    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE):
+    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE, row=None, point=None):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
         id_item = QTableWidgetItem("" if pid is None else str(pid))
         id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # ID 自動編號，不可手動修改
         id_item.setFont(self._num_font())
-        self.probe_table.setItem(r, 0, id_item)
-        self.probe_table.setItem(r, 1, QTableWidgetItem(desc))
+        self.probe_table.setItem(r, P_ID, id_item)
+        self.probe_table.setItem(r, P_DESC, QTableWidgetItem(desc))
+        for col, value in ((P_ROW, row), (P_PT, point)):  # POS-01：未定、1～5
+            box = QComboBox()
+            box.addItem(positions.UNSET, None)
+            for v in range(1, positions.SIZE + 1):
+                box.addItem(str(v), v)
+            box.setCurrentIndex(max(0, box.findData(value)) if value else 0)
+            box.setEnabled(not self.read_only)
+            box.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
+            box.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)
+            box.view().setMinimumWidth(300)  # 選項含佔用者，展開時較寬
+            box.setToolTip("探頭在板子下方的第幾排（由前到後）" if col == P_ROW else "探頭在該排的第幾點（由左到右）")
+            box.currentIndexChanged.connect(lambda _i, b=box, c=col: self._on_pos_changed(b, c))
+            box.setProperty("last", value)
+            self.probe_table.setCellWidget(r, col, box)
         cal = QTableWidgetItem()
         cal.setFlags(cal.flags() & ~Qt.ItemIsEditable)
-        self.probe_table.setItem(r, 2, cal)
+        self.probe_table.setItem(r, P_CAL, cal)
         self._set_zero(r, zero)
         btn = QPushButton("校準")
         btn.setProperty("kind", "small")
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda _=False, b=btn: self._calibrate(self._button_row(b)))
-        self.probe_table.setCellWidget(r, 3, btn)
+        self.probe_table.setCellWidget(r, P_BTN, btn)
         tol = QComboBox()  # JDG-06：允許誤差，判定為 |讀值| ≤ 允許誤差
         for v in lan.TOLERANCES:
             tol.addItem(f"{v:g} mm", v)
@@ -831,18 +894,125 @@ class SettingsDialog(QDialog):
         tol.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
         tol.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)  # 不超出列高
         tol.currentIndexChanged.connect(lambda _i: self._on_field_edited())
-        self.probe_table.setCellWidget(r, 4, tol)
+        self.probe_table.setCellWidget(r, P_TOL, tol)
 
     def _button_row(self, btn) -> int:
         for r in range(self.probe_table.rowCount()):
-            if self.probe_table.cellWidget(r, 3) is btn:
+            if btn in (self.probe_table.cellWidget(r, P_BTN), self.probe_table.cellWidget(r, P_ROW),
+                       self.probe_table.cellWidget(r, P_PT)):
                 return r
         return -1
 
+    # ---------------------------------------------------------------- 探頭位置（POS-01、POS-02、POS-09）
+
+    def _row_pos(self, r: int) -> tuple:
+        rb, pb = self.probe_table.cellWidget(r, P_ROW), self.probe_table.cellWidget(r, P_PT)
+        return (rb.currentData() if rb else None, pb.currentData() if pb else None)
+
+    def _occupied(self, skip_row: int | None = None) -> dict:
+        """（排, 點）→ 佔用者的設備稱呼：使用中與維修中（含本次尚未儲存的編輯）；選取中設備以清單上的值為準。"""
+        used = {}
+        for d in self._devices():
+            if not d.is_dl_en1 or not d.config:
+                continue
+            cfg = d.config
+            if d.mac == self.selected:
+                rows = [(r, self._row_pos(r), self._desc(r)) for r in range(self.probe_table.rowCount())]
+            else:
+                rows = [(None, (p.get("row"), p.get("point")), p.get("description", "")) for p in cfg.get("probes") or []]
+            for r, (row, pt), desc in rows:
+                if row and pt and not (d.mac == self.selected and r == skip_row):
+                    used.setdefault((row, pt), positions.device_call(cfg.get("key"), cfg.get("name"), desc))
+        return used
+
+    def _desc(self, r: int) -> str:
+        item = self.probe_table.item(r, P_DESC)
+        return item.text().strip() if item else ""
+
+    def _refresh_pos_options(self):
+        """選單規則（PROPOSAL §5.3）：第幾排滿了標示「（已滿）」；第幾點列出所選排中已被其他探頭佔用的點並停用。"""
+        model_color = lambda bad: self._qcolor(C["ink-2"] if bad else C["ink"])  # noqa: E731
+        for r in range(self.probe_table.rowCount()):
+            rb, pb = self.probe_table.cellWidget(r, P_ROW), self.probe_table.cellWidget(r, P_PT)
+            if rb is None or pb is None:
+                continue
+            used = self._occupied(skip_row=r)
+            rb.blockSignals(True)
+            pb.blockSignals(True)
+            for i in range(1, positions.SIZE + 1):
+                full = all((i, k) in used for k in range(1, positions.SIZE + 1))
+                rb.setItemText(i, f"{i}（{self.names.row(i)}，已滿）" if full else f"{i}（{self.names.row(i)}）")
+                rb.model().item(i).setForeground(model_color(full))
+            row = rb.currentData()
+            for k in range(1, positions.SIZE + 1):
+                who = used.get((row, k)) if row else None
+                pb.setItemText(k, f"{k}（已由 {who} 使用）" if who else f"{k}（{self.names.point(k)}）")
+                pb.model().item(k).setEnabled(who is None or pb.currentData() == k)
+                pb.model().item(k).setForeground(model_color(who is not None))
+            rb.blockSignals(False)
+            pb.blockSignals(False)
+
+    def _on_pos_changed(self, box, col):
+        if self._filling:
+            return
+        r = self._button_row(box)
+        if r < 0:
+            return
+        row, pt = self._row_pos(r)
+        if col == P_ROW and row and pt and (row, pt) in self._occupied(skip_row=r):
+            pb = self.probe_table.cellWidget(r, P_PT)
+            pb.blockSignals(True)
+            pb.setCurrentIndex(0)  # 改了排之後原本的點在新的排已被佔用：點改回未定
+            pb.blockSignals(False)
+            self.toast.show_text(f"第 {r + 1} 列（ID {r + 1}）{self.names.row(row)} {self.names.point(pt)} 已被使用，"
+                                 "請重新選擇點")
+            pt = None
+        if col == P_PT:
+            old = box.property("last")
+            item = self.probe_table.item(r, P_DESC)
+            new_desc = positions.auto_description(item.text() if item else "", old, pt, self.names,
+                                                  self.names_original)
+            if item is not None and new_desc != item.text():
+                self._filling = True
+                item.setText(new_desc)
+                self._filling = False
+        for c in (P_ROW, P_PT):
+            w = self.probe_table.cellWidget(r, c)
+            w.setProperty("last", w.currentData())
+        self._refresh_pos_options()
+        self._on_field_edited()
+
+    # ---------------------------------------------------------------- 排與點名稱（POS-03）
+
+    def _fill_names(self):
+        for kind, edits in self.name_edits.items():
+            for e, v in zip(edits, getattr(self.names, kind)):
+                if e.text() != v:
+                    e.setText(v)
+                e.setReadOnly(self.read_only)
+            self.btn_names_default[kind].setEnabled(not self.read_only)
+
+    def _on_names_edited(self):
+        if self._filling:
+            return
+        rows = tuple(e.text().strip() for e in self.name_edits["rows"])
+        points = tuple(e.text().strip() for e in self.name_edits["points"])
+        self.names = positions.Names(rows, points)
+        self._refresh_pos_options()
+        self._after_change()
+
+    def _names_default(self, kind: str):
+        d = positions.Names.default()
+        self.names = positions.Names(d.rows if kind == "rows" else self.names.rows,
+                                     d.points if kind == "points" else self.names.points)
+        self._fill_names()
+        self._refresh_pos_options()
+        self._after_change()
+
     def _set_zero(self, r: int, zero: dict | None):
         """探頭列的歸零基準（CAL-06）：存於 ID 欄的資料，顯示於校準欄。"""
-        self.probe_table.item(r, 0).setData(Qt.UserRole, dict(zero) if zero else None)
-        item = self.probe_table.item(r, 2)
+        self.probe_table.item(r, P_ID).setData(Qt.UserRole, dict(zero) if zero else None)
+        item = self.probe_table.item(r, P_CAL)
         if zero:
             try:
                 when = datetime.fromisoformat(zero["zeroed_at"]).strftime("%m/%d %H:%M")
@@ -863,6 +1033,10 @@ class SettingsDialog(QDialog):
         _set_prop(self.ip_edit, "error", ip_bad)
         self.probe_table.setStyleSheet(f"QTableWidget {{ border: 2px solid {C['ng']}; }}"
                                        if "probes" in mine else "")
+        bad_names = {i.message for i in self.issues if i.field == "names"}
+        for kind, label in (("rows", "排"), ("points", "點")):
+            for i, e in enumerate(self.name_edits[kind]):
+                _set_prop(e, "error", any(m.startswith(f"第 {i + 1} {label}名稱") for m in bad_names))
 
     def _render_ip_note(self):
         d = self.work.get(self.selected)
@@ -989,7 +1163,7 @@ class SettingsDialog(QDialog):
         why = self._cannot_calibrate()
         saved_ids = self._saved_probe_ids()
         for r in range(self.probe_table.rowCount()):
-            b = self.probe_table.cellWidget(r, 3)
+            b = self.probe_table.cellWidget(r, P_BTN)
             if b is not None:
                 reason = why or (None if r + 1 in saved_ids else "新增的探頭請先儲存")
                 b.setEnabled(reason is None)
@@ -1025,7 +1199,7 @@ class SettingsDialog(QDialog):
         if probe is None:
             return
         cs = self.backend.cfg.calibration
-        what = f"{cfg.get('name')}（{lan.row_label(cfg.get('key'))}）探頭 {pid}「{probe['description']}」"
+        what = f"{positions.device_call(cfg.get('key'), cfg.get('name'), probe['description'])}（探頭 ID {pid}）"
         if show_message(self, f"校準 {what}\n\n請將標準件放在治具上，確認放好、不再移動後按「開始校準」。\n"
                               f"將先清除放大器原本的歸零，讀取 {cs.samples} 次確認穩定後歸零（放大器斷電後仍記住），"
                               f"再讀 {cs.verify} 次驗證。\n\n注意：開始後原本的歸零即清除，"
@@ -1189,12 +1363,17 @@ class SettingsDialog(QDialog):
                 cfg.pop("port", None)
             probes = []
             for r in range(self.probe_table.rowCount()):  # ID 依串接順序 1～N（EDT-06）
-                desc = (self.probe_table.item(r, 1).text() if self.probe_table.item(r, 1) else "").strip()
-                zero = self.probe_table.item(r, 0).data(Qt.UserRole) if self.probe_table.item(r, 0) else None
+                desc = self._desc(r)
+                zero = self.probe_table.item(r, P_ID).data(Qt.UserRole) if self.probe_table.item(r, P_ID) else None
                 probe = {"id": r + 1, "description": desc, **(zero or {})}
-                tol = self.probe_table.cellWidget(r, 4)
+                tol = self.probe_table.cellWidget(r, P_TOL)
                 if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設值（0.5 mm）不寫入
                     probe["tolerance"] = tol.currentData()
+                row, pt = self._row_pos(r)  # POS-01：未定時不寫入；只設其一照實寫入，由檢查擋下
+                if row is not None:
+                    probe["row"] = row
+                if pt is not None:
+                    probe["point"] = pt
                 probes.append(probe)
             cfg["probes"] = probes
             cfg["max_probes"] = len(probes)
@@ -1213,6 +1392,7 @@ class SettingsDialog(QDialog):
         else:
             self._render_field_errors()
             self._render_ip_note()
+            self._refresh_pos_options()
         self._render_messages()
         self._update_buttons()
 
@@ -1233,7 +1413,7 @@ class SettingsDialog(QDialog):
     def _renumber_probes(self):
         """呼叫端須已設定 _filling，避免逐格觸發重新檢查。"""
         for r in range(self.probe_table.rowCount()):
-            item = self.probe_table.item(r, 0)
+            item = self.probe_table.item(r, P_ID)
             if item is not None:
                 item.setText(str(r + 1))
 
@@ -1241,7 +1421,7 @@ class SettingsDialog(QDialog):
         if self.probe_table.rowCount() >= 15:
             return
         self.max_spin.setValue(self.probe_table.rowCount() + 1)  # 經 _on_probe_count 新增一列
-        self.probe_table.setCurrentCell(self.probe_table.rowCount() - 1, 1)
+        self.probe_table.setCurrentCell(self.probe_table.rowCount() - 1, P_DESC)
 
     def _del_probe(self):
         """刪除選取的探頭：後面的探頭 ID 往前遞補（放大器拆除後 ID 依串接順序重排），數量減 1。"""
@@ -1296,8 +1476,9 @@ class SettingsDialog(QDialog):
             return
         what = [f"將從設備清單與資料庫刪除 {o.label()}（{o.mac}，{lan.STATUS_NAME[o.status]}）。"]
         if o.status in lan.DL_STATUSES:
-            what.append(f"主畫面將移除「{o.name or '—'}」這一排（{lan.row_label((o.config or {}).get('key'))}），"
-                        "其設定（位置、排名稱、探頭）一併刪除。")
+            n = len((o.config or {}).get("probes") or [])
+            what.append(f"主畫面將移除{positions.device_label((o.config or {}).get('key'), o.name or '—')}的 {n} 個探頭，"
+                        "其設定（第幾台、名稱、探頭與探頭位置）一併刪除。")
         if o.assigns_ip:
             what.append(f"不再配發 IP {o.ipv4}，BOOTP 對應會更新。")
         if o.status == LIVE and sum(x.status == LIVE for x in self.original.values()) == 1:
@@ -1469,6 +1650,8 @@ class SettingsDialog(QDialog):
             return
         imported = lan.import_definition(self._devices(), defn)
         self.work = {d.mac: d for d in imported}
+        if "position_names" in defn:  # 帶有排名稱與點名稱時一併套用，沒有時保留目前的名稱（POS-03）
+            self.names = positions.Names.from_json(defn["position_names"])
         log.info("匯入定義檔（未儲存）file=%s DL-EN1 %d 台", path, len(defn["dl_en1"]))
         self._import_label = label or f"匯入 {path.name}"
         self._validate()
@@ -1493,7 +1676,7 @@ class SettingsDialog(QDialog):
             self.import_file(files[labels.index(choice)], label=f"從備份還原 {choice}")
 
     def _download(self):
-        defn = lan.definition_from(self.original.values())
+        defn = lan.definition_from(self.original.values(), self.names_original)
         path = pick_path(self, "下載目前設定", str(Path.home() / "dl-en1.json"), mode="save",
                          name_filter="DL-EN1 定義檔 (*.json)")
         if not path:
@@ -1518,7 +1701,8 @@ class SettingsDialog(QDialog):
             more = f"\n…另有 {len(bad) - 8} 項" if len(bad) > 8 else ""
             self._warn(f"設定有 {len(bad)} 項錯誤，請修正後再儲存：\n{lines}{more}")
             return
-        self.preview = lan.diff(self.original.values(), self._devices())
+        self.preview = lan.diff(self.original.values(), self._devices(),
+                                old_names=self.names_original, new_names=self.names)
         self._render_confirm()
         self.pages.setCurrentIndex(2)
 
@@ -1594,14 +1778,16 @@ class SettingsDialog(QDialog):
             log.info("替換 DL-EN1 key=%s 舊 MAC=%s 新 MAC=%s", key, old, new)
         QGuiApplication.setOverrideCursor(Qt.WaitCursor)
         try:
+            names = self.names if self.names != self.names_original else None  # 名稱有變更才寫入（POS-03）
             result = self.backend.apply(list(self.original.values()), self._devices(),
-                                        summary=f"{summary}（{self.preview.summary()}）")
+                                        summary=f"{summary}（{self.preview.summary()}）", names=names)
         except Exception as exc:
             QGuiApplication.restoreOverrideCursor()
             self._warn(f"套用失敗，資料庫與檔案已還原，現場維持原設定。\n\n原因：{exc}")
             return
         QGuiApplication.restoreOverrideCursor()
         self.original = {m: d.copy() for m, d in self.work.items()}
+        self.names_original = self.names
         self.saved.emit(result, self.preview)
         self.accept()
 

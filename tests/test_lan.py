@@ -55,7 +55,7 @@ class ValidateTest(unittest.TestCase):
         by_mac(devs)["00:01:FC:DE:3A:77"].config["key"] = "row-1"
         msgs = [i.text() for i in lan.validate(devs, NET) if i.field == "key"]
         self.assertEqual(len(msgs), 2)
-        self.assertTrue(all("第 1 排" in m for m in msgs), msgs)
+        self.assertTrue(all("第 1 台" in m for m in msgs), msgs)
         for bad in ("rear", "row-0", "row-11", ""):
             by_mac(devs)["00:01:FC:DE:3A:77"].config["key"] = bad
             msgs = [i.message for i in lan.validate(devs, NET) if i.field == "key"]
@@ -66,7 +66,7 @@ class ValidateTest(unittest.TestCase):
         by_mac(devs)["00:01:FC:DE:3A:76"].status = RETIRED  # 第 2 排空出
         d = lan.set_status(devs, "00:01:FC:12:39:A0", LIVE, NET)
         self.assertEqual(d.config["key"], "row-2")
-        self.assertEqual(lan.row_label("row-10"), "第 10 排")
+        self.assertEqual(lan.row_label("row-10"), "第 10 台")
 
     def test_new_device_keeps_its_seen_ip(self):  # DSC-08、DSC-19：沿用設備實際使用的 IP，不必重設
         devs = sample_devices()
@@ -293,7 +293,7 @@ class DiffTest(unittest.TestCase):
         new = [d.copy() for d in old]
         lan.set_status(new, "00:01:FC:DE:3A:76", RETIRED, NET)
         p = lan.diff(old, new)
-        self.assertEqual(p.removed_points, ["中排 左", "中排 左中", "中排 右中", "中排 右"])
+        self.assertEqual(p.removed_points, ["第 2 台 中排 左", "第 2 台 中排 左中", "第 2 台 中排 右中", "第 2 台 中排 右"])
         self.assertTrue(p.items[0].lines[0][1])  # 狀態變更醒目
 
     def test_changes_and_standards(self):
@@ -308,12 +308,12 @@ class DiffTest(unittest.TestCase):
         std = {k: {i: object() for i in range(1, 5)} for k in ("row-1", "row-2", "row-3")}
         p = lan.diff(old, new, std)
         texts = [t for i in p.items for t, _ in i.lines]
-        self.assertIn("排名稱：中排 → 中段", texts)
-        self.assertIn("新增探頭 ID 5「中央」", texts)
+        self.assertIn("DL-EN1 名稱：中排 → 中段", texts)
+        self.assertIn("新增探頭：第 1 台 中段 中央（ID 5）", texts)
         self.assertIn("IP：192.168.10.12 → 192.168.10.30", texts)
         self.assertIn("順序", [i.tag for i in p.items])
-        self.assertIn("位置：第 2 排 → 第 1 排", texts)
-        self.assertEqual(p.no_standard, ["中段 中央"])
+        self.assertIn("第幾台：第 2 台 → 第 1 台", texts)
+        self.assertEqual(p.no_standard, ["第 1 台 中段 中央"])
         self.assertEqual((len(p.reset), p.power_cycle), (1, []))
         self.assertIn("探頭數量：4 → 5", texts)
 
