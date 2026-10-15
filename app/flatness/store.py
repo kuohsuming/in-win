@@ -252,7 +252,24 @@ class MySQLStore:
         for kind, seq, name in rows:
             if kind in got and 1 <= seq <= len(got[kind]) and name:
                 got[kind][seq - 1] = name
-        return Names.from_json({"rows": got["row"], "points": got["point"]})
+        return Names.from_json({"rows": got["row"], "points": got["point"]}, self._load_grid())
+
+    def _load_grid(self) -> dict | None:
+        """板子版面（POS-10）；沒有資料或資料表尚未建立（MySQL 1146）時為 None，即 5 × 5。"""
+        import pymysql
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT grid_rows, grid_points FROM plate_layout WHERE id = 1")
+                row = cur.fetchone()
+        except pymysql.MySQLError as exc:
+            if exc.args and exc.args[0] == 1146:
+                log.warning("資料表 plate_layout 不存在（請執行 sql/in-win.sql），板子版面使用 5 排 × 5 點")
+                return None
+            raise StoreError(f"資料庫操作失敗：{exc}") from exc
+        finally:
+            conn.close()
+        return {"rows": row[0], "points": row[1]} if row else None
 
     def record(self, events) -> None:
         """新增或更新探索紀錄（DSC-01）；不更動 updated_at（那是設定的修改時間）。"""
@@ -391,12 +408,15 @@ class _MySQLTx:
         self._conn = conn
 
     def save_names(self, names: Names) -> None:
-        """排名稱與點名稱（POS-03）：全部 10 筆，與設備設定同一交易。"""
+        """排名稱與點名稱（POS-03）全部 10 筆與板子版面（POS-10），與設備設定同一交易。"""
         rows = [("row", i + 1, n) for i, n in enumerate(names.rows)]
         rows += [("point", i + 1, n) for i, n in enumerate(names.points)]
         with self._conn.cursor() as cur:
             cur.executemany("INSERT INTO plate_position_name (kind, seq, name) VALUES (%s, %s, %s) AS n"
                             " ON DUPLICATE KEY UPDATE name = n.name", rows)
+            cur.execute("INSERT INTO plate_layout (id, grid_rows, grid_points) VALUES (1, %s, %s) AS n"  # POS-10
+                        " ON DUPLICATE KEY UPDATE grid_rows = n.grid_rows, grid_points = n.grid_points",
+                        (names.grid_rows, names.grid_points))
 
     def save(self, old_devices, new_devices) -> int:
         """只寫入設定有變更的設備；整筆更新 dl_en1_config（DSC-12）。"""

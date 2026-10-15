@@ -143,6 +143,20 @@ CREATE TABLE IF NOT EXISTS flatness.plate_position_name (
   DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='板子上排與點的名稱（3.13 POS）';
 
+-- 板子版面（POS-10）：幾排、每排幾點，只有 id = 1 一筆；沒有資料時 App 視為 5 × 5
+CREATE TABLE IF NOT EXISTS flatness.plate_layout (
+  id           TINYINT UNSIGNED  NOT NULL DEFAULT 1,
+  grid_rows    TINYINT UNSIGNED  NOT NULL COMMENT '排數（1～5）',
+  grid_points  TINYINT UNSIGNED  NOT NULL COMMENT '每排點數（1～5）',
+  updated_at   DATETIME(3)       NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  CONSTRAINT chk_plate_layout_id CHECK (id = 1),
+  CONSTRAINT chk_plate_layout_rows CHECK (grid_rows BETWEEN 1 AND 5),
+  CONSTRAINT chk_plate_layout_points CHECK (grid_points BETWEEN 1 AND 5)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='板子版面：幾排、每排幾點（3.13 POS-10）';
+
 -- 探頭校準紀錄（CAL-08）：每次校準（成功、失敗、取消）1 筆；App 帳號只新增與查詢
 CREATE TABLE IF NOT EXISTS flatness.calibration (
   id               BIGINT UNSIGNED   NOT NULL AUTO_INCREMENT,

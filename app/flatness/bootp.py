@@ -62,10 +62,13 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
 
     if not isinstance(definition, dict):
         raise DefinitionError([("$", "最外層必須是物件")])
-    for extra in sorted(set(definition) - {"version", "dl_en1", "position_names"}):
+    for extra in sorted(set(definition) - {"version", "dl_en1", "position_names", "position_grid"}):
         errors.append((extra, "不允許的欄位"))
     if "position_names" in definition:  # 排名稱與點名稱（POS-03）
         errors += positions.check_names_json(definition["position_names"])
+    if "position_grid" in definition:  # 板子版面（POS-10）
+        errors += positions.check_grid_json(definition["position_grid"])
+    grid = positions.Names.from_definition(definition)  # 版面不合格時以 5 × 5 檢查探頭位置
     if definition.get("version") != 1:
         errors.append(("version", "必須為 1"))
 
@@ -142,7 +145,10 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                     errors += [(f"{pat}.{f}", why) for f, why in positions.probe_errors(probe)]
                     where = positions.pos(probe)
                     if where and not positions.probe_errors(probe):
-                        if where in placed:  # 同一位置只能有一個探頭（POS-02），同一台內或各台之間
+                        outside = positions.outside_grid(probe, grid)
+                        if outside:  # POS-11：探頭位置不可超出版面
+                            errors.append((f"{pat}.row", outside))
+                        elif where in placed:  # 同一位置只能有一個探頭（POS-02），同一台內或各台之間
                             errors.append((f"{pat}.row", f"位置 第 {where[0]} 排第 {where[1]} 點與 {placed[where]} 重複"))
                         else:
                             placed[where] = pat

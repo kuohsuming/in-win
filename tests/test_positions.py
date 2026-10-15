@@ -1,4 +1,4 @@
-"""探頭位置（3.13 POS-01～POS-03、POS-08、POS-09）：規則、兩層檢查、名稱的存放與套用。"""
+"""探頭位置（3.13 POS-01～POS-03、POS-08～POS-11）：規則、兩層檢查、名稱的存放與套用。"""
 
 import json
 import tempfile
@@ -125,6 +125,79 @@ class DefinitionFileTest(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(bad, schema)
 
+
+class GridTest(unittest.TestCase):
+    """板子版面（POS-10、POS-11）：定義檔、設定頁檢查、預覽、存放。"""
+
+    def test_default_and_json(self):
+        g = Names.default()
+        self.assertEqual((g.grid_rows, g.grid_points), (5, 5))
+        self.assertEqual(Names.from_definition({}).grid_json(), {"rows": 5, "points": 5})
+        got = Names.from_definition({"position_grid": {"rows": 2, "points": 3}})
+        self.assertEqual((got.grid_rows, got.grid_points, got.rows), (2, 3, positions.DEFAULT_ROWS))
+        self.assertEqual(Names.from_definition({"position_grid": {"rows": 6, "points": 3}}).grid_rows, 5)
+        self.assertEqual(g.with_grid(2, 3).grid_text(), "2 排 × 3 點")
+
+    def test_definition_carries_grid(self):
+        names = Names().with_grid(3, 4)
+        self.assertEqual(lan.definition_from(sample_devices(), names)["position_grid"], {"rows": 3, "points": 4})
+        self.assertEqual(lan.screen_layout(sample_devices(), names)["position_grid"], {"rows": 3, "points": 4})
+
+    def test_file_probe_outside_grid_rejected(self):  # POS-11
+        devs = sample_devices()
+        place(devs, DEV_A, 0, 4, 1)
+        place(devs, DEV_A, 1, 1, 5)
+        errs = definition.validate(defn_of(devs, Names().with_grid(3, 4)), NET)
+        self.assertIn(("dl_en1[0].probes[0].row", "第 4 排超出版面 3 排"), errs)
+        self.assertIn(("dl_en1[0].probes[1].row", "第 5 點超出版面每排 4 點"), errs)
+        self.assertEqual(definition.validate(defn_of(devs), NET), [])  # 沒有版面限制（5 × 5）時合格
+
+    def test_bad_grid_rejected_and_schema(self):
+        import jsonschema
+        schema = json.loads(definition.SCHEMA_PATH.read_text(encoding="utf-8"))
+        d = defn_of(sample_devices(), Names().with_grid(2, 3))
+        jsonschema.validate(d, schema)
+        d["position_grid"] = {"rows": 0, "points": 3, "x": 1}
+        errs = definition.validate(d, NET)
+        self.assertIn(("position_grid.rows", "須為 1～5 的整數"), errs)
+        self.assertIn(("position_grid.x", "不允許的欄位"), errs)
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(d, schema)
+
+    def test_settings_check_outside_grid(self):  # POS-11：使用中、維修中檢查；已停用不檢查
+        devs = sample_devices()
+        place(devs, DEV_A, 1, 4, 1)
+        place(devs, OLD, 0, 5, 5)
+        msgs = [(i.mac, i.message) for i in lan.validate(devs, NET, Names().with_grid(3, 5))]
+        self.assertEqual(msgs, [(DEV_A, "第 2 列（ID 2）第 4 排超出版面 3 排")])
+
+    def test_preview_lists_grid_and_unset(self):  # POS-11：預覽列出版面變更與改為未定的探頭
+        old = sample_devices()
+        place(old, DEV_A, 2, 4, 2)
+        new = [d.copy() for d in old]
+        positions.set_pos(by_mac(new)[DEV_A].config["probes"][2], None, None)
+        p = lan.diff(old, new, old_names=Names(), new_names=Names().with_grid(3, 5))
+        lines = [t for item in p.items for t, _ in item.lines]
+        self.assertIn("板子版面：5 排 × 5 點 → 3 排 × 5 點", lines)
+        self.assertTrue(any("位置：排4 點2 → 未定" in t for t in lines), lines)
+
+    def test_grid_saved_and_from_file_when_db_down(self):  # POS-10：存資料庫，資料庫無法連線時取自定義檔
+        with tempfile.TemporaryDirectory() as tmp:
+            files = sync.Files(Path(tmp) / "dl-en1.json", Path(tmp) / "dl-en1.hosts")
+            store = MemoryStore(sample_devices())
+            sync.startup(store, files, NET)
+            devs = store.load()
+            sync.apply(store, files, NET, devs, [d.copy() for d in devs], names=Names().with_grid(2, 3))
+            self.assertEqual(store.load_names().grid_json(), {"rows": 2, "points": 3})
+            store.available = False
+            r = sync.startup(store, files, NET)
+            self.assertEqual(r.names.grid_json(), {"rows": 2, "points": 3})
+
+    def test_initdb_imports_grid(self):  # DEF-10
+        from flatness import initdb
+        store = MemoryStore()
+        initdb.import_if_empty(store, defn_of(sample_devices(), Names().with_grid(4, 4)))
+        self.assertEqual(store.load_names().grid_json(), {"rows": 4, "points": 4})
 
 class SettingsCheckTest(unittest.TestCase):
     """設定頁全體層（lan.validate）：使用中＋維修中的位置不可重複（POS-02）。"""
@@ -281,6 +354,7 @@ class MySQLNamesTest(unittest.TestCase):
         with root.cursor() as cur:
             cur.execute("CREATE DATABASE IF NOT EXISTS flatness_test")
             cur.execute("DROP TABLE IF EXISTS flatness_test.plate_position_name")
+            cur.execute("DROP TABLE IF EXISTS flatness_test.plate_layout")
             cur.execute("DROP TABLE IF EXISTS flatness_test.inspection_point")
             cur.execute("DROP TABLE IF EXISTS flatness_test.inspection")
             cur.execute("CREATE TABLE flatness_test.inspection LIKE flatness.inspection")
@@ -295,11 +369,20 @@ class MySQLNamesTest(unittest.TestCase):
         with self.assertLogs("flatness.store", "WARNING"):
             self.assertEqual(self.store.load_names(), Names.default())
 
+    def test_layout_table_missing_gives_5x5(self):  # POS-10：plate_layout 尚未建立 → 5 × 5，名稱照常
+        with self.root.cursor() as cur:
+            cur.execute("CREATE TABLE flatness_test.plate_position_name LIKE flatness.plate_position_name")
+        with self.assertLogs("flatness.store", "WARNING") as cm:
+            got = self.store.load_names()
+        self.assertEqual((got.grid_rows, got.grid_points), (5, 5))
+        self.assertIn("plate_layout", cm.output[0])
+
     def test_save_and_load(self):  # POS-03
         with self.root.cursor() as cur:
             cur.execute("CREATE TABLE flatness_test.plate_position_name LIKE flatness.plate_position_name")
+            cur.execute("CREATE TABLE flatness_test.plate_layout LIKE flatness.plate_layout")
         self.assertEqual(self.store.load_names(), Names.default())
-        named = Names(("前排", "排2", "排3", "排4", "後排"), ("左", "點2", "中", "點4", "右"))
+        named = Names(("前排", "排2", "排3", "排4", "後排"), ("左", "點2", "中", "點4", "右"), 2, 3)  # POS-10
         with self.store.transaction() as tx:
             tx.save_names(named)
         self.assertEqual(self.store.load_names(), named)

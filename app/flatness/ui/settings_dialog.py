@@ -1664,8 +1664,12 @@ class SettingsDialog(QDialog):
             return
         imported = lan.import_definition(self._devices(), defn)
         self.work = {d.mac: d for d in imported}
-        if "position_names" in defn:  # 帶有排名稱與點名稱時一併套用，沒有時保留目前的名稱（POS-03）
-            self.names = positions.Names.from_json(defn["position_names"])
+        # 帶有排名稱與點名稱（POS-03）、板子版面（POS-10）時一併套用，沒有時保留目前的設定
+        got = positions.Names.from_definition(defn)
+        if "position_names" in defn:
+            self.names = self.names.with_names(got.rows, got.points)
+        if "position_grid" in defn:
+            self.names = self.names.with_grid(got.grid_rows, got.grid_points)
         log.info("匯入定義檔（未儲存）file=%s DL-EN1 %d 台", path, len(defn["dl_en1"]))
         self._import_label = label or f"匯入 {path.name}"
         self._validate()

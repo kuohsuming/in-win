@@ -143,7 +143,7 @@ def screen_layout(devices, names: positions.Names | None = None) -> dict:
         if d.status == MAINT:
             entry["maint"] = True
         out.append(entry)
-    return {"version": 1, "position_names": names.to_json(), "dl_en1": out}
+    return {"version": 1, "position_names": names.to_json(), "position_grid": names.grid_json(), "dl_en1": out}
 
 
 def row_no(key) -> int | None:
@@ -188,10 +188,10 @@ def list_order(devices) -> list[LanDevice]:
 
 
 def definition_from(devices, names: positions.Names | None = None) -> dict:
-    """App 定義檔：只含「DL-EN1 使用中」，依畫面順序（DSC-06）；一律帶排名稱與點名稱（POS-03），
-    資料庫無法連線時沿用。"""
+    """App 定義檔：只含「DL-EN1 使用中」，依畫面順序（DSC-06）；一律帶排名稱與點名稱（POS-03）
+    與板子版面（POS-10），資料庫無法連線時沿用。"""
     names = names or positions.Names.default()
-    return {"version": 1, "position_names": names.to_json(),
+    return {"version": 1, "position_names": names.to_json(), "position_grid": names.grid_json(),
             "dl_en1": [d.definition_entry() for d in live_devices(devices)]}
 
 
@@ -366,7 +366,21 @@ def validate(devices, equip_net: ipaddress.IPv4Interface, names: positions.Names
             other = next(x for x in devs if x is not d)
             shown = value if fld == "ipv4" else row_label(value) if fld == "key" else f"「{value}」"
             issues.append(Issue(d.mac, fld, f"{shown} {occupied_text(other)}", d.label()))
-    return issues + position_conflicts(devices, names)
+    return issues + position_conflicts(devices, names) + outside_grid(devices, names)
+
+
+def outside_grid(devices, names: positions.Names | None = None) -> list[Issue]:
+    """POS-11：「使用中」「維修中」探頭的位置不可超出板子版面（設定頁改小版面時已自動改為未定，此為保險）。"""
+    names = names or positions.Names.default()
+    issues = []
+    for d in list_order(devices):
+        if d.status not in DL_STATUSES or not d.config:
+            continue
+        for i, p in enumerate(d.config.get("probes") or []):
+            why = positions.outside_grid(p, names)
+            if why:
+                issues.append(Issue(d.mac, "probes", f"第 {i + 1} 列（ID {p.get('id')}）{why}", d.label()))
+    return issues
 
 
 def out_of_net(devices, equip_net) -> list[LanDevice]:
@@ -709,13 +723,15 @@ def diff(old_devices, new_devices, standards: dict | None = None,
             tag = "新增" if o.status == UNCLASSIFIED and n.is_dl_en1 else "變更"
             p.items.append(ChangeItem(tag, _title(n), lines))
 
-    name_lines = []  # POS-03：排名稱與點名稱
+    name_lines = []  # POS-03：排名稱與點名稱；POS-10：板子版面
+    if (old_names.grid_rows, old_names.grid_points) != (new_names.grid_rows, new_names.grid_points):
+        name_lines.append((f"板子版面：{old_names.grid_text()} → {new_names.grid_text()}", False))
     for label, a, b in (("排", old_names.rows, new_names.rows), ("點", old_names.points, new_names.points)):
         for i, (x, y) in enumerate(zip(a, b)):
             if x != y:
                 name_lines.append((f"第 {i + 1} {label}名稱：{x} → {y}", False))
     if name_lines:
-        p.items.append(ChangeItem("變更", "排與點名稱", name_lines))
+        p.items.append(ChangeItem("變更", "板子版面與排點名稱", name_lines))
 
     old_order = [d.mac for d in screen_devices(old.values()) if new.get(d.mac) and new[d.mac].is_dl_en1]
     new_order = [d.mac for d in screen_devices(new.values()) if old.get(d.mac) and old[d.mac].is_dl_en1]

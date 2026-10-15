@@ -95,7 +95,7 @@ class StartupResult:
         if self.layout is None:
             self.layout = self.definition
         if self.names is None:
-            self.names = positions.Names.from_json(self.definition.get("position_names"))
+            self.names = positions.Names.from_definition(self.definition)
 
 
 def load_existing(files: Files) -> dict:

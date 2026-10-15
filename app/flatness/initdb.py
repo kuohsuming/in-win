@@ -22,8 +22,9 @@ def import_if_empty(store, definition: dict) -> int:
     new = lan.import_definition(devices, definition)
     with store.transaction() as tx:
         tx.save(devices, new)
-        if "position_names" in definition:  # 排名稱與點名稱一併匯入（POS-03）；沒有時顯示預設名稱
-            tx.save_names(positions.Names.from_json(definition["position_names"]))
+        if "position_names" in definition or "position_grid" in definition:
+            # 排名稱與點名稱（POS-03）、板子版面（POS-10）一併匯入；沒有時為預設名稱與 5 × 5
+            tx.save_names(positions.Names.from_definition(definition))
     return len(definition["dl_en1"])
 
 

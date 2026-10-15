@@ -15,6 +15,15 @@
         "points": { "$ref": "#/$defs/positionNames" }
       }
     },
+    "position_grid": {
+      "type": "object",
+      "required": ["rows", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "rows":   { "type": "integer", "minimum": 1, "maximum": 5 },
+        "points": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
     "dl_en1": {
       "type": "array",
       "minItems": 0,

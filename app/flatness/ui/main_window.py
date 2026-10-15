@@ -1128,7 +1128,7 @@ class MainWindow(QMainWindow):
         探頭依設定的第幾排、第幾點放在第 1～5 排的第 1～5 格；位置未定的放在最下方「未設定位置」區。
         """
         self.layout = layout
-        self.names = positions.Names.from_json(layout.get("position_names"))
+        self.names = positions.Names.from_definition(layout)
         self.devices = [d for d in layout.get("dl_en1", []) if not d.get("maint")]
         self.definition = {"version": 1, "dl_en1": self.devices}
         old = getattr(self, "station", None)
