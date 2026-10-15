@@ -327,6 +327,44 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(self.be.names.rows[0], "前排")
         self.assertEqual(self.saved[-1][0].layout["position_names"]["rows"][0], "前排")
 
+    def test_grid_shrink_unsets_and_saves(self):  # POS-10、POS-11
+        from flatness import positions
+        from flatness.ui.settings_dialog import P_PT, P_ROW, SettingsDialog
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        for x in new:
+            if x.mac == "00:01:FC:DE:3A:76":
+                positions.set_pos(x.config["probes"][0], 4, 2)
+                positions.set_pos(x.config["probes"][1], 1, 2)
+        self.be.apply(old, new)
+        d = SettingsDialog(self.be)
+        d._ask = lambda text: True
+        d.saved.connect(lambda r, p: self.saved.append((r, p)))
+        d.enter_edit()
+        d.select("00:01:FC:DE:3A:76")
+        self.assertEqual(d.grid_boxes["rows"].currentData(), 5)
+        d.grid_boxes["rows"].setCurrentIndex(d.grid_boxes["rows"].findData(3))
+        self.assertEqual(d._row_pos(0), (None, None))                    # 第 4 排超出 3 排 → 未定
+        self.assertEqual(d._row_pos(1), (1, 2))
+        rb = d.probe_table.cellWidget(1, P_ROW)
+        self.assertTrue(rb.view().isRowHidden(4))                        # 選單只列 1～3
+        self.assertFalse(rb.view().isRowHidden(3))
+        self.assertTrue(d.name_edits["rows"][3].isHidden())              # 名稱欄位只顯示 3 個
+        warns = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+        self.assertTrue(any("（原第 4 排第 2 點）超出版面 3 排 × 5 點，改為未定" in w for w in warns), warns)
+        d.grid_boxes["points"].setCurrentIndex(d.grid_boxes["points"].findData(1))
+        self.assertEqual(d._row_pos(1), (None, None))                    # 第 2 點超出每排 1 點
+        warns = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+        self.assertTrue(any("3D 繪圖將無法使用" in w for w in warns), warns)
+        self.assertTrue(d.probe_table.cellWidget(0, P_PT).view().isRowHidden(2))
+        d.btn_save.click()
+        lines = [t for i in d.preview.items for t, _ in i.lines]
+        self.assertIn("板子版面：5 排 × 5 點 → 3 排 × 1 點", lines)
+        d.btn_commit.click()
+        self.assertEqual(self.store.load_names().grid_json(), {"rows": 3, "points": 1})
+        self.assertEqual(self.saved[-1][0].layout["position_grid"], {"rows": 3, "points": 1})
+        d.deleteLater()
+
     def test_names_invalid_blocks_save(self):  # POS-03
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")

@@ -532,7 +532,7 @@ class SettingsDialog(QDialog):
         return f
 
     def _names_block(self) -> QWidget:
-        """排與點名稱（POS-03、POS-09）：全機共用一組，在任一台 DL-EN1 底下修改都是同一組。"""
+        """板子版面（POS-10）與排、點名稱（POS-03、POS-09）：全機共用一組，在任一台 DL-EN1 底下修改都是同一組。"""
         box = QFrame()
         box.setObjectName("namesBox")
         box.setStyleSheet(f"QFrame#namesBox {{ border:1px solid {C['line']}; border-radius:6px; background:{C['panel']}; }}")
@@ -540,10 +540,27 @@ class SettingsDialog(QDialog):
         g.setContentsMargins(10, 8, 10, 8)
         g.setHorizontalSpacing(6)
         g.setVerticalSpacing(6)
-        g.addWidget(_label("排與點名稱（全機共用；主畫面排頭、3D 標籤、匯出檔使用）", "label", True), 0, 0, 1, 7)
+        g.addWidget(_label("板子版面與排、點名稱（全機共用；探頭位置選項、主畫面、3D、匯出檔使用）", "label", True),
+                    0, 0, 1, 7)
+        grid_row = QHBoxLayout()  # POS-10：幾排、每排幾點
+        self.grid_boxes: dict[str, QComboBox] = {}
+        for kind, title in (("rows", "排數"), ("points", "每排點數")):
+            grid_row.addWidget(_label(title, "label"))
+            sel = QComboBox()
+            sel.setObjectName(f"grid_{kind}")
+            for v in range(1, positions.SIZE + 1):
+                sel.addItem(str(v), v)
+            sel.setFixedWidth(80)
+            sel.currentIndexChanged.connect(lambda _i: self._on_grid_changed())
+            self.grid_boxes[kind] = sel
+            grid_row.addWidget(sel)
+            grid_row.addSpacing(12)
+        grid_row.addWidget(_label("改小時，超出版面的探頭改為未定", "note"))
+        grid_row.addStretch()
+        g.addLayout(grid_row, 1, 0, 1, 7)
         self.name_edits: dict[str, list[QLineEdit]] = {}
         self.btn_names_default: dict[str, QPushButton] = {}
-        for r, (kind, title) in enumerate((("rows", "排名稱"), ("points", "點名稱")), start=1):
+        for r, (kind, title) in enumerate((("rows", "排名稱"), ("points", "點名稱")), start=2):
             g.addWidget(_label(title, "label"), r, 0)
             edits = []
             for i in range(positions.SIZE):
@@ -953,16 +970,20 @@ class SettingsDialog(QDialog):
             used = self._occupied(skip_row=r)
             rb.blockSignals(True)
             pb.blockSignals(True)
+            nr, np_ = self.names.grid_rows, self.names.grid_points
             for i in range(1, positions.SIZE + 1):
-                full = all((i, k) in used for k in range(1, positions.SIZE + 1))
+                full = all((i, k) in used for k in range(1, np_ + 1))
                 rb.setItemText(i, f"{i}（{self.names.row(i)}，已滿）" if full else f"{i}（{self.names.row(i)}）")
                 rb.model().item(i).setForeground(model_color(full))
+                rb.model().item(i).setEnabled(i <= nr)
+                rb.view().setRowHidden(i, i > nr)  # POS-10：只列出版面內的排
             row = rb.currentData()
             for k in range(1, positions.SIZE + 1):
                 who = used.get((row, k)) if row else None
                 pb.setItemText(k, f"{k}（已由 {who} 使用）" if who else f"{k}（{self.names.point(k)}）")
-                pb.model().item(k).setEnabled(who is None or pb.currentData() == k)
+                pb.model().item(k).setEnabled(k <= np_ and (who is None or pb.currentData() == k))
                 pb.model().item(k).setForeground(model_color(who is not None))
+                pb.view().setRowHidden(k, k > np_)  # POS-10：只列出版面內的點
             rb.blockSignals(False)
             pb.blockSignals(False)
 
@@ -999,26 +1020,72 @@ class SettingsDialog(QDialog):
     # ---------------------------------------------------------------- 排與點名稱（POS-03）
 
     def _fill_names(self):
+        size = {"rows": self.names.grid_rows, "points": self.names.grid_points}
+        for kind, box in self.grid_boxes.items():
+            box.blockSignals(True)
+            box.setCurrentIndex(box.findData(size[kind]))
+            box.blockSignals(False)
+            box.setEnabled(not self.read_only)
         for kind, edits in self.name_edits.items():
-            for e, v in zip(edits, getattr(self.names, kind)):
+            for i, (e, v) in enumerate(zip(edits, getattr(self.names, kind))):
                 if e.text() != v:
                     e.setText(v)
                 e.setReadOnly(self.read_only)
+                e.setVisible(i < size[kind])  # 版面外的名稱不顯示但保留（POS-10）
             self.btn_names_default[kind].setEnabled(not self.read_only)
+
+    def _on_grid_changed(self):
+        """POS-10、POS-11：改版面；超出新版面的探頭（各台，含已停用）立即改為未定，檢查訊息列出。"""
+        if self._filling:
+            return
+        self._on_field_edited()  # 先把選取中設備的探頭清單寫回
+        self.names = self.names.with_grid(self.grid_boxes["rows"].currentData(), self.grid_boxes["points"].currentData())
+        n = 0
+        for d in self.work.values():
+            probes = [dict(p) for p in (d.config or {}).get("probes") or []]
+            out = [p for p in probes if positions.outside_grid(p, self.names)]
+            for p in out:
+                positions.set_pos(p, None, None)
+            if out:
+                d.config = {**d.config, "probes": probes}
+                n += len(out)
+        log.info("設備設定：板子版面改為 %s（未儲存），%d 個探頭改為未定", self.names.grid_text(), n)
+        self._fill_names()
+        if n:
+            self.toast.show_text(f"版面改為 {self.names.grid_text()}：{n} 個探頭超出版面，已改為未定")
+        self._after_change(rebuild_detail=True)
+
+    def _grid_warnings(self) -> list[str]:
+        """POS-11：本次因版面改小而改為未定的探頭（與儲存前的位置比較），以及版面只有 1 排或 1 點的提示。"""
+        out = []
+        for mac, d in self.work.items():
+            o = self.original.get(mac)
+            if not d.config or o is None or not o.config:
+                continue
+            now = {p.get("id"): p for p in d.config.get("probes") or []}
+            for p in o.config.get("probes") or []:
+                where = positions.pos(p)
+                q = now.get(p.get("id"))
+                if where and positions.outside_grid(p, self.names) and q is not None and not positions.pos(q):
+                    call = positions.device_call(d.config.get("key"), d.config.get("name"), q.get("description"))
+                    out.append(f"{call}（原第 {where[0]} 排第 {where[1]} 點）超出版面 {self.names.grid_text()}，改為未定")
+        if self.names.grid_rows == 1 or self.names.grid_points == 1:
+            out.append(f"版面只有 {'1 排' if self.names.grid_rows == 1 else '每排 1 點'}，探頭都在同一直線上，"
+                       "3D 繪圖將無法使用")
+        return out
 
     def _on_names_edited(self):
         if self._filling:
             return
         rows = tuple(e.text().strip() for e in self.name_edits["rows"])
         points = tuple(e.text().strip() for e in self.name_edits["points"])
-        self.names = positions.Names(rows, points)
+        self.names = self.names.with_names(rows, points)
         self._refresh_pos_options()
         self._after_change()
 
     def _names_default(self, kind: str):
         d = positions.Names.default()
-        self.names = positions.Names(d.rows if kind == "rows" else self.names.rows,
-                                     d.points if kind == "points" else self.names.points)
+        self.names = self.names.with_names(d.rows if kind == "rows" else None, d.points if kind == "points" else None)
         self._fill_names()
         self._refresh_pos_options()
         self._after_change()
@@ -1128,6 +1195,10 @@ class SettingsDialog(QDialog):
         self._add_ip_warnings()
 
     def _add_ip_warnings(self):
+        for text in self._grid_warnings():  # POS-11
+            item = QListWidgetItem(f"⚠ {text}（仍可儲存）")
+            item.setForeground(self._qcolor(C["warn"]))
+            self.msg_list.addItem(item)
         for i in self._ip_warnings():
             item = QListWidgetItem(f"⚠ {i.text()}（仍可儲存）")
             item.setForeground(self._qcolor(C["warn"]))
