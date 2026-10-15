@@ -46,7 +46,7 @@ STATUS_HELP = {
 }
 COLS = ("", "設備", "名稱", "MAC", "IPv4", "最後出現", "次數")
 # 探頭清單的欄（POS-01：第幾排、第幾點）
-P_ID, P_DESC, P_ROW, P_PT, P_CAL, P_BTN, P_TOL = range(7)
+P_ID, P_EN, P_DESC, P_ROW, P_PT, P_CAL, P_BTN, P_TOL = range(8)
 
 
 def fmt_time(ts: datetime | None, full: bool = False) -> str:
@@ -124,6 +124,7 @@ class _Relay(QObject):
     """背景執行緒（ARP 探測）回到畫面執行緒。"""
     probed = Signal(str, object)
     calibrated = Signal(object)    # 校準完成（calibrate.CalResult）
+    scanned = Signal(str, object)  # 探頭偵測完成（MAC, measure.ProbeScan 或錯誤訊息，PDT-01）
 
 
 class SettingsDialog(QDialog):
@@ -152,6 +153,9 @@ class SettingsDialog(QDialog):
         self._filling = False
         self._relay = _Relay()
         self._relay.probed.connect(self._on_probed)
+        self._relay.scanned.connect(self._on_scanned)
+        self._scans: dict = {}     # MAC → 最近一次探頭偵測結果（PDT-01，只供顯示每列的狀態）
+        self._scanning: str | None = None
         self._refresh_timer = QTimer(self, singleShot=True, interval=300, timeout=self._auto_refresh)
 
         self.setStyleSheet(f"#settings {{ background: {C['panel']}; border: 1px solid {C['line']}; }}")
@@ -447,7 +451,17 @@ class SettingsDialog(QDialog):
         self.max_spin.setButtonSymbols(QAbstractSpinBox.NoButtons)
         self.max_spin.setMaximumWidth(120)
         self.max_spin.valueChanged.connect(self._on_probe_count)  # 探頭清單跟著增減（EDT-06）
-        self._form_row("探頭數量", self.max_spin)
+        count_row = QWidget()
+        cr = QHBoxLayout(count_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        cr.addWidget(self.max_spin)
+        self.enabled_label = _label("", "note")   # 「（啟用 M）」（PDT-03）
+        cr.addWidget(self.enabled_label)
+        self.btn_scan = _btn("探頭偵測", "small", self._scan_probes)  # PDT-01
+        self.btn_scan.setToolTip("讀取這台 DL-EN1 實際連接的放大器數量與各探頭狀態，更新下方清單（儲存後生效）")
+        cr.addWidget(self.btn_scan)
+        cr.addStretch()
+        self._form_row("探頭數量", count_row)
         d.addLayout(form)
 
         self.note_box = _label("", None, True)
@@ -461,18 +475,18 @@ class SettingsDialog(QDialog):
         pb.setSpacing(6)
         pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
                             "label", True))
-        pt = self.probe_table = QTableWidget(0, 7)
-        pt.setHorizontalHeaderLabels(("探頭 ID", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"))
+        pt = self.probe_table = QTableWidget(0, 8)
+        pt.setHorizontalHeaderLabels(("探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"))
         pt.verticalHeader().hide()
         pt.setSelectionBehavior(QAbstractItemView.SelectRows)
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
         pt.setMinimumHeight(180)
         pt.setMaximumHeight(180)
-        for col, width in ((P_ID, 70), (P_ROW, 118), (P_PT, 118), (P_CAL, 180), (P_BTN, 90), (P_TOL, 110)):
+        for col, width in ((P_ID, 70), (P_EN, 118), (P_ROW, 118), (P_PT, 118), (P_CAL, 150), (P_BTN, 80), (P_TOL, 100)):
             pt.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
             pt.setColumnWidth(col, width)
         pt.horizontalHeader().setSectionResizeMode(P_DESC, QHeaderView.Stretch)
-        pt.itemChanged.connect(lambda _item: self._on_field_edited())
+        pt.itemChanged.connect(self._on_item_changed)
         pt.itemSelectionChanged.connect(self._update_probe_buttons)
         pb.addWidget(pt)
         prow = QHBoxLayout()
@@ -837,8 +851,11 @@ class SettingsDialog(QDialog):
         self.probe_table.setRowCount(0)
         for p in cfg.get("probes") or []:
             zero = {f: p[f] for f in lan.ZERO_FIELDS if f in p} or None
+            scan = self._scans.get(d.mac)
             self._append_probe_row(p.get("id"), p.get("description", ""), zero, lan.probe_tolerance(p),
-                                   p.get("row"), p.get("point"))
+                                   p.get("row"), p.get("point"), positions.is_enabled(p),
+                                   (scan.short(p["id"]), scan.text(p["id"])) if scan and p.get("id") in scan.states
+                                   else ("", ""))
         self._refresh_pos_options()
         self._fill_names()
         self.replace_row.setVisible(SHOW_REPLACE and d.status == LIVE and self.original.get(d.mac) is not None
@@ -884,9 +901,17 @@ class SettingsDialog(QDialog):
         idx = self.row_box.findData(key)
         self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
-    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE, row=None, point=None):
+    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE, row=None, point=None,
+                          enabled=True, status=("", "")):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
+        en = QTableWidgetItem(status[0])  # PDT-02：啟用勾選；文字為探頭偵測的狀態（短字，完整說明在提示）
+        en.setFlags((en.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
+        en.setCheckState(Qt.Checked if enabled else Qt.Unchecked)
+        if status[0] and status[0] != "正常":
+            en.setForeground(self._qcolor(C["ng"]))
+        en.setToolTip((f"探頭偵測：{status[1]}\n" if status[1] else "") + "勾選才量測、判定、設定位置，並顯示在主畫面與 3D")
+        self.probe_table.setItem(r, P_EN, en)
         id_item = QTableWidgetItem("" if pid is None else str(pid))
         id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # ID 自動編號，不可手動修改
         id_item.setFont(self._num_font())
@@ -968,6 +993,9 @@ class SettingsDialog(QDialog):
             if rb is None or pb is None:
                 continue
             used = self._occupied(skip_row=r)
+            on = self._row_enabled(r) and not self.read_only  # PDT-03：未啟用的探頭位置固定未定
+            rb.setEnabled(on)
+            pb.setEnabled(on)
             rb.blockSignals(True)
             pb.blockSignals(True)
             nr, np_ = self.names.grid_rows, self.names.grid_points
@@ -1195,7 +1223,7 @@ class SettingsDialog(QDialog):
         self._add_ip_warnings()
 
     def _add_ip_warnings(self):
-        for text in self._grid_warnings():  # POS-11
+        for text in self._grid_warnings() + self._probe_warnings():  # POS-11、PDT-03、PDT-06
             item = QListWidgetItem(f"⚠ {text}（仍可儲存）")
             item.setForeground(self._qcolor(C["warn"]))
             self.msg_list.addItem(item)
@@ -1242,8 +1270,18 @@ class SettingsDialog(QDialog):
 
     def _update_probe_buttons(self):
         """選取探頭列時即更新「刪除探頭」可用狀態；數量 1～15（EDT-06）。"""
-        self.btn_probe_del.setEnabled(self.probe_table.currentRow() >= 0 and self.probe_table.rowCount() > 1
-                                      and not self.read_only)
+        last = self.probe_table.rowCount() - 1  # PDT-05：只能刪最後一支
+        cur = self.probe_table.currentRow()
+        self.btn_probe_del.setEnabled(cur == last and last >= 1 and not self.read_only)
+        self.btn_probe_del.setToolTip("刪除最後一支探頭（拆掉最末端的放大器時）" if cur == last or cur < 0 else
+                                      "中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）")
+        d = self.work.get(self.selected)
+        self.btn_scan.setEnabled(bool(d and d.status == LIVE and d.ipv4 and self.calibrator is not None
+                                      and not self.read_only and self._scanning is None))
+        self.btn_scan.setToolTip("讀取這台 DL-EN1 實際連接的放大器數量與各探頭狀態，更新下方清單（儲存後生效）"
+                                 if self.calibrator is not None else "量測來源無法偵測探頭")
+        n_on = sum(self._row_enabled(r) for r in range(self.probe_table.rowCount()))
+        self.enabled_label.setText(f"（啟用 {n_on}）")
         self.btn_probe_add.setEnabled(self.probe_table.rowCount() < 15 and not self.read_only)
         why = self._cannot_calibrate()
         saved_ids = self._saved_probe_ids()
@@ -1251,6 +1289,8 @@ class SettingsDialog(QDialog):
             b = self.probe_table.cellWidget(r, P_BTN)
             if b is not None:
                 reason = why or (None if r + 1 in saved_ids else "新增的探頭請先儲存")
+                if reason is None and not self._row_enabled(r):
+                    reason = "未啟用的探頭不能校準"  # PDT-03
                 b.setEnabled(reason is None)
                 b.setToolTip(reason or "以標準件校準此探頭（歸零）")
 
@@ -1455,6 +1495,9 @@ class SettingsDialog(QDialog):
                 if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設值（0.5 mm）不寫入
                     probe["tolerance"] = tol.currentData()
                 row, pt = self._row_pos(r)  # POS-01：未定時不寫入；只設其一照實寫入，由檢查擋下
+                if not self._row_enabled(r):  # PDT-03：未啟用的探頭沒有位置
+                    probe["enabled"] = False
+                    row = pt = None
                 if row is not None:
                     probe["row"] = row
                 if pt is not None:
@@ -1495,13 +1538,6 @@ class SettingsDialog(QDialog):
         self._filling = False
         self._on_field_edited()
 
-    def _renumber_probes(self):
-        """呼叫端須已設定 _filling，避免逐格觸發重新檢查。"""
-        for r in range(self.probe_table.rowCount()):
-            item = self.probe_table.item(r, P_ID)
-            if item is not None:
-                item.setText(str(r + 1))
-
     def _add_probe(self):
         if self.probe_table.rowCount() >= 15:
             return
@@ -1509,18 +1545,114 @@ class SettingsDialog(QDialog):
         self.probe_table.setCurrentCell(self.probe_table.rowCount() - 1, P_DESC)
 
     def _del_probe(self):
-        """刪除選取的探頭：後面的探頭 ID 往前遞補（放大器拆除後 ID 依串接順序重排），數量減 1。"""
+        """PDT-05：只能刪除最後一支（拆掉最末端的放大器）；中間的探頭請取消啟用，ID 由放大器的位置決定。"""
         r = self.probe_table.currentRow()
-        if r < 0 or self.probe_table.rowCount() <= 1:
+        if r != self.probe_table.rowCount() - 1 or r < 1:
             return
         self._filling = True
         self.probe_table.removeRow(r)
-        for k in range(r, self.probe_table.rowCount()):  # CAL-06：ID 遞補的探頭對應的實體已改變
-            self._set_zero(k, None)
-        self._renumber_probes()
         self.max_spin.setValue(self.probe_table.rowCount())
         self._filling = False
         self._on_field_edited()
+
+    # ---------------------------------------------------------------- 啟用與探頭偵測（PDT）
+
+    def _row_enabled(self, r: int) -> bool:
+        item = self.probe_table.item(r, P_EN)
+        return item is None or item.checkState() == Qt.Checked
+
+    def _on_item_changed(self, item):
+        if self._filling:
+            return
+        if item.column() == P_EN and not self._row_enabled(item.row()):  # PDT-03：取消勾選 → 位置改為未定
+            for c in (P_ROW, P_PT):
+                w = self.probe_table.cellWidget(item.row(), c)
+                if w is not None:
+                    w.blockSignals(True)
+                    w.setCurrentIndex(0)
+                    w.setProperty("last", None)
+                    w.blockSignals(False)
+        self._on_field_edited()
+        if item.column() == P_EN:
+            self._update_probe_buttons()
+
+    def _scan_probes(self):
+        """PDT-01：讀取選取的那一台實際連接的放大器數量與各 ID 狀態（背景執行，只用讀取命令）。"""
+        d = self.work.get(self.selected)
+        if d is None or not d.is_dl_en1 or not d.ipv4 or self.calibrator is None or self._scanning:
+            return
+        station, cfg = self.calibrator(), d.config or {}
+        mac, ip, port, key = d.mac, d.ipv4, cfg.get("port"), cfg.get("key")
+        self._scanning = mac
+        self.btn_scan.setText("偵測中…")
+        self._update_probe_buttons()
+
+        def work():
+            try:
+                res = station.scan(ip, port, key)
+            except Exception as exc:  # 連不上或設備回應錯誤：維持清單
+                log.warning("探頭偵測 %s（%s）失敗：%s", mac, ip, exc)
+                res = str(exc)
+            self._relay.scanned.emit(mac, res)
+
+        threading.Thread(target=work, daemon=True, name="probe-scan").start()
+
+    def _on_scanned(self, mac: str, res):
+        self._scanning = None
+        self.btn_scan.setText("探頭偵測")
+        d = self.work.get(mac)
+        who = lan.row_label((d.config or {}).get("key")) if d else mac
+        if isinstance(res, str):
+            self.toast.show_text(f"偵測不到{who}，清單未變更")
+            self._update_probe_buttons()
+            return
+        self.apply_scan(mac, res)
+
+    def apply_scan(self, mac: str, scan):
+        """依探頭偵測結果，從清單末端新增或移除探頭（PDT-01）：新增的狀態正常者啟用，感測頭錯誤者不啟用（PDT-02）。
+        只改畫面上的清單，儲存後生效。"""
+        self._scans[mac] = scan
+        d = self.work.get(mac)
+        if d is None or not d.config:
+            return
+        probes = [dict(p) for p in d.config.get("probes") or []]
+        before = len(probes)
+        while len(probes) < scan.count:
+            pid = len(probes) + 1
+            p = {"id": pid, "description": f"探頭 {pid}"}
+            if scan.states.get(pid, "ok") != "ok":
+                p["enabled"] = False
+            probes.append(p)
+        del probes[max(scan.count, 1):]
+        d.config = {**d.config, "probes": probes, "max_probes": len(probes)}
+        n = len(probes)
+        log.info("設備設定：探頭偵測 %s 連接 %d 台（清單 %d → %d，未儲存）", mac, scan.count, before, n)
+        bad = sum(1 for pid in range(1, n + 1) if scan.states.get(pid, "ok") != "ok")
+        msg = f"偵測到 {scan.count} 支探頭" + (f"（{bad} 支異常）" if bad else "")
+        msg += "，清單未變更" if n == before else f"，清單 {before} → {n} 支（儲存後生效）"
+        self.toast.show_text(msg)
+        if mac == self.selected:
+            self._render_detail()
+        self._after_change()
+
+    def _probe_warnings(self) -> list[str]:
+        """PDT-06：從清單末端移除的探頭（與儲存前比較）；PDT-03：沒有啟用探頭的設備。"""
+        out = []
+        for mac, d in self.work.items():
+            if not d.is_dl_en1 or not d.config:
+                continue
+            cfg, o = d.config, self.original.get(mac)
+            now = {p.get("id") for p in cfg.get("probes") or []}
+            for p in ((o.config or {}).get("probes") or []) if o and o.is_dl_en1 else []:
+                if p.get("id") not in now:
+                    where = positions.pos(p)
+                    at = f"（原第 {where[0]} 排第 {where[1]} 點）" if where else ""
+                    out.append(f"將移除：{lan.row_label(cfg.get('key'))} ID {p['id']} {p.get('description', '')}{at}。"
+                               "若拔掉的是中間的放大器，後面探頭的 ID 會往前補，請確認位置並重新校準")
+            if d.status in (LIVE, MAINT) and cfg.get("probes") and not positions.enabled_probes(cfg["probes"]):
+                out.append(f"{positions.device_label(cfg.get('key'), cfg.get('name'))} 沒有啟用的探頭，"
+                           "主畫面不會顯示這一台的探頭")
+        return out
 
     def _toggle_hidden(self):
         """隱藏：只影響清單顯示，按下即寫入資料庫、不需儲存（DSC-13）。"""

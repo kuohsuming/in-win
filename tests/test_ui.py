@@ -149,30 +149,32 @@ class SettingsDialogTest(UiBase):
     def test_probe_count_drives_list_and_saves(self):  # EDT-06
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
+        from flatness.ui.settings_dialog import P_DESC
         d.max_spin.setValue(6)                                  # 增加：末端新增「探頭 5」「探頭 6」
-        rows = [(d.probe_table.item(r, 0).text(), d.probe_table.item(r, 1).text())
+        rows = [(d.probe_table.item(r, 0).text(), d.probe_table.item(r, P_DESC).text())
                 for r in range(d.probe_table.rowCount())]
         self.assertEqual(rows[-2:], [("5", "探頭 5"), ("6", "探頭 6")])
         self.assertTrue(d.btn_save.isEnabled())
         self.assertEqual(d.issues, [])
-        d.max_spin.setValue(5)                                  # 減少：移除末端
-        self.assertEqual(d.probe_table.rowCount(), 5)
-        d.probe_table.setCurrentCell(1, 1)                      # 刪除第 2 個（左中）：後面的 ID 往前遞補
+        d.probe_table.setCurrentCell(1, P_DESC)                 # PDT-05：中間的探頭不能刪除
+        self.assertFalse(d.btn_probe_del.isEnabled())
+        self.assertIn("取消啟用", d.btn_probe_del.toolTip())
+        d.probe_table.setCurrentCell(5, P_DESC)                 # 最後一支可以刪除
         d.btn_probe_del.click()
-        self.assertEqual(d.max_spin.value(), 4)
-        self.assertEqual([d.probe_table.item(r, 0).text() for r in range(4)], ["1", "2", "3", "4"])
-        self.assertEqual(d.probe_table.item(1, 1).text(), "右中")
+        self.assertEqual(d.max_spin.value(), 5)
+        self.assertEqual([d.probe_table.item(r, 0).text() for r in range(5)], ["1", "2", "3", "4", "5"])
         self.assertFalse(d.probe_table.item(0, 0).flags() & Qt.ItemIsEditable)  # ID 不可手動修改
         self.save()
         cfg = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config
-        self.assertEqual(cfg["max_probes"], 4)
-        self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "右中", "右", "探頭 5"])
+        self.assertEqual(cfg["max_probes"], 5)
+        self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "左中", "右中", "右", "探頭 5"])
 
     def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 0.5 mm
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.horizontalHeaderItem(6).text(), "允許誤差")
-        box = d.probe_table.cellWidget(1, 6)
+        from flatness.ui.settings_dialog import P_TOL
+        self.assertEqual(d.probe_table.horizontalHeaderItem(P_TOL).text(), "允許誤差")
+        box = d.probe_table.cellWidget(1, P_TOL)
         self.assertEqual([box.itemText(i) for i in range(box.count())],
                          ["0.1 mm", "0.2 mm", "0.5 mm", "1 mm", "2 mm", "5 mm", "10 mm", "20 mm", "50 mm"])
         self.assertEqual(box.currentData(), 0.5)
@@ -188,7 +190,7 @@ class SettingsDialogTest(UiBase):
         std = self.be.standards()["row-2"]
         self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.5, 0.5), (-0.2, 0.2)))
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.cellWidget(1, 6).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
+        self.assertEqual(d.probe_table.cellWidget(1, P_TOL).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
 
     def test_port_field_hidden_but_kept(self):  # 2026-10-07 PO：設定頁不顯示 TCP 埠
         d = self.dlg
@@ -256,7 +258,7 @@ class SettingsDialogTest(UiBase):
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         headers = [d.probe_table.horizontalHeaderItem(c).text() for c in range(d.probe_table.columnCount())]
-        self.assertEqual(headers, ["探頭 ID", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"])
+        self.assertEqual(headers, ["探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"])
         self.assertEqual([self.pos_box(0, c).currentText() for c in ("row", "point")], ["未定", "未定"])
         self.assertEqual(self.pos_box(0, "row").count(), 6)  # 未定、1～5
 
@@ -289,24 +291,56 @@ class SettingsDialogTest(UiBase):
     def test_auto_description(self):  # POS-09
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
+        from flatness.ui.settings_dialog import P_DESC
         d._add_probe()                                    # 新增探頭「探頭 5」
         r = d.probe_table.rowCount() - 1
-        self.assertEqual(d.probe_table.item(r, 1).text(), "探頭 5")
+        self.assertEqual(d.probe_table.item(r, P_DESC).text(), "探頭 5")
         self.set_pos(r, 4, 2)
-        self.assertEqual(d.probe_table.item(r, 1).text(), "點2")
+        self.assertEqual(d.probe_table.item(r, P_DESC).text(), "點2")
         self.set_pos(0, 4, 1)                             # 原本叫「左」：自己取的名稱不覆蓋
-        self.assertEqual(d.probe_table.item(0, 1).text(), "左")
+        self.assertEqual(d.probe_table.item(0, P_DESC).text(), "左")
 
-    def test_delete_middle_probe_keeps_positions(self):  # PROPOSAL §5.8：位置跟著原本那一列走
+    def test_disable_middle_probe_keeps_others(self):  # PDT-03、PDT-05：中間的探頭取消啟用，其餘位置不動
+        from flatness.ui.settings_dialog import P_DESC, P_EN, P_ROW
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
+        self.set_pos(1, 3, 2)
         self.set_pos(2, 3, 3)
-        self.set_pos(3, 3, 4)
-        d.probe_table.setCurrentCell(1, 1)
-        d._del_probe()
+        d.probe_table.setCurrentCell(1, P_DESC)
+        d._del_probe()                                    # 中間的探頭不刪除
+        self.assertEqual(d.probe_table.rowCount(), 4)
+        d.probe_table.item(1, P_EN).setCheckState(Qt.Unchecked)
+        self.assertEqual(d._row_pos(1), (None, None))     # 位置改為未定
+        self.assertFalse(d.probe_table.cellWidget(1, P_ROW).isEnabled())
+        self.assertEqual(d.enabled_label.text(), "（啟用 3）")
         cfg = d.work["00:01:FC:DE:3A:76"].config
-        self.assertEqual([(p["id"], p["description"], p.get("row"), p.get("point")) for p in cfg["probes"]],
-                         [(1, "左", None, None), (2, "右中", 3, 3), (3, "右", 3, 4)])
+        self.assertEqual([(p["id"], p["description"], p.get("row"), p.get("point"), p.get("enabled", True))
+                          for p in cfg["probes"]],
+                         [(1, "左", None, None, True), (2, "左中", None, None, False), (3, "右中", 3, 3, True),
+                          (4, "右", None, None, True)])
+        d.btn_save.click()
+        lines = [t for i in d.preview.items for t, _ in i.lines]
+        self.assertIn("第 2 台 中排 左中（ID 2）啟用：是 → 否", lines)
+
+    def test_probe_scan(self):  # PDT-01、PDT-02、PDT-06：依偵測結果從末端新增、移除；感測頭錯誤者不啟用
+        from flatness import measure
+        from flatness.ui.settings_dialog import P_EN
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        d.apply_scan("00:01:FC:DE:3A:76", measure.ProbeScan(6, {1: "ok", 2: "ok", 3: "ok", 4: "ok", 5: "ok",
+                                                                 6: "head"}))
+        self.assertEqual(d.probe_table.rowCount(), 6)
+        self.assertEqual([d.probe_table.item(r, P_EN).checkState() == Qt.Checked for r in range(6)],
+                         [True] * 5 + [False])
+        self.assertEqual(d.probe_table.item(5, P_EN).text(), "感測頭錯誤")
+        self.assertIn("感測頭錯誤（未接或故障）", d.probe_table.item(5, P_EN).toolTip())
+        self.assertEqual(d.max_spin.value(), 6)
+        self.set_pos(3, 2, 4)
+        d.apply_scan("00:01:FC:DE:3A:76", measure.ProbeScan(3, {1: "ok", 2: "ok", 3: "ok"}))
+        self.assertEqual(d.probe_table.rowCount(), 3)
+        warns = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+        self.assertTrue(any("將移除：第 2 台 ID 4 右" in w and "中間的放大器" in w for w in warns), warns)
+        self.assertTrue(d.is_dirty())
 
     def test_names_edit_and_save(self):  # POS-03
         d = self.dlg
@@ -1414,12 +1448,14 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         return d
 
     def btn(self, d, row):
-        return d.probe_table.cellWidget(row, 5)
+        from flatness.ui.settings_dialog import P_BTN
+        return d.probe_table.cellWidget(row, P_BTN)
 
-    def test_calibrate_adopt_and_clear_on_renumber(self):
+    def test_calibrate_adopt_and_delete_last(self):
         st = self.Station()
         d = self.dialog(st)
-        self.assertEqual(d.probe_table.item(1, 4).text(), "未校準")
+        from flatness.ui.settings_dialog import P_CAL, P_DESC
+        self.assertEqual(d.probe_table.item(1, P_CAL).text(), "未校準")
         self.assertTrue(self.btn(d, 1).isEnabled())
         self.btn(d, 1).click()                                   # 只校準探頭 2（CAL-A7）
         self.assertEqual(st.calls, [("row-2", 2, 20), ("row-2", 2, 5)])
@@ -1430,14 +1466,13 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.assertIn("zeroed_at", probes[1])
         self.assertNotIn("zero_offset", probes[0])
         self.assertEqual(len(self.saved), 1)                     # 主畫面以新的歸零基準重建
-        self.assertNotEqual(d.probe_table.item(1, 4).text(), "未校準")
+        self.assertNotEqual(d.probe_table.item(1, P_CAL).text(), "未校準")
         (rec,) = self.store.calibrations
         self.assertEqual((rec["probe_id"], rec["result"], rec["adopted"]), (2, "PASS", True))
         self.assertFalse(d.is_dirty())                           # 通過即寫入，不需儲存
-        d.probe_table.setCurrentCell(0, 1)                       # 刪除探頭 1：原探頭 2 遞補為 1，偏移量清除
+        d.probe_table.setCurrentCell(d.probe_table.rowCount() - 1, P_DESC)  # 刪除最後一支（PDT-05）
         d.btn_probe_del.click()
-        self.assertEqual(d.probe_table.item(0, 4).text(), "未校準")
-        self.assertIsNone(d.probe_table.item(0, 0).data(Qt.UserRole))
+        self.assertNotEqual(d.probe_table.item(1, P_CAL).text(), "未校準")    # 其餘探頭的校準保留
         for r in range(d.probe_table.rowCount()):                # 有未儲存變更：不可校準
             self.assertFalse(self.btn(d, r).isEnabled())
         self.assertIn("先儲存", self.btn(d, 0).toolTip())
@@ -1453,7 +1488,8 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.assertNotIn("zero_offset", by_mac(self.store.load())[self.MAC].config["probes"][0])
         self.assertIn("讀值不穩定", self.msgs[-1][1])
         self.assertIn("未校準", self.msgs[-1][1])
-        self.assertEqual(d.probe_table.item(0, 4).text(), "未校準")
+        from flatness.ui.settings_dialog import P_CAL
+        self.assertEqual(d.probe_table.item(0, P_CAL).text(), "未校準")
         self.assertEqual(len(self.saved), 2)
         self.assertEqual([(r["result"], r["adopted"]) for r in self.store.calibrations],
                          [("PASS", True), ("FAIL", False)])
@@ -1472,4 +1508,5 @@ class CalibrationUiTest(UiBase):  # CAL-01、CAL-05、CAL-06、CAL-08
         self.addCleanup(d.deleteLater)
         d.enter_edit()
         d.select(self.MAC)
-        self.assertFalse(d.probe_table.cellWidget(0, 5).isEnabled())   # 示範以外沒有校準來源
+        from flatness.ui.settings_dialog import P_BTN
+        self.assertFalse(d.probe_table.cellWidget(0, P_BTN).isEnabled())   # 示範以外沒有校準來源

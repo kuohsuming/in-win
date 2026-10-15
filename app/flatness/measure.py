@@ -45,6 +45,10 @@ class ProbeScan:
             return "感測頭錯誤（未接或故障）"
         return f"放大器錯誤（代碼 {st.split(':', 1)[1]}）"
 
+    def short(self, pid: int) -> str:
+        """探頭清單「啟用」欄的短字：正常／感測頭錯誤／放大器錯誤（完整說明見 text）。"""
+        return self.text(pid).split("（", 1)[0]
+
 
 @dataclass
 class DeviceStatus:
