@@ -29,14 +29,14 @@
 
 ![主畫面：合格](images/app-main-pass.png)
 
-由上而下：頂端工具列 → 編號列 → 結果橫幅 → 依探頭位置的第 1～5 排（每排 5 格），最後是「未設定位置」區（`lan.screen_layout` 含設備、維修中與排與點名稱，POS-04；只有排與探頭區可捲動）。連線與量測只用使用中的設備（`Backend.definition`，即 `dl-en1.json`）。
+由上而下：頂端工具列 → 編號列 → 結果橫幅 → 有探頭的排（欄為有探頭的點，POS-12），最後是「未設定位置」區（`lan.screen_layout` 含設備、維修中、排與點名稱與板子版面，POS-04；只有排與探頭區可捲動）。連線與量測只用使用中的設備（`Backend.definition`，即 `dl-en1.json`）。
 
 | 部位 | 類別 | 說明 |
 | --- | --- | --- |
 | 頂端工具列 | `MainWindow._topbar()` | 標題、系統狀態提示（`set_flag()`；`dev`：偵測不到／整台設備異常、`maint`：維修中、`ip`：IP 不符等，POS-05）、設備狀態摘要、「偵測設備」「取出測試數據」「板子尺寸」、鉛筆按鍵 |
 | 編號列 | `MainWindow._serialbar()` | 17 碼編號（DAT-01）、重讀次數、每秒更新的時鐘 |
 | 結果橫幅 | `Banner.set(state, …)` | `detecting`／`booting`／`idle`／`countdown`／`reading`／`pass`／`fail`／`error`，按鍵可用性依 5.3 |
-| 排 | `PositionRow` | 排名稱與「第 N 排」，固定 5 格（空格為虛線框）；「未設定位置」區每列 5 個（POS-04）。`MainWindow.tiles` 為使用中的方塊（`(key, 探頭 id)`），`dev_tiles` 為每台的所有方塊（含維修中），整台的狀態依此標在方塊上（POS-05） |
+| 排 | `PositionRow` | 排名稱與「第 N 排」，欄為 `MainWindow.cols`（任一排有探頭的點），空格為透明空位；各格等寬（`min_width` 供縮放檢查）；「未設定位置」區每列個數等於欄數（POS-04、POS-12）。`MainWindow.tiles` 為使用中的方塊（`(key, 探頭 id)`），`dev_tiles` 為每台的所有方塊（含維修中），整台的狀態依此標在方塊上（POS-05） |
 | 探頭方塊 | `ProbeTile` | 大字位置名稱、小字「第 N 台 名稱」；`set_blank()`、`set_result(state, value, note, …)`、`set_maint()`、`set_ip(text)`（IP 不符附加標示）、`set_down(bool)`（偵測不到時不加 IP 標示）、`fade()`（5.5）；`set_scale(k)` 依比例調整字級與間距 |
 | 自動縮放 | `MainWindow.fit_to_screen()` | 視窗或排區大小改變、重建排後執行；二分搜尋最大的比例 `scale_k`（無條件捨去），使至少 4 列不需捲動（UI-11）；排高固定為該比例所需（量測前先處理各排待處理的樣式與版面事件，避免沿用上一個比例的高度） |
 | 刻度條 | `ScaleBar` | 5.6 公式，`paintEvent` 繪製 |
@@ -71,7 +71,7 @@
 | 清單按鍵 | 隱藏／取消隱藏、上移、下移、刪除（皆按下即寫入資料庫；上移／下移只影響本清單，主畫面依探頭位置；刪除先以 `_confirm_delete` 確認，經 `Backend.apply(..., deleted=[mac])` 在同一交易內刪除並更新檔案，DSC-18）、「顯示已隱藏（N）」 |
 | 第幾台 | `row_box` 下拉選單第 1～10 台（`lan.ROW_KEYS`，存為 `row-1`～`row-10`，POS-06）；佔用的停用（`_fill_rows`）；預設 `lan.free_row` |
 | 探頭 | 「探頭數量」`max_spin` 決定清單筆數（`_on_probe_count`）；ID 自動 1～N、不可編輯；刪除探頭後 ID 往前遞補（EDT-06）。欄位常數 `P_ID`～`P_TOL`；「第幾排」「第幾點」為每列兩個 `QComboBox`（`_row_pos`），佔用規則 `_occupied`／`_refresh_pos_options`，選點時 `positions.auto_description` 自動帶入名稱（POS-01、POS-02、POS-09） |
-| 排與點名稱 | 探頭清單下方 `_names_block()`；編輯中的值 `self.names`，資料庫中的 `self.names_original`；有變更才在儲存時傳給 `Backend.apply(..., names=)`（POS-03） |
+| 板子版面與排、點名稱 | 探頭清單下方 `_names_block()`（`names_box`，預設隱藏，`btn_names` 切換）；版面選單 `grid_boxes`，改版面 `_on_grid_changed()` 把超出的探頭改為未定，`_grid_warnings()` 列出；編輯中的值 `self.names`（`positions.Names`，含 `grid_rows`、`grid_points`），資料庫中的 `self.names_original`；有變更才在儲存時傳給 `Backend.apply(..., names=)`（POS-03、POS-10、POS-11）。資料庫：`plate_position_name`、`plate_layout` |
 | 校準 | 探頭表「校準」欄（`P_CAL`）顯示校準狀態，操作欄（`P_BTN`）「校準」鍵（`_calibrate`）：確認 → 背景執行 `calibrate.run`（經主畫面的 Station 共用 DL-EN1 連線：確認放大器歸零設定 → 清除歸零 → 取樣 → 歸零 → 驗證）→ 放大器的歸零已清除時 `_save_zero` 立即 `backend.apply` 並發出 `saved`（通過記下歸零基準，否則清除）→ 結果；每次都寫 `calibration` 紀錄（CAL-01～CAL-08）。歸零基準存於探頭列 ID 欄的 `Qt.UserRole`，刪除中間探頭時遞補者清除（CAL-06） |
 | 偵測到的設備 | 唯讀資訊框（MAC、KEYENCE 提示、首次／最後出現、主機名稱、廠商識別）＋ 表單；依設備類型顯示欄位（`QFormLayout.setRowVisible`） |
 | IPv4 檢查 | 先比對資料表（顯示佔用者），再於離開欄位時在背景做 ARP 探測（`Backend.probe_async`） |

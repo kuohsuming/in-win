@@ -107,9 +107,11 @@ button,select{font:inherit}
 .row.ipbad{border:4px solid var(--warn)} .row.ipbad h2 .unit.tagged{background:var(--warn)}
 .row.maint h2{color:var(--ink-2)} .row.maint h2 .unit.tagged{background:var(--warn-soft);color:var(--warn)}
 .maintbox{border:2px dashed var(--line);background:var(--panel-2);border-radius:6px;display:grid;place-items:center;font-size:22px;font-weight:700;color:var(--ink-2);min-height:150px}
-.probes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.probes{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:10px}
 .slot{border:2px dashed var(--line);border-radius:6px;min-height:120px} .slot.none{border:0}
 .names{margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:6px;background:var(--panel)}
+.names .gridrow{display:flex;align-items:center;gap:8px;font-size:14px} .names .gridrow select{width:64px}
+.btn.pen.on{background:var(--line)}
 .names .nmrow{display:grid;grid-template-columns:56px repeat(5,minmax(0,1fr)) auto;gap:6px;align-items:center;font-size:14px}
 .names input{min-width:0;font:inherit;padding:4px 6px;border:2px solid var(--line);border-radius:4px;background:var(--panel-2);color:var(--ink)}
 .names input.bad{border-color:var(--ng);background:var(--ng-soft)}
@@ -452,7 +454,7 @@ dialog.pl{width:min(480px,92vw)}
 <dialog id="plDlg" class="pl" aria-labelledby="plTitle">
   <div class="dlg">
     <h3 id="plTitle">板子尺寸</h3>
-    <div class="pl-note">只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點（5 × 5 格）。</div>
+    <div class="pl-note" id="plNote">只影響 3D 繪圖，不影響判定。</div>
     <div class="pl-grid" id="plGrid"></div>
     <div class="pl-err" id="plErr"></div>
     <div class="btns"><button type="button" id="plCancel">取消</button><button type="button" class="primary" id="plSave">儲存</button></div>
@@ -478,7 +480,11 @@ const devCall=(c,p)=>`${devTag(c)} ${p.description}`;                           
 const posOf=p=>p.row&&p.point?[p.row,p.point]:null;
 /* 排與點名稱（POS-03、POS-09）：全機共用一組，預設 排1～排5、點1～點5 */
 const DEF_NAMES={rows:["排1","排2","排3","排4","排5"],points:["點1","點2","點3","點4","點5"]};
-let NAMES={rows:["前排","中排","後排","排4","排5"],points:[...DEF_NAMES.points]};
+let NAMES={rows:["前排","中排","後排","排4","排5"],points:[...DEF_NAMES.points],grid:{rows:5,points:5}};   // grid：板子版面（POS-10）
+const gridText=g=>`${g.rows} 排 × ${g.points} 點`;
+const outGrid=(p,g)=>posOf(p)&&(p.row>g.rows||p.point>g.points);   // 位置超出版面（POS-11）
+let namesOpen=false;
+const SHOW_REPLACE=false;                                        // 「替換…」區塊暫時隱藏（2026-10-15 PO）                                             // 設定頁「板子版面與排、點名稱」區塊：預設隱藏，按筆圖示開啟
 const dispName=(c,p)=>posOf(p)?`${NAMES.rows[p.row-1]} ${p.description}`:devCall(c,p);   // 顯示名稱（給作業員）
 
 /* ================= 設備資料（模擬資料表 lan_device；DL-EN1 設定的主檔） ================= */
@@ -557,13 +563,15 @@ function buildRows(){
   const placed={}, un=[], L=live();
   shown().forEach(d=>{ const ri=L.indexOf(d);
     [...d.cfg.probes].sort((a,b)=>a.id-b.id).forEach(p=>{ const i=d.cfg.probes.indexOf(p), h=tileHtml(d,p,ri>=0?`p${ri}-${i}`:""), w=posOf(p);
-      if(w&&!placed[w]) placed[w]=h; else un.push(h); }); });
-  let html="";
-  for(let r=1;r<=PSIZE;r++){ const cells=[]; let any=false;
-    for(let k=1;k<=PSIZE;k++){ const h=placed[[r,k]]; if(h) any=true; cells.push(h||`<div class="slot"></div>`); }
-    if(any) html+=`<section class="row"><h2>${esc(NAMES.rows[r-1])}<span class="unit">第 ${r} 排</span></h2><div class="probes">${cells.join("")}</div></section>`; }
-  for(let i=0;i<un.length;i+=PSIZE){ const ch=un.slice(i,i+PSIZE); while(ch.length<PSIZE) ch.push(`<div class="slot none"></div>`);
-    html+=`<section class="row unassigned"><h2>${i?"":"未設定位置"}<span class="unit">${i?"":"請在設備設定<br>設定探頭位置"}</span></h2><div class="probes">${ch.join("")}</div></section>`; }
+      if(w&&!outGrid(p,NAMES.grid)&&!placed[w]) placed[w]=h; else un.push(h); }); });
+  let html="";   // POS-12：只畫有探頭的排與點；這一排沒有探頭的點為透明空位，各排同欄對齊
+  const keys=Object.keys(placed).map(w=>w.split(",").map(Number));
+  const rowsU=[...new Set(keys.map(w=>w[0]))].sort((a,b)=>a-b), cols=[...new Set(keys.map(w=>w[1]))].sort((a,b)=>a-b);
+  const per=cols.length||PSIZE;
+  rowsU.forEach(r=>{ const cells=cols.map(k=>placed[[r,k]]||`<div class="slot none"></div>`);
+    html+=`<section class="row"><h2>${esc(NAMES.rows[r-1])}<span class="unit">第 ${r} 排</span></h2><div class="probes" style="--cols:${per}">${cells.join("")}</div></section>`; });
+  for(let i=0;i<un.length;i+=per){ const ch=un.slice(i,i+per); while(ch.length<per) ch.push(`<div class="slot none"></div>`);
+    html+=`<section class="row unassigned"><h2>${i?"":"未設定位置"}<span class="unit">${i?"":"請在設備設定<br>設定探頭位置"}</span></h2><div class="probes" style="--cols:${per}">${ch.join("")}</div></section>`; }
   $("#rows").innerHTML=html;
   paintIp();
 }
@@ -802,6 +810,11 @@ function validate(list){
   list.filter(isDL).forEach(d=>d.cfg.probes.forEach((p,pi)=>{ const w=posOf(p); if(w) (own[w]??=[]).push({d,p,pi}); }));
   Object.values(own).filter(a=>a.length>1).forEach(a=>a.forEach(x=>{ const o=a.find(y=>y!==x);
     E.push({mac:x.d.mac,f:"probe-pos",pi:x.pi,msg:`第 ${x.pi+1} 列（ID ${x.p.id}）${draftNames.rows[x.p.row-1]} ${draftNames.points[x.p.point-1]} 已由 ${devCall(o.d.cfg,o.p)} 使用`}); }));
+  const G=draftNames.grid;   // POS-11：因版面改小而改為未定的探頭（與資料庫中的位置比較）；1 排或 1 點時 3D 無法使用
+  list.filter(d=>d.cfg).forEach(d=>{ const o=DB.find(x=>x.mac===d.mac); (o?.cfg?.probes||[]).forEach(q=>{
+    const p=d.cfg.probes.find(x=>x.id===q.id);
+    if(p&&outGrid(q,G)&&!posOf(p)) E.push({mac:d.mac,f:"probe-pos",warn:true,msg:`${devCall(d.cfg,p)}（原第 ${q.row} 排第 ${q.point} 點）超出版面 ${gridText(G)}，改為未定（仍可儲存）`}); }); });
+  if(G.rows===1||G.points===1) E.push({mac:null,f:"names",warn:true,msg:`版面只有 ${G.rows===1?"1 排":"每排 1 點"}，探頭都在同一直線上，3D 繪圖將無法使用（仍可儲存）`});
   return E.concat(nameErrs());
 }
 const errorsOnly=E=>E.filter(e=>!e.warn);
@@ -863,7 +876,7 @@ function detectNew(){                  // 探索執行緒寫入資料庫後，�
   toast(n?`偵測到 ${n} 台新設備，已以「不明設備」加入清單`:"沒有新的設備");
 }
 function openEditor(){ if(busy||detecting) return;
-  draft=clone(DB); draftNames=clone(NAMES); replaced=[]; ipCheck={}; replMode=false; selP=-1; dirty=false; edStep="pw";
+  draft=clone(DB); draftNames=clone(NAMES); namesOpen=false; replaced=[]; ipCheck={}; replMode=false; selP=-1; dirty=false; edStep="pw";
   const V=visible(); selMac=((V.find(d=>d.status==="active"))||V[0]||{}).mac||null;
   renderEd(); $("#edDlg").showModal(); }
 async function closeEditor(){
@@ -974,9 +987,10 @@ function renderDetail(){
     h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span></h4>
       <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:100px">允許誤差</th></tr></thead><tbody id="pBody">
       ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
-        const full=r=>[1,2,3,4,5].every(k=>used[[r,k]]);
-        const rowSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="row" data-p="${pi}"><option value="">未定</option>${[1,2,3,4,5].map(r=>`<option value="${r}" ${p.row===r?"selected":""}>${r}（${esc(draftNames.rows[r-1])}${full(r)?"，已滿":""}）</option>`).join("")}</select>`;
-        const ptSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="point" data-p="${pi}"><option value="">未定</option>${[1,2,3,4,5].map(k=>{const w=p.row?used[[p.row,k]]:null;
+        const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
+        const full=r=>PN.every(k=>used[[r,k]]);
+        const rowSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="row" data-p="${pi}"><option value="">未定</option>${RN.map(r=>`<option value="${r}" ${p.row===r?"selected":""}>${r}（${esc(draftNames.rows[r-1])}${full(r)?"，已滿":""}）</option>`).join("")}</select>`;
+        const ptSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="point" data-p="${pi}"><option value="">未定</option>${PN.map(k=>{const w=p.row?used[[p.row,k]]:null;
           return `<option value="${k}" ${p.point===k?"selected":""} ${w&&p.point!==k?"disabled":""}>${k}${w?`（已由 ${esc(w)} 使用）`:`（${esc(draftNames.points[k-1])}）`}</option>`;}).join("")}</select>`;
         return `<tr data-prow="${pi}" class="${pi===selP?"on":""}">
         <td class="mono">${p.id}</td>
@@ -987,10 +1001,14 @@ function renderDetail(){
         <td><select data-tol="${pi}">${TOLS.map(t=>`<option value="${t}" ${tolOf(p)===t?"selected":""}>${t} mm</option>`).join("")}</select></td></tr>`;}).join("")}
       </tbody></table></div>
       <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP<0?"disabled":""}>刪除探頭</button>
-        ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}</div>
-      <div class="names"><b>排與點名稱</b><span class="stdesc">（全機共用；主畫面排頭、3D 標籤、匯出檔使用）</span>
-        ${["rows","points"].map(k=>`<div class="nmrow"><span>${k==="rows"?"排名稱":"點名稱"}</span>${draftNames[k].map((v,i)=>`<input class="${nameErrs().some(e=>e.k===k&&e.i===i)?"bad":""}" data-nm="${k}" data-i="${i}" maxlength="10" value="${esc(v)}">`).join("")}<button class="btn sm" type="button" data-ed="nmdef" data-k="${k}">恢復預設</button></div>`).join("")}</div>`;
-    if(d.status==="active"){
+        ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
+        <button class="btn sm pen${namesOpen?" on":""}" type="button" data-ed="nmtoggle" title="編輯板子版面與排、點名稱" aria-pressed="${namesOpen}" style="margin-left:auto">✎</button></div>
+      ${namesOpen?`<div class="names"><b>板子版面與排、點名稱</b><span class="stdesc">（全機共用；探頭位置選項、主畫面、3D、匯出檔使用）</span>
+        <div class="gridrow">排數 <select data-grid="rows">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.rows===v?"selected":""}>${v}</option>`).join("")}</select>
+          每排點數 <select data-grid="points">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.points===v?"selected":""}>${v}</option>`).join("")}</select>
+          <span class="stdesc">改小時，超出版面的探頭改為未定</span></div>
+        ${["rows","points"].map(k=>`<div class="nmrow"><span>${k==="rows"?"排名稱":"點名稱"}</span>${draftNames[k].map((v,i)=>i<draftNames.grid[k]?`<input class="${nameErrs().some(e=>e.k===k&&e.i===i)?"bad":""}" data-nm="${k}" data-i="${i}" maxlength="10" value="${esc(v)}">`:`<span></span>`).join("")}<button class="btn sm" type="button" data-ed="nmdef" data-k="${k}">恢復預設</button></div>`).join("")}</div>`:""}`;
+    if(d.status==="active"&&SHOW_REPLACE){   // 「替換…」暫時隱藏（2026-10-15 PO）
       const cands=draft.filter(x=>x!==d&&["unknown","other","retired"].includes(x.status))
         .sort((a,b)=>isKeyence(b.mac)-isKeyence(a.mac)||String(b.last).localeCompare(String(a.last)));
       h+=replMode?`<div class="repl"><b>替換 ${esc(devTag(c))}</b>
@@ -1014,7 +1032,7 @@ function renderMsgs(){
   const E=validate(draft), errs=errorsOnly(E), box=$("#msgs"), cnt=s=>draft.filter(d=>d.status===s).length, act=draft.filter(d=>d.status==="active");
   box.className="msgs "+(errs.length?"has":"ok");
   const line=e=>{const d=draft.find(x=>x.mac===e.mac);
-    const where=d?`${esc(devLabel(d))} › ${FLD[e.f]||"已安裝的探頭"}：`:(e.f==="names"?"排與點名稱：":"");
+    const where=d?`${esc(devLabel(d))} › ${FLD[e.f]||"已安裝的探頭"}：`:(e.f==="names"?"板子版面與排、點名稱：":"");
     return `<li class="${e.warn?"w":""}" data-goto="${esc(e.mac||"")}">${e.warn?"⚠":"✘"} ${where}${esc(e.msg)}</li>`;};
   box.innerHTML=(E.length?`<ul>${E.map(line).join("")}</ul>`:"")+(errs.length?"":`<div class="okline">✔ 檢查通過：DL-EN1 使用中 ${act.length} 台（${act.reduce((n,d)=>n+d.cfg.probes.length,0)} 個探頭）、維修中 ${cnt("maint")} 台、已停用 ${cnt("retired")} 台、其他設備 ${cnt("other")} 台、不明設備 ${cnt("unknown")} 台，可以儲存。</div>`);
   $("#bApply").disabled=!dirty;   // 有尚未儲存的變更即可按（EDT-04）；有錯時按下列出錯誤
@@ -1053,9 +1071,10 @@ function diff(oldL,newL){
       Object.keys(op).forEach(id=>{ if(!(id in np)){ ch.push(`移除探頭 ${id}「${esc(op[id].description)}」`); if(n.status==="active") removed.push(`${esc(a.name)} ${esc(op[id].description)}`);} }); }
     if(ch.length) items.push(`<b class="k-mod">變更</b>　${nm(n)}　${n.mac}：${ch.join("；")}`);
   });
-  const nl=[];   // 排與點名稱（POS-03）
+  const nl=[];   // 排與點名稱（POS-03）、板子版面（POS-10）
+  if(gridText(NAMES.grid)!==gridText(draftNames.grid)) nl.push(`板子版面：${gridText(NAMES.grid)} → ${gridText(draftNames.grid)}`);
   ["rows","points"].forEach(k=>NAMES[k].forEach((v,i)=>{ if(v!==draftNames[k][i]) nl.push(`第 ${i+1} ${k==="rows"?"排":"點"}名稱：${esc(v)} → ${esc(draftNames[k][i])}`); }));
-  if(nl.length) items.push(`<b class="k-mod">變更</b>　排與點名稱：${nl.join("；")}`);
+  if(nl.length) items.push(`<b class="k-mod">變更</b>　板子版面與排點名稱：${nl.join("；")}`);
   return {items,rst,power,removed};
 }
 function applyDraft(){                  // 先寫入畫面上未寫入的結果（UPL-02），再寫資料庫 → 產生檔案 → 重啟 dnsmasq
@@ -1107,6 +1126,11 @@ edBody.addEventListener("change",e=>{
   if(t.id==="showHid"){ showHidden=t.checked; renderEd(); return; }
   if(t.dataset.f==="ipv4"&&d){ probeIp(d); return; }
   if(t.dataset.f==="key"&&d){ d.cfg.key=t.value; touch(); renderDetail(); return; }
+  if(t.dataset.grid){   // POS-10、POS-11：改版面；超出的探頭（各台）立即改為未定
+    draftNames.grid[t.dataset.grid]=+t.value; let n=0;
+    draft.forEach(x=>(x.cfg?.probes||[]).forEach(p=>{ if(outGrid(p,draftNames.grid)){ delete p.row; delete p.point; n++; } }));
+    if(n) toast(`版面改為 ${gridText(draftNames.grid)}：${n} 個探頭超出版面，已改為未定`);
+    touch(); renderDetail(); return; }
   if(t.dataset.pos&&d){   // POS-01、POS-02、POS-09
     const p=d.cfg.probes[+t.dataset.p], v=t.value?+t.value:null, oldPt=p.point||null;
     if(t.dataset.pos==="row"){ if(v) p.row=v; else delete p.row;
@@ -1156,6 +1180,7 @@ $("#edDlg").addEventListener("click",async e=>{
     const P=d.cfg.probes; P.splice(selP,1); P.forEach((p,i)=>{ if(p.id!==i+1){ p.id=i+1; p.zero=null; p.zeroed_at=null; } });
     selP=-1; touch(); renderDetail(); return; }
   if(a==="cal"&&d){ calibrate(+b.dataset.p); return; }
+  if(a==="nmtoggle"){ namesOpen=!namesOpen; renderDetail(); return; }
   if(a==="nmdef"){ draftNames[b.dataset.k]=[...DEF_NAMES[b.dataset.k]]; touch(); renderDetail(); return; }
   if(a==="repl"){ replMode=true; renderDetail(); return; }
   if(a==="replno"){ replMode=false; renderDetail(); return; }
@@ -1239,6 +1264,7 @@ function plUpdate(){ const errs=[];
   Object.keys(PL_DEF).forEach(k=>{ const e=$(`#pl_${k}`), [,err]=plCheck(k,e.value); e.classList.toggle("bad",!!err); if(err) errs.push(err); });
   $("#plErr").textContent=errs.join("、"); $("#plSave").disabled=errs.length>0; return errs; }
 function openPlate(){ if(busy||detecting) return;
+  $("#plNote").textContent=`只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點；板子版面目前為 ${gridText(NAMES.grid)}（在設備設定修改）。`;
   $("#plGrid").innerHTML=Object.keys(PL_DEF).map(k=>{ const [lo,hi]=PL_LIM[k];
     return `<label for="pl_${k}">${PL_LABEL[k]}</label><input id="pl_${k}" inputmode="decimal" autocomplete="off" value="${fmm(PLATE[k])}" placeholder="${fmm(lo)}～${fmm(hi)}">
       <span class="u">mm（${fmm(lo)}～${fmm(hi)}，${PL_HINT[k]}）</span>`; }).join("");
@@ -1258,9 +1284,9 @@ const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9;
 const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。";
 const EL3=15, AZ0=-45, STEP_DEG=30, STEP_MS=700, SHADE3={lo:140,hi:228,relief:6,light:[-0.55,0.75,0.6]}, FADE_GRAY=184, FADE_KEEP=0.4;
 
-/* POS-07：每個探頭的第幾排、第幾點，固定 5 × 5 格：x = 長 ×（點 − 0.5）／5、y = 寬 ×（排 − 0.5）／5 */
+/* POS-07、POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點：x = 長 ×（點 − 0.5）／P、y = 寬 ×（排 − 0.5）／R */
 function probeXY(){ const out={};
-  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[PLATE.length*(p.point-.5)/PSIZE, PLATE.width*(p.row-.5)/PSIZE]; }));
+  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[PLATE.length*(p.point-.5)/NAMES.grid.points, PLATE.width*(p.row-.5)/NAMES.grid.rows]; }));   // POS-13
   return out; }
 /* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據；位置未定的探頭另列（POS-07） */
 function snapshot3d(){ const xy=probeXY(), pts=[], unplaced=[];

@@ -51,10 +51,14 @@ class Shots(test_ui.UiBase):
         stations[-1].force = "pass"; w.next_piece(); wait_state("pass")
         dlg = ExportDialog(w.sink, w); dlg.show(); shot("export", dlg)
         dlg.close()
+        from flatness.plate3d.plate_dialog import PlateDialog
+        from flatness.plate3d.config import PlateConfig as _P
+        pd = PlateDialog(_P(), grid=be.names); pd.show(); shot("plate-size", pd); pd.close()
         s = SettingsDialog(be); s.resize(560, 300); s.show(); shot("settings-password", s)
         s.enter_edit(); s.resize(1920, 1080)
         live = next(d for d in devs if d.status == lan.LIVE)
         s.select(live.mac); shot("settings-edit", s)
+        s.btn_names.click(); shot("settings-grid", s); s.btn_names.click()  # 板子版面與排、點名稱（POS-10）
         unk = next((d for d in devs if d.status == lan.UNCLASSIFIED), None)
         if unk: s.select(unk.mac); shot("settings-unknown", s)
         s.select(live.mac)
