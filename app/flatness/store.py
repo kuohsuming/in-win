@@ -395,12 +395,24 @@ class MySQLStore:
             conn.commit()
         except pymysql.MySQLError as exc:
             conn.rollback()
-            raise StoreError(f"資料庫寫入失敗：{exc}") from exc
+            raise StoreError(_write_error(exc)) from exc
         except BaseException:
             conn.rollback()
             raise
         finally:
             conn.close()
+
+
+def _write_error(exc) -> str:
+    """寫入失敗的說明：資料表不存在（MySQL 1146，升級後尚未執行 sql/in-win.sql）時說明處理方式。"""
+    if exc.args and exc.args[0] == 1146:
+        import re
+        m = re.search(r"Table '[^.']*\.?([^']+)' doesn't exist", str(exc.args[-1]))
+        table = m.group(1) if m else "新的資料表"
+        return (f"資料庫還沒有升級（缺少資料表 {table}），這次的修改沒有儲存。"
+                "請工程人員在終端機執行：cd ~/in-win 然後 sudo mysql < sql/in-win.sql"
+                "（可重複執行，不會刪改資料），完成後再儲存一次。")
+    return f"資料庫寫入失敗：{exc}"
 
 
 class _MySQLTx:

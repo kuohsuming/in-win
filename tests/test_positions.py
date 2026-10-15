@@ -377,6 +377,15 @@ class MySQLNamesTest(unittest.TestCase):
         self.assertEqual((got.grid_rows, got.grid_points), (5, 5))
         self.assertIn("plate_layout", cm.output[0])
 
+    def test_save_without_layout_table_explains(self):  # 升級後尚未執行 sql/in-win.sql：白話說明處理方式
+        with self.root.cursor() as cur:
+            cur.execute("CREATE TABLE flatness_test.plate_position_name LIKE flatness.plate_position_name")
+        with self.assertRaises(StoreError) as cm:
+            with self.store.transaction() as tx:
+                tx.save_names(Names().with_grid(3, 3))
+        self.assertIn("資料庫還沒有升級（缺少資料表 plate_layout）", str(cm.exception))
+        self.assertIn("sudo mysql < sql/in-win.sql", str(cm.exception))
+
     def test_save_and_load(self):  # POS-03
         with self.root.cursor() as cur:
             cur.execute("CREATE TABLE flatness_test.plate_position_name LIKE flatness.plate_position_name")
