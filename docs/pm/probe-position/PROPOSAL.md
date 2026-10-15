@@ -1,8 +1,8 @@
 # 提案：探頭位置改為每個探頭設定第幾排、第幾點
 
 > 表面平整檢查系統的設定與畫面調整。探頭在板子下方的位置，由工程人員在「設備設定」逐一設定「第幾排」「第幾點」，不再由所屬 DL-EN1 的位置與探頭順序推定。
-> 對應需求：需求規格書 3.13 探頭位置（POS-01～POS-09，**待確認**）。全部條文簽核前不實作。
-> 狀態：草稿 rev 7（2026-10-15，依 spectra-review 第 1～5 輪修訂；第 5 輪 0 BLOCKER、0 CONCERN；第 10 節已由 PO 決定）。變更紀錄：`docs/release/changes/2026-10-15-probe-position-requirements.md`。審查紀錄：`docs/reviews/probe-position/`。
+> 對應需求：需求規格書 3.13 探頭位置（POS-01～POS-09，2026-10-15 PO 逐條簽核）。
+> 狀態：rev 7，需求已簽核（2026-10-15，依 spectra-review 第 1～5 輪修訂；第 5 輪 0 BLOCKER、0 CONCERN；第 10 節已由 PO 決定）。變更紀錄：`docs/release/changes/2026-10-15-probe-position-requirements.md`。審查紀錄：`docs/reviews/probe-position/`。
 
 ---
 
