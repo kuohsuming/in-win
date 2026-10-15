@@ -278,14 +278,15 @@ def _entry_issues(d: LanDevice, equip_net) -> list[tuple[str, str]]:
         out = []
         for where, why in exc.errors:
             fld = where.removeprefix("dl_en1[0].") if where.startswith("dl_en1[0].") else where
-            m = re.match(r"probes\[(\d+)\]\.(id|description|row|point)", fld)
+            m = re.match(r"probes\[(\d+)\]\.(id|description|row|point|enabled)", fld)
             if m:
                 pid = (entry.get("probes") or [])[int(m.group(1))].get("id")
                 at = f"第 {int(m.group(1)) + 1} 列（ID {pid}）"
-                if m.group(2) in ("row", "point"):
+                if m.group(2) in ("row", "point", "enabled"):
                     if "重複" in why:
                         continue  # 位置重複由 validate 以佔用者訊息顯示（POS-02）
-                    text = f"{at}{POS_INCOMPLETE}" if "同時" in why else f"{at}位置{why}"
+                    text = (f"{at}{POS_INCOMPLETE}" if "同時" in why else f"{at}{why}" if "啟用" in why or "true" in why
+                            else f"{at}位置{why}")
                     if ("probes", text) not in out:
                         out.append(("probes", text))
                     continue
@@ -711,6 +712,10 @@ def diff(old_devices, new_devices, standards: dict | None = None,
                     lines.append((f"{call(cn, pb[pid])}（ID {pid}）允許誤差：{ta[pid]:g} mm → {tb[pid]:g} mm", False))
             qa = {x["id"]: x for x in co.get("probes") or []}
             qb = {x["id"]: x for x in cn.get("probes") or []}
+            for pid in sorted(qb):  # PDT-03：啟用變更（新增的探頭不啟用時也列出）
+                ea, eb = positions.is_enabled(qa.get(pid) or {}), positions.is_enabled(qb[pid])
+                if ea != eb and not (pid not in qa and eb):
+                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）啟用：{'是' if ea else '否'} → {'是' if eb else '否'}", False))
             for pid in sorted(qb):  # POS-01：位置變更（新增的探頭有設定位置時也列出）
                 a, b = _pos_text(old_names, qa.get(pid)), _pos_text(new_names, qb[pid])
                 if a != b and not (pid not in qa and b == positions.UNSET):

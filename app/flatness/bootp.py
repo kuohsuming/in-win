@@ -140,7 +140,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                         errors.append((pat, "必須是物件"))
                         continue
                     for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at", "tolerance",
-                                                      "row", "point"}):
+                                                      "row", "point", "enabled"}):
                         errors.append((f"{pat}.{extra}", "不允許的欄位"))
                     errors += [(f"{pat}.{f}", why) for f, why in positions.probe_errors(probe)]
                     where = positions.pos(probe)

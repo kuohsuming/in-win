@@ -4,6 +4,7 @@
     - 每個探頭在設定中可有 row、point（1～5，兩者同時存在或同時省略；省略即未定，POS-01、POS-08）
     - 排名稱、點名稱全機共用一組，預設 排1～排5、點1～點5（POS-03、POS-09）
     - 板子版面：幾排、每排幾點（各 1～5，預設 5 × 5，POS-10）；探頭位置不可超出版面（POS-11）
+    - 探頭可設為不啟用（`enabled: false`，省略為啟用，PDT-02）；未啟用的探頭沒有位置（PDT-03）
     - 顯示名稱（給作業員）與設備稱呼（給設定頁）見 PROPOSAL §5.2
 """
 
@@ -142,9 +143,32 @@ def outside_grid(probe: dict, names: "Names") -> str | None:
     return None
 
 
+def is_enabled(probe: dict) -> bool:
+    """探頭是否啟用（PDT-02）：`enabled` 省略為啟用。"""
+    return probe.get("enabled", True) is not False
+
+
+def set_enabled(probe: dict, on: bool) -> None:
+    """設定啟用；啟用時不寫入欄位（與升級前的設定相同），不啟用時位置改為未定（PDT-03）。"""
+    if on:
+        probe.pop("enabled", None)
+    else:
+        probe["enabled"] = False
+        set_pos(probe, None, None)
+
+
+def enabled_probes(probes) -> list[dict]:
+    return [p for p in probes or [] if is_enabled(p)]
+
+
 def probe_errors(probe: dict) -> list[tuple[str, str]]:
-    """探頭 row、point 的錯誤 [(欄位, 原因)]：範圍 1～5、同時存在或同時省略（POS-01、POS-08）。"""
+    """探頭 enabled、row、point 的錯誤 [(欄位, 原因)]：範圍 1～5、同時存在或同時省略（POS-01、POS-08），
+    未啟用的探頭不可有位置（PDT-03）。"""
     out = []
+    if "enabled" in probe and not isinstance(probe["enabled"], bool):
+        out.append(("enabled", "須為 true 或 false"))
+    elif not is_enabled(probe) and ("row" in probe or "point" in probe):
+        out.append(("row", "未啟用的探頭不可設定位置"))
     has_r, has_p = "row" in probe, "point" in probe
     if has_r != has_p:
         out.append(("point" if has_r else "row", "排與點須同時設定或同時省略"))

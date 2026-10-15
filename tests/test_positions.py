@@ -199,6 +199,46 @@ class GridTest(unittest.TestCase):
         initdb.import_if_empty(store, defn_of(sample_devices(), Names().with_grid(4, 4)))
         self.assertEqual(store.load_names().grid_json(), {"rows": 4, "points": 4})
 
+class EnabledTest(unittest.TestCase):
+    """探頭啟用（PDT-02、PDT-03）：欄位、定義檔、設定頁檢查、預覽。"""
+
+    def test_helpers(self):
+        p = {"id": 1, "description": "左", "row": 1, "point": 2}
+        self.assertTrue(positions.is_enabled(p))
+        positions.set_enabled(p, False)
+        self.assertEqual(p, {"id": 1, "description": "左", "enabled": False})   # 位置改為未定
+        positions.set_enabled(p, True)
+        self.assertEqual(p, {"id": 1, "description": "左"})                     # 啟用不寫入欄位
+
+    def test_definition_rules_and_schema(self):
+        import jsonschema
+        schema = json.loads(definition.SCHEMA_PATH.read_text(encoding="utf-8"))
+        devs = sample_devices()
+        positions.set_enabled(by_mac(devs)[DEV_A].config["probes"][1], False)
+        d = defn_of(devs)
+        self.assertEqual(definition.validate(d, NET), [])
+        jsonschema.validate(d, schema)
+        d["dl_en1"][0]["probes"][1].update(row=1, point=1)
+        self.assertIn(("dl_en1[0].probes[1].row", "未啟用的探頭不可設定位置"), definition.validate(d, NET))
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(d, schema)
+        d["dl_en1"][0]["probes"][1] = {"id": 2, "description": "x", "enabled": "no"}
+        self.assertIn(("dl_en1[0].probes[1].enabled", "須為 true 或 false"), definition.validate(d, NET))
+
+    def test_settings_message_and_preview(self):
+        old = sample_devices()
+        place(old, DEV_A, 1, 1, 2)
+        new = [x.copy() for x in old]
+        p = by_mac(new)[DEV_A].config["probes"][1]
+        positions.set_enabled(p, False)
+        self.assertFalse([i for i in lan.validate(new, NET) if i.mac == DEV_A])
+        lines = [t for item in lan.diff(old, new).items for t, _ in item.lines]
+        self.assertTrue(any("（ID 2）啟用：是 → 否" in t for t in lines), lines)
+        self.assertTrue(any("（ID 2）位置：排1 點2 → 未定" in t for t in lines), lines)
+        p.update(row=1, point=3)
+        msgs = [i.message for i in lan.validate(new, NET) if i.mac == DEV_A]
+        self.assertEqual(msgs, ["第 2 列（ID 2）未啟用的探頭不可設定位置"])
+
 class SettingsCheckTest(unittest.TestCase):
     """設定頁全體層（lan.validate）：使用中＋維修中的位置不可重複（POS-02）。"""
 
