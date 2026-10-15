@@ -11,12 +11,16 @@ from __future__ import annotations
 import contextlib
 import copy
 import json
+import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from .lan import UNCLASSIFIED, LanDevice
+from .positions import Names
+
+log = logging.getLogger(__name__)
 
 
 class StoreError(RuntimeError):
@@ -55,6 +59,7 @@ class MemoryStore:
         self.available = True
         self.inspections: dict[str, tuple[dict, list[dict]]] = {}  # serial → (主檔, 明細)
         self.calibrations: list[dict] = []
+        self.names: Names | None = None  # plate_position_name（POS-03）；None 表示沒有資料
 
     def _check(self):
         if not self.available:
@@ -64,6 +69,12 @@ class MemoryStore:
         with self._lock:
             self._check()
             return [d.copy() for d in self._rows.values()]
+
+    def load_names(self) -> Names:
+        """排名稱與點名稱（POS-03）；沒有資料時為預設名稱（POS-09）。"""
+        with self._lock:
+            self._check()
+            return self.names or Names.default()
 
     def record(self, events) -> None:
         with self._lock:
@@ -119,18 +130,24 @@ class MemoryStore:
         with self._lock:
             self._check()
             snapshot = {m: d.copy() for m, d in self._rows.items()}
-            tx = _MemoryTx(self._rows)
+            names = self.names
+            tx = _MemoryTx(self._rows, self)
             try:
                 yield tx
             except BaseException:
                 self._rows.clear()
                 self._rows.update(snapshot)
+                self.names = names
                 raise
 
 
 class _MemoryTx:
-    def __init__(self, rows):
+    def __init__(self, rows, store):
         self._rows = rows
+        self._store = store
+
+    def save_names(self, names: Names) -> None:
+        self._store.names = names
 
     def save(self, old_devices, new_devices) -> int:
         old = {d.mac: d for d in old_devices}
@@ -211,6 +228,32 @@ class MySQLStore:
             cur.execute(f"SELECT {_COLUMNS} FROM lan_device")
             return [self._row(r) for r in cur.fetchall()]
 
+    def load_names(self) -> Names:
+        """排名稱與點名稱（POS-03）；沒有資料時為預設名稱（POS-09）。
+
+        資料表尚未建立（升級後還沒執行 sql/in-win.sql，MySQL 1146）時記入日誌並回傳預設名稱，
+        不當作資料庫無法連線（PROPOSAL §8 升級順序）。
+        """
+        import pymysql
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT kind, seq, name FROM plate_position_name")
+                rows = cur.fetchall()
+        except pymysql.MySQLError as exc:
+            if exc.args and exc.args[0] == 1146:
+                log.warning("資料表 plate_position_name 不存在（請執行 sql/in-win.sql），排與點使用預設名稱")
+                return Names.default()
+            raise StoreError(f"資料庫操作失敗：{exc}") from exc
+        finally:
+            conn.close()
+        d = Names.default()
+        got = {"row": list(d.rows), "point": list(d.points)}
+        for kind, seq, name in rows:
+            if kind in got and 1 <= seq <= len(got[kind]) and name:
+                got[kind][seq - 1] = name
+        return Names.from_json({"rows": got["row"], "points": got["point"]})
+
     def record(self, events) -> None:
         """新增或更新探索紀錄（DSC-01）；不更動 updated_at（那是設定的修改時間）。"""
         events = list(events)
@@ -259,11 +302,12 @@ class MySQLStore:
                 cur.executemany(
                     "INSERT INTO inspection_point (serial, device_key, probe_id, device_name, probe_description,"
                     " measured_value, standard_value, lower_limit, upper_limit, judgment, raw_response,"
-                    " error_text, device_mac, zero_offset)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " error_text, device_mac, zero_offset, pos_row, pos_point, row_name)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     [(head["serial"], p["device_key"], p["probe_id"], p["device_name"], p["probe_description"],
                       p["measured_value"], p["standard_value"], p["lower_limit"], p["upper_limit"], p["judgment"],
-                      p["raw_response"], p["error_text"], p["device_mac"], p.get("zero_offset"))
+                      p["raw_response"], p["error_text"], p["device_mac"], p.get("zero_offset"),
+                      p.get("pos_row"), p.get("pos_point"), p.get("row_name"))
                      for p in points])
             conn.commit()
             return True
@@ -305,7 +349,8 @@ class MySQLStore:
             if out:
                 cur.execute("SELECT p.serial, device_key, probe_id, device_name, probe_description, measured_value,"
                             " standard_value, lower_limit, upper_limit, p.judgment, raw_response, error_text,"
-                            " device_mac, zero_offset FROM inspection_point p JOIN inspection i USING (serial)"
+                            " device_mac, zero_offset, pos_row, pos_point, row_name"
+                            " FROM inspection_point p JOIN inspection i USING (serial)"
                             " WHERE i.measured_at >= %s AND i.measured_at < %s + INTERVAL 1 DAY"
                             " ORDER BY p.serial, device_key, probe_id", (day, day))
                 for r in cur.fetchall():
@@ -313,7 +358,8 @@ class MySQLStore:
                         "device_key": r[1], "probe_id": r[2], "device_name": r[3], "probe_description": r[4],
                         "measured_value": num(r[5]), "standard_value": num(r[6]), "lower_limit": num(r[7]),
                         "upper_limit": num(r[8]), "judgment": r[9], "raw_response": r[10], "error_text": r[11],
-                        "device_mac": r[12], "zero_offset": num(r[13])})
+                        "device_mac": r[12], "zero_offset": num(r[13]),
+                        "pos_row": r[14], "pos_point": r[15], "row_name": r[16]})
             return list(out.values())
 
     def set_hidden(self, mac: str, hidden: bool) -> None:
@@ -343,6 +389,14 @@ class MySQLStore:
 class _MySQLTx:
     def __init__(self, conn):
         self._conn = conn
+
+    def save_names(self, names: Names) -> None:
+        """排名稱與點名稱（POS-03）：全部 10 筆，與設備設定同一交易。"""
+        rows = [("row", i + 1, n) for i, n in enumerate(names.rows)]
+        rows += [("point", i + 1, n) for i, n in enumerate(names.points)]
+        with self._conn.cursor() as cur:
+            cur.executemany("INSERT INTO plate_position_name (kind, seq, name) VALUES (%s, %s, %s) AS n"
+                            " ON DUPLICATE KEY UPDATE name = n.name", rows)
 
     def save(self, old_devices, new_devices) -> int:
         """只寫入設定有變更的設備；整筆更新 dl_en1_config（DSC-12）。"""

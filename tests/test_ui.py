@@ -747,7 +747,9 @@ class MainWindowTest(UiBase):
         self.assertFalse(w.banner.btn_3d.isEnabled())          # 等待中
         self.wait_state("fail")
         self.assertTrue(w.banner.btn_3d.isEnabled())
-        snap, plate = w.plate_snapshot()
+        from flatness.plate3d.config import PlateConfig
+        with mock.patch("flatness.plate3d.config.load", return_value=PlateConfig()):  # 不受本機已存的板子尺寸影響
+            snap, plate = w.plate_snapshot()
         self.assertEqual(snap.serial, w.serial)
         self.assertEqual(snap.judgment, "FAIL")
         self.assertEqual(len(snap.points), 12)

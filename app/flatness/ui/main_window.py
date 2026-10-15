@@ -56,6 +56,9 @@ class PointResult:
     raw: str = ""
     error: str | None = None
     zero_offset: float | None = None  # 量測當時的歸零基準（CAL-09）
+    pos_row: int | None = None        # 量測當時的位置（POS-08）；未定為 None
+    pos_point: int | None = None
+    row_name: str | None = None
 
 
 @dataclass

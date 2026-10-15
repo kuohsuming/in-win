@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import bootp, definition, lan
+from . import bootp, definition, lan, positions
 from .store import StoreError
 
 log = logging.getLogger(__name__)
@@ -33,9 +33,13 @@ class SyncError(RuntimeError):
         self.issues = issues or []
 
 
-def render(devices, equip_net: ipaddress.IPv4Interface) -> tuple[dict, str, str]:
-    """檢查並產生（定義檔內容, 定義檔文字, 主機對應文字）；不合格拋出 SyncError。"""
-    issues = lan.validate(devices, equip_net)
+def render(devices, equip_net: ipaddress.IPv4Interface,
+           names: positions.Names | None = None) -> tuple[dict, str, str]:
+    """檢查並產生（定義檔內容, 定義檔文字, 主機對應文字）；不合格拋出 SyncError。
+
+    names：排名稱與點名稱（POS-03），一律寫入定義檔；None 為預設名稱。
+    """
+    issues = lan.validate(devices, equip_net, names)
     if issues:
         outside = lan.out_of_net(devices, equip_net)
         if outside:
@@ -45,7 +49,7 @@ def render(devices, equip_net: ipaddress.IPv4Interface) -> tuple[dict, str, str]
         else:
             msg = "設備設定有錯誤，沿用上次的設定：" + "；".join(i.text() for i in issues[:5])
         raise SyncError(msg, issues)
-    defn = lan.definition_from(devices)
+    defn = lan.definition_from(devices, names)
     errors = definition.validate(defn, equip_net)  # 3.7.1 JSON Schema 把關（DEF-02）
     if errors:
         raise SyncError("定義檔驗證失敗：" + "；".join(f"{w}: {r}" for w, r in errors[:5]),
@@ -85,10 +89,13 @@ class StartupResult:
     db_ok: bool = True
     issues: list = field(default_factory=list)
     layout: dict | None = None             # 主畫面版面（使用中 ＋ 維修中）；資料庫無法讀取時同定義檔
+    names: positions.Names | None = None   # 排名稱與點名稱（POS-03）；資料庫無法讀取時取自定義檔
 
     def __post_init__(self):
         if self.layout is None:
             self.layout = self.definition
+        if self.names is None:
+            self.names = positions.Names.from_json(self.definition.get("position_names"))
 
 
 def load_existing(files: Files) -> dict:
@@ -104,21 +111,22 @@ def startup(store, files: Files, equip_net: ipaddress.IPv4Interface) -> StartupR
     """App 啟動時依資料庫產生兩個檔案（DSC-06）；之後由呼叫端啟動 dnsmasq（DSC-07）。"""
     try:
         devices = store.load()
+        names = store.load_names()
     except StoreError as exc:
         log.error("啟動：無法讀取資料庫，沿用現有定義檔與 BOOTP 主機對應：%s", exc)
         return StartupResult(load_existing(files), None, False,
                              "無法讀取資料庫，使用上次的設定", db_ok=False)
     try:
-        defn, def_text, hosts_text = render(devices, equip_net)
+        defn, def_text, hosts_text = render(devices, equip_net, names)
     except SyncError as exc:
         log.error("啟動：%s", exc)
         defn = load_existing(files)
-        return StartupResult(defn, devices, False, str(exc), issues=exc.issues)
+        return StartupResult(defn, devices, False, str(exc), issues=exc.issues, names=names)
     changed = _write(files.def_path, def_text)
     changed = _write(files.hosts_path, hosts_text) or changed
     log.info("啟動：依資料庫產生定義檔與 BOOTP 主機對應（%s）DL-EN1 %d 台",
              "已更新" if changed else "內容相同，未改寫", len(defn["dl_en1"]))
-    return StartupResult(defn, devices, changed, layout=lan.screen_layout(devices))
+    return StartupResult(defn, devices, changed, layout=lan.screen_layout(devices, names), names=names)
 
 
 @dataclass
@@ -126,22 +134,30 @@ class ApplyResult:
     definition: dict
     restarted: bool
     layout: dict | None = None             # 主畫面版面（使用中 ＋ 維修中）
+    names: positions.Names | None = None   # 套用後的排名稱與點名稱（POS-03）
 
 
 def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, new_devices,
-          restart=None, summary: str = "", deleted=()) -> ApplyResult:
+          restart=None, summary: str = "", deleted=(), names: positions.Names | None = None) -> ApplyResult:
     """套用設備設定；失敗時資料庫與檔案皆還原並拋出例外（UPL-08、UPL-12）。
 
     restart：以新主機對應重新啟動 dnsmasq 的函式，失敗時拋出例外；None 表示不重新啟動（開發用）。
     deleted：要從資料庫刪除的 MAC（DSC-18）；new_devices 不含這些設備。
+    names：要寫入的排名稱與點名稱（POS-03）；None 表示不變，以資料庫目前的名稱產生定義檔
+    （校準、刪除、上移／下移等立即儲存也保留自訂名稱）。
     """
-    defn, def_text, hosts_text = render(new_devices, equip_net)
+    save_names = names is not None
+    if names is None:
+        names = store.load_names()
+    defn, def_text, hosts_text = render(new_devices, equip_net, names)
     before = {files.def_path: _read(files.def_path), files.hosts_path: _read(files.hosts_path)}
     hosts_changed = before[files.hosts_path] != hosts_text
     try:
         with store.transaction() as tx:
             n = tx.save(old_devices, new_devices)
             n += tx.delete(deleted)
+            if save_names:
+                tx.save_names(names)
             try:
                 _write(files.def_path, def_text)
                 _write(files.hosts_path, hosts_text)
@@ -161,7 +177,7 @@ def apply(store, files: Files, equip_net: ipaddress.IPv4Interface, old_devices, 
         raise
     log.info("套用設備設定成功：資料庫 %d 筆；變更=%s；dnsmasq %s", n, summary,
              "已重新啟動" if hosts_changed and restart else "未重新啟動")
-    return ApplyResult(defn, hosts_changed and restart is not None, lan.screen_layout(new_devices))
+    return ApplyResult(defn, hosts_changed and restart is not None, lan.screen_layout(new_devices, names), names)
 
 
 def backups(files: Files, keep: int = bootp.BACKUP_KEEP) -> list[Path]:

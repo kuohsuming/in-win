@@ -12,7 +12,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal
 
-from . import arpwatch, lan, netinfo, sync
+from . import arpwatch, lan, netinfo, positions, sync
 from .config import Config
 from .discovery import Recorder, RequestParser
 from .dnsmasq import DnsmasqService
@@ -38,6 +38,7 @@ class Backend(QObject):
         self.startup_result: sync.StartupResult | None = None
         self.definition: dict = {"version": 1, "dl_en1": []}   # 連線用（只含使用中）
         self.layout: dict = self.definition                    # 主畫面版面（使用中 ＋ 維修中）
+        self.names = positions.Names.default()                 # 排名稱與點名稱（POS-03）
         self.bootp_ok = True
         self.bootp_reason = ""
         self._db_ok = True
@@ -66,6 +67,7 @@ class Backend(QObject):
             log.warning("設備網卡 %s 沒有 IPv4 位址，設備網段改用設定檔的 %s", self.cfg.equip_if, net.network)
         r = sync.startup(self.store, self.files, net)
         self.startup_result, self.definition, self.layout = r, r.definition, r.layout
+        self.names = r.names or positions.Names.default()
         self._db_ok = r.db_ok
         if r.devices is not None:
             self._cache = r.devices
@@ -144,11 +146,21 @@ class Backend(QObject):
             log.error("校準紀錄無法寫入資料庫：%s；內容=%s", exc, rec)
             return False
 
-    def apply(self, old, new, summary: str = "", deleted=()) -> sync.ApplyResult:
+    def apply(self, old, new, summary: str = "", deleted=(), names: positions.Names | None = None) -> sync.ApplyResult:
+        """names：排名稱與點名稱有變更時才傳入（POS-03）；None 表示不變。"""
         restart = self.dnsmasq.restart if self.dnsmasq.command else None
-        result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary, deleted)
+        result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary, deleted, names)
         self.definition, self.layout = result.definition, result.layout
+        self.names = result.names or self.names
         return result
+
+    def load_names(self) -> positions.Names:
+        """排名稱與點名稱；資料庫無法連線時沿用上次讀到的（啟動時取自定義檔，DSC-06）。"""
+        try:
+            self.names = self.store.load_names()
+        except (StoreError, AttributeError) as exc:
+            log.warning("無法讀取排名稱與點名稱，沿用上次的：%s", exc)
+        return self.names
 
     def probe(self, ip: str, own_mac: str | None = None) -> netinfo.ProbeResult:
         """IP 佔用探測（阻斷約 1 秒；由畫面在背景執行緒呼叫，DSC-10-A3）。"""

@@ -97,6 +97,52 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- 舊版已建立的明細表補上量測當時的位置（3.13 POS-08；可重複執行）
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'pos_row'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.inspection_point ADD COLUMN pos_row TINYINT UNSIGNED NULL COMMENT ''量測當時的第幾排（POS-08）；未定為 NULL'' AFTER zero_offset',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'pos_point'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.inspection_point ADD COLUMN pos_point TINYINT UNSIGNED NULL COMMENT ''量測當時的第幾點（POS-08）；未定為 NULL'' AFTER pos_row',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'row_name'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness.inspection_point ADD COLUMN row_name VARCHAR(10) NULL COMMENT ''量測當時的排名稱（POS-08）；未定為 NULL'' AFTER pos_point',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 板子上排與點的名稱（3.13 POS-03、POS-09）：全機共用一組，沒有資料時 App 顯示預設名稱 排1～排5、點1～點5
+CREATE TABLE IF NOT EXISTS flatness.plate_position_name (
+  kind        ENUM('row','point')  NOT NULL COMMENT '排／點',
+  seq         TINYINT UNSIGNED     NOT NULL COMMENT '第幾排／第幾點（1～5）',
+  name        VARCHAR(10)          NOT NULL COMMENT '名稱',
+  updated_at  DATETIME(3)          NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (kind, seq),
+  CONSTRAINT chk_plate_position_seq CHECK (seq BETWEEN 1 AND 5)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='板子上排與點的名稱（3.13 POS）';
+
 -- 探頭校準紀錄（CAL-08）：每次校準（成功、失敗、取消）1 筆；App 帳號只新增與查詢
 CREATE TABLE IF NOT EXISTS flatness.calibration (
   id               BIGINT UNSIGNED   NOT NULL AUTO_INCREMENT,
@@ -192,6 +238,40 @@ SET @col_missing := (
 );
 SET @sql := IF(@col_missing,
   'ALTER TABLE flatness_sim.inspection_point ADD COLUMN device_mac CHAR(17) NULL AFTER error_text',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 舊版已建立的模擬明細表補上量測當時的位置（POS-08）
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness_sim' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'pos_row'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness_sim.inspection_point ADD COLUMN pos_row TINYINT UNSIGNED NULL COMMENT ''量測當時的第幾排（POS-08）；未定為 NULL''',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness_sim' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'pos_point'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness_sim.inspection_point ADD COLUMN pos_point TINYINT UNSIGNED NULL COMMENT ''量測當時的第幾點（POS-08）；未定為 NULL''',
+  'DO 0');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_missing := (
+  SELECT COUNT(*) = 0 FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'flatness_sim' AND TABLE_NAME = 'inspection_point' AND COLUMN_NAME = 'row_name'
+);
+SET @sql := IF(@col_missing,
+  'ALTER TABLE flatness_sim.inspection_point ADD COLUMN row_name VARCHAR(10) NULL COMMENT ''量測當時的排名稱（POS-08）；未定為 NULL''',
   'DO 0');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;

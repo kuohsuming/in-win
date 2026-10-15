@@ -6,6 +6,15 @@
   "additionalProperties": false,
   "properties": {
     "version": { "const": 1 },
+    "position_names": {
+      "type": "object",
+      "required": ["rows", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "rows":   { "$ref": "#/$defs/positionNames" },
+        "points": { "$ref": "#/$defs/positionNames" }
+      }
+    },
     "dl_en1": {
       "type": "array",
       "minItems": 0,
@@ -14,6 +23,12 @@
     }
   },
   "$defs": {
+    "positionNames": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 10 }
+    },
     "device": {
       "type": "object",
       "required": ["key", "name", "mac", "ipv4", "max_probes", "probes"],
@@ -42,9 +57,14 @@
         "description": { "type": "string", "minLength": 1, "maxLength": 10 },
         "zero_offset": { "type": "number" },
         "zeroed_at":   { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$" },
-        "tolerance":   { "enum": [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50] }
+        "tolerance":   { "enum": [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50] },
+        "row":         { "type": "integer", "minimum": 1, "maximum": 5 },
+        "point":       { "type": "integer", "minimum": 1, "maximum": 5 }
       },
-      "dependentRequired": { "zero_offset": ["zeroed_at"], "zeroed_at": ["zero_offset"] }
+      "dependentRequired": {
+        "zero_offset": ["zeroed_at"], "zeroed_at": ["zero_offset"],
+        "row": ["point"], "point": ["row"]
+      }
     }
   }
 }

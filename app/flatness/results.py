@@ -39,6 +39,9 @@ def to_record(result, station_id: str) -> dict:
             "judgment": POINT_JUDGMENT[p.state], "raw_response": (p.raw or None) and p.raw[:64],
             "error_text": p.error[:255] if p.error else None, "device_mac": p.device_mac or None,
             "zero_offset": p.zero_offset,
+            # 量測當時的位置與排名稱（POS-08）；未定為 None
+            "pos_row": getattr(p, "pos_row", None), "pos_point": getattr(p, "pos_point", None),
+            "row_name": (getattr(p, "row_name", None) or None) and p.row_name[:10],
         })
     return {"head": {"serial": result.serial, "station_id": station_id,
                      "measured_at": result.measured_at.isoformat(timespec="milliseconds"),

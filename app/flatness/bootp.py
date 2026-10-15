@@ -22,6 +22,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from . import positions
+
 DEFAULT_PORT = 64000
 BACKUP_KEEP = 20
 
@@ -60,8 +62,10 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
 
     if not isinstance(definition, dict):
         raise DefinitionError([("$", "最外層必須是物件")])
-    for extra in sorted(set(definition) - {"version", "dl_en1"}):
+    for extra in sorted(set(definition) - {"version", "dl_en1", "position_names"}):
         errors.append((extra, "不允許的欄位"))
+    if "position_names" in definition:  # 排名稱與點名稱（POS-03）
+        errors += positions.check_names_json(definition["position_names"])
     if definition.get("version") != 1:
         errors.append(("version", "必須為 1"))
 
@@ -71,6 +75,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
         raise DefinitionError(errors)
 
     seen: dict[str, dict] = {"key": {}, "name": {}, "mac": {}, "ipv4": {}}
+    placed: dict[tuple[int, int], str] = {}  # 探頭位置（排, 點）→ 第一個使用者（POS-02）
     device_fields = {"key", "name", "mac", "ipv4", "port", "max_probes", "probes"}
 
     for i, dev in enumerate(devices):
@@ -131,8 +136,16 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                     if not isinstance(probe, dict):
                         errors.append((pat, "必須是物件"))
                         continue
-                    for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at", "tolerance"}):
+                    for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at", "tolerance",
+                                                      "row", "point"}):
                         errors.append((f"{pat}.{extra}", "不允許的欄位"))
+                    errors += [(f"{pat}.{f}", why) for f, why in positions.probe_errors(probe)]
+                    where = positions.pos(probe)
+                    if where and not positions.probe_errors(probe):
+                        if where in placed:  # 同一位置只能有一個探頭（POS-02），同一台內或各台之間
+                            errors.append((f"{pat}.row", f"位置 第 {where[0]} 排第 {where[1]} 點與 {placed[where]} 重複"))
+                        else:
+                            placed[where] = pat
                     _check_zero(errors, pat, probe)
                     tol = probe.get("tolerance")
                     if "tolerance" in probe and (isinstance(tol, bool) or not isinstance(tol, (int, float))

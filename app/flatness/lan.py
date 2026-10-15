@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field, replace as dc_replace
 from datetime import datetime
 
-from . import bootp
+from . import bootp, positions
 
 UNCLASSIFIED, LIVE, MAINT, RETIRED, OTHER = (
     "unclassified", "dl_en1_live", "dl_en1_maint", "dl_en1_retired", "not_dl_en1")
@@ -49,9 +49,10 @@ def normalize_mac(mac: str) -> str:
 
 
 def default_config() -> dict:
-    """第一次設為 DL-EN1 時預先帶入的設定（畫面設計規格 5.10）。"""
+    """第一次設為 DL-EN1 時預先帶入的設定（畫面設計規格 5.10）：探頭名稱「探頭 1」～「探頭 4」、位置未定，
+    選定第幾點時自動帶入點名稱（POS-09）。"""
     return {"key": "", "name": "", "max_probes": 4,
-            "probes": [{"id": i + 1, "description": d} for i, d in enumerate(("左", "左中", "右中", "右"))]}
+            "probes": [{"id": i, "description": f"探頭 {i}"} for i in range(1, 5)]}
 
 
 @dataclass
@@ -133,15 +134,16 @@ def screen_devices(devices) -> list[LanDevice]:
     return sorted((d for d in devices if d.status in DL_STATUSES), key=_row_key)
 
 
-def screen_layout(devices) -> dict:
+def screen_layout(devices, names: positions.Names | None = None) -> dict:
     """主畫面版面：定義檔格式，維修中的設備另加 "maint": True（只在 App 內部使用，不寫入定義檔）。"""
+    names = names or positions.Names.default()
     out = []
     for d in screen_devices(devices):
         entry = d.definition_entry()
         if d.status == MAINT:
             entry["maint"] = True
         out.append(entry)
-    return {"version": 1, "dl_en1": out}
+    return {"version": 1, "position_names": names.to_json(), "dl_en1": out}
 
 
 def row_no(key) -> int | None:
@@ -184,9 +186,12 @@ def list_order(devices) -> list[LanDevice]:
     return sorted(devices, key=_list_key)
 
 
-def definition_from(devices) -> dict:
-    """App 定義檔：只含「DL-EN1 使用中」，依畫面順序（DSC-06）。"""
-    return {"version": 1, "dl_en1": [d.definition_entry() for d in live_devices(devices)]}
+def definition_from(devices, names: positions.Names | None = None) -> dict:
+    """App 定義檔：只含「DL-EN1 使用中」，依畫面順序（DSC-06）；一律帶排名稱與點名稱（POS-03），
+    資料庫無法連線時沿用。"""
+    names = names or positions.Names.default()
+    return {"version": 1, "position_names": names.to_json(),
+            "dl_en1": [d.definition_entry() for d in live_devices(devices)]}
 
 
 def hosts_from(devices) -> list[dict]:
@@ -272,11 +277,19 @@ def _entry_issues(d: LanDevice, equip_net) -> list[tuple[str, str]]:
         out = []
         for where, why in exc.errors:
             fld = where.removeprefix("dl_en1[0].") if where.startswith("dl_en1[0].") else where
-            m = re.match(r"probes\[(\d+)\]\.(id|description)", fld)
+            m = re.match(r"probes\[(\d+)\]\.(id|description|row|point)", fld)
             if m:
                 pid = (entry.get("probes") or [])[int(m.group(1))].get("id")
+                at = f"第 {int(m.group(1)) + 1} 列（ID {pid}）"
+                if m.group(2) in ("row", "point"):
+                    if "重複" in why:
+                        continue  # 位置重複由 validate 以佔用者訊息顯示（POS-02）
+                    text = f"{at}{POS_INCOMPLETE}" if "同時" in why else f"{at}位置{why}"
+                    if ("probes", text) not in out:
+                        out.append(("probes", text))
+                    continue
                 what = "探頭 ID" if m.group(2) == "id" else "位置名稱"
-                out.append(("probes", f"第 {int(m.group(1)) + 1} 列（ID {pid}）{what}{why}"))
+                out.append(("probes", f"{at}{what}{why}"))
             elif fld == "ipv4":
                 continue  # IP 由 ip_problem 檢查，訊息較具體
             elif fld == "key":
@@ -287,7 +300,33 @@ def _entry_issues(d: LanDevice, equip_net) -> list[tuple[str, str]]:
     return []
 
 
-def validate(devices, equip_net: ipaddress.IPv4Interface) -> list[Issue]:
+POS_INCOMPLETE = "位置須同時設定排與點，或都設為未定"
+
+
+def position_conflicts(devices, names: positions.Names | None = None) -> list[Issue]:
+    """POS-02：「使用中」「維修中」所有探頭的位置（排＋點）不可重複；每個衝突的探頭都標示並說明佔用者。"""
+    names = names or positions.Names.default()
+    used: dict[tuple[int, int], list[tuple[LanDevice, int, dict]]] = {}
+    for d in list_order(devices):
+        if not d.is_dl_en1 or not d.config:
+            continue
+        for i, p in enumerate(d.config.get("probes") or []):
+            where = positions.pos(p)
+            if where:
+                used.setdefault(where, []).append((d, i, p))
+    issues = []
+    for (r, pt), owners in used.items():
+        if len(owners) < 2:
+            continue
+        for d, i, p in owners:
+            o, _, op = next(x for x in owners if x[2] is not p)
+            other = positions.device_call((o.config or {}).get("key"), (o.config or {}).get("name"), op.get("description"))
+            issues.append(Issue(d.mac, "probes", f"第 {i + 1} 列（ID {p.get('id')}）{names.row(r)} {names.point(pt)} "
+                                                 f"已由 {other} 使用", d.label()))
+    return issues
+
+
+def validate(devices, equip_net: ipaddress.IPv4Interface, names: positions.Names | None = None) -> list[Issue]:
     """設備設定的全部檢查（畫面設計規格 5.10「檢查規則」）；空 list 表示可以儲存。"""
     devices = list(devices)
     issues: list[Issue] = []
@@ -326,7 +365,7 @@ def validate(devices, equip_net: ipaddress.IPv4Interface) -> list[Issue]:
             other = next(x for x in devs if x is not d)
             shown = value if fld == "ipv4" else row_label(value) if fld == "key" else f"「{value}」"
             issues.append(Issue(d.mac, fld, f"{shown} {occupied_text(other)}", d.label()))
-    return issues
+    return issues + position_conflicts(devices, names)
 
 
 def out_of_net(devices, equip_net) -> list[LanDevice]:

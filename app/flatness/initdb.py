@@ -10,7 +10,7 @@ import ipaddress
 import sys
 from pathlib import Path
 
-from . import bootp, lan, sync
+from . import bootp, lan, positions, sync
 from .store import MySQLStore, StoreError
 
 
@@ -22,6 +22,8 @@ def import_if_empty(store, definition: dict) -> int:
     new = lan.import_definition(devices, definition)
     with store.transaction() as tx:
         tx.save(devices, new)
+        if "position_names" in definition:  # 排名稱與點名稱一併匯入（POS-03）；沒有時顯示預設名稱
+            tx.save_names(positions.Names.from_json(definition["position_names"]))
     return len(definition["dl_en1"])
 
 
