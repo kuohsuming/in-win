@@ -1,7 +1,7 @@
 ---
 target: docs/pm/probe-position/PROPOSAL.md
 target_slug: probe-position-proposal
-total_rounds: 4
+total_rounds: 5
 last_round_date: 2026-10-15
 last_verdict: ship-as-is
 schema_version: enhanced-v1
@@ -18,7 +18,8 @@ contract_version: spectra-contract-v1
 | 2 | 2026-10-15 | 0 | 4 | 9 | 6 | ship-as-is |
 | 3 | 2026-10-15 | 0 | 4 | 5 | 5 | ship-as-is |
 | 4 | 2026-10-15 | 0 | 1 | 8 | 4 | ship-as-is |
-| **Total** | | **3** | **17** | **30** | — | — |
+| 5 | 2026-10-15 | 0 | 0 | 8 | 4 | ship-as-is |
+| **Total** | | **3** | **17** | **38** | — | — |
 
 ## Issue Status Matrix
 
@@ -55,21 +56,22 @@ contract_version: spectra-contract-v1
 | 3 | N1～N5 | 🟢 | 未設定允收標準、訊息格式、j/k、降版描述、P3D-03 訊息 | — | — | ✅ fixed（rev 4；POS-07 納入 P3D-03 訊息修訂） | — |
 | 4 | C1 | 🟡 | IP 不符附加標示未排除偵測不到（DSC-20） | — | — | ✅ fixed（rev 5 §5.5） | PO 指示全部修正 |
 | 4 | N1～N8 | 🟢 | 小標順序、文件預設名稱、POS-09 驗收、P3D-03 同步、POS-02 驗收格式、變更清單文字、names 何時為 None、POS-07 重名規則 | — | — | ✅ fixed（rev 5；規格書 POS-02、POS-07、POS-09、P3D-03 註記、changeset 同步） | — |
+| 5 | N1～N8 | 🟢 | 整台異常與 IP 不符的現況說明、重複位置檢查分工、「排名稱」舊用語、test_lan、backend 傳 names、probe_positions 呼叫處、POS-09 前提、3.7.1 position_names 與追溯 | — | — | ✅ fixed（rev 6；N1 待 PO 簽核時確認） | — |
 
 ## Quality Health Score
 
-- total_findings: 71
-- fixed: 50
+- total_findings: 83
+- fixed: 58
 - pending: 0
 - no_decision: 0
 - rejected: 0
 - deferred: 0
-- valued: 21（STRENGTH）
+- valued: 25（STRENGTH）
 - fix_rate: 100%
 - close_rate: 100%
 - avg_severity_open: 0
 - po_overrides: 0
-- convergence_signal: ⚠（第 4 輪 0 BLOCKER、1 CONCERN；有效成本 45 → 15.9 → 9.3 → 3.4，待第 5 輪確認）
+- convergence_signal: ✅（第 5 輪 0 BLOCKER、0 CONCERN；有效成本 45 → 15.9 → 9.3 → 3.4 → 1.9）
 
 ## Hotspot History
 
