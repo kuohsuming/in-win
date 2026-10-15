@@ -65,6 +65,9 @@ class Shots(test_ui.UiBase):
         from flatness.ui.settings_dialog import P_TOL
         box = s.probe_table.cellWidget(0, P_TOL); box.setCurrentIndex(box.findText("0.5 mm"))
         s.btn_save.click(); shot("settings-confirm", s)
+        s._ask = lambda *a, **k: True; s.close()
+        s = SettingsDialog(be); s.enter_edit(); s.resize(1920, 1080); s.show()  # 探頭偵測：多 1 支、感測頭未接（PDT-01、PDT-02）
+        s.select(live.mac); s.apply_scan(live.mac, measure.ProbeScan(5, {5: "head"})); shot("settings-scan", s)
         s._ask = lambda *a, **k: True; s.close(); w.close()
 
 from unittest import mock

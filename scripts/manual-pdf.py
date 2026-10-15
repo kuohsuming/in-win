@@ -2,8 +2,8 @@
 
 需要 python-markdown（不放進 App 套件）：
   .venv/bin/pip install --target /tmp/mdlib markdown
-  PYTHONPATH=/tmp/mdlib python3 scripts/manual-pdf.py
-輸出 docs/manual/操作說明書.pdf。
+  PYTHONPATH=/tmp/mdlib python3 scripts/manual-pdf.py [快速安裝指南.md]
+預設轉 docs/manual/操作說明書.md；輸出同名 .pdf。
 """
 import re
 import subprocess
@@ -13,7 +13,7 @@ from pathlib import Path
 import markdown
 
 DIR = Path(__file__).resolve().parents[1] / "docs" / "manual"
-SRC, OUT, TMP = DIR / "操作說明書.md", DIR / "操作說明書.pdf", DIR / ".manual.html"
+TMP = DIR / ".manual.html"
 CSS = """
 @page { size: A4; margin: 16mm 14mm 18mm 14mm; @bottom-center { content: counter(page); } }
 body { font-family: 'Noto Sans CJK TC','Noto Sans TC',sans-serif; font-size: 10.5pt; line-height: 1.6; color:#222; }
@@ -36,19 +36,21 @@ blockquote { border-left: 4px solid #e0a800; background:#fff8e1; margin: .6em 0;
 
 
 def main() -> int:
+    src = DIR / (sys.argv[1] if len(sys.argv) > 1 else "操作說明書.md")
+    out = src.with_suffix(".pdf")
     slug = lambda v, _s: re.sub(r"[^\w\-]", "", v.strip().lower().replace(" ", "-"))
-    body = markdown.markdown(SRC.read_text(encoding="utf-8"), extensions=["tables", "fenced_code", "toc", "sane_lists"],
+    body = markdown.markdown(src.read_text(encoding="utf-8"), extensions=["tables", "fenced_code", "toc", "sane_lists"],
                              extension_configs={"toc": {"slugify": slug}})
     body = re.sub(r'<p><img alt="([^"]*)" src="([^"]*)" ?/?></p>',
                   r'<figure><img src="\2"><figcaption>圖：\1</figcaption></figure>', body)
-    TMP.write_text(f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>表面平整檢查系統 操作說明書</title>'
+    TMP.write_text(f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>表面平整檢查系統 {src.stem}</title>'
                    f'<style>{CSS}</style></head><body>{body}</body></html>', encoding="utf-8")
     try:
         subprocess.run(["google-chrome", "--headless=new", "--disable-gpu", "--no-sandbox", "--no-pdf-header-footer",
-                        f"--print-to-pdf={OUT}", TMP.as_uri()], check=True, capture_output=True)
+                        f"--print-to-pdf={out}", TMP.as_uri()], check=True, capture_output=True)
     finally:
         TMP.unlink(missing_ok=True)
-    print(OUT)
+    print(out)
     return 0
 
 

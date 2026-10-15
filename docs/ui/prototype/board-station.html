@@ -1013,7 +1013,7 @@ function renderDetail(){
       </tbody></table></div>
       <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP!==c.probes.length-1||selP<1?"disabled":""} title="${selP>=0&&selP<c.probes.length-1?"中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）":"只能刪除最後一支探頭"}">刪除探頭</button>
         ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
-        <button class="btn sm pen${namesOpen?" on":""}" type="button" data-ed="nmtoggle" title="編輯板子版面與排、點名稱" aria-pressed="${namesOpen}" style="margin-left:auto">✎</button></div>
+        <button class="btn sm pen${namesOpen?" on":""}" type="button" data-ed="nmtoggle" title="編輯板子版面與排、點名稱" aria-pressed="${namesOpen}" style="margin-left:auto">版面設定 ✏️</button></div>
       ${namesOpen?`<div class="names"><b>板子版面與排、點名稱</b><span class="stdesc">（全機共用；探頭位置選項、主畫面、3D、匯出檔使用）</span>
         <div class="gridrow">排數 <select data-grid="rows">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.rows===v?"selected":""}>${v}</option>`).join("")}</select>
           每排點數 <select data-grid="points">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.points===v?"selected":""}>${v}</option>`).join("")}</select>
