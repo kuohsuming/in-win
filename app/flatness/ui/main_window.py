@@ -376,14 +376,13 @@ class ProbeTile(QFrame):
 
 
 class PositionRow(QFrame):
-    """位置排（POS-04）：左欄排名稱與「第 N 排」，右欄固定 5 格，第 k 點在第 k 格；空格以淡色框保留位置。
+    """位置排（POS-04、POS-12）：左欄排名稱與「第 N 排」，右欄每一格是一個有探頭的點（各排相同的欄）；
+    這一排在該點沒有探頭時為透明空位（不畫框），後面的方塊不往左補位。
 
-    「未設定位置」區也用本類別：每 5 個探頭一列，空格不畫框（UI-11 以列計算）。
+    「未設定位置」區也用本類別：每列的個數等於欄數（UI-11 以列計算）。
     """
 
-    COLS = positions.SIZE
-
-    def __init__(self, title: str, tag: str, slots: list, placeholders: bool = True, unassigned: bool = False):
+    def __init__(self, title: str, tag: str, slots: list, cols: int | None = None, unassigned: bool = False):
         super().__init__()
         self.title, self.tag, self.unassigned = title, tag, unassigned
         self.setObjectName("row")
@@ -406,14 +405,12 @@ class PositionRow(QFrame):
         grid = self._grid = QGridLayout()
         self.tiles: list[ProbeTile] = [t for t in slots if t is not None]
         self.empty: list[QFrame] = []
-        for c in range(self.COLS):
+        self.cols = cols or len(slots)
+        for c in range(self.cols):
             t = slots[c] if c < len(slots) else None
-            if t is None:
+            if t is None:  # 這一排在這一點沒有探頭：透明空位，保持各排對齊（POS-12）
                 t = QFrame()
                 t.setObjectName("slot")
-                if placeholders:  # 這一點沒有探頭：淡色虛線框（POS-04）
-                    t.setStyleSheet(f"QFrame#slot {{ border:2px dashed {C['line']}; border-radius:6px;"
-                                    f" background:transparent; }}")
                 self.empty.append(t)
             # 每格一樣寬：不依方塊內容的寬度分配，各排同一點的方格上下對齊（POS-04）
             t.setSizePolicy(QSizePolicy.Ignored, t.sizePolicy().verticalPolicy())
@@ -438,11 +435,11 @@ class PositionRow(QFrame):
 
     @property
     def min_width(self) -> int:
-        """此比例下排的最小寬度：5 格都要放得下最寬的方塊內容（每格一樣寬，_fit 以此檢查寬度）。"""
+        """此比例下排的最小寬度：每一格都要放得下最寬的方塊內容（每格一樣寬，_fit 以此檢查寬度）。"""
         tile = max((t.minimumSizeHint().width() for t in self.tiles), default=0)
         m = self._lay.contentsMargins()
         return (m.left() + m.right() + self._left.width() + self._lay.spacing()
-                + self.COLS * tile + (self.COLS - 1) * self._grid.horizontalSpacing())
+                + self.cols * tile + (self.cols - 1) * self._grid.horizontalSpacing())
 
     def set_scale(self, k: float):
         """排與探頭方塊依縮放比例調整（UI-11）。"""
@@ -1160,19 +1157,20 @@ class MainWindow(QMainWindow):
                     self.tiles[(d["key"], p["id"])] = t
                     self.point_pos[(d["key"], p["id"])] = where
                 self.dev_tiles.setdefault(d["key"], []).append(t)
-                if where and where not in placed:
+                if where and self.names.in_grid(where) and where not in placed:
                     placed[where] = t
                 else:
                     unplaced.append(t)
+        # POS-12：只畫有探頭的排與點；欄為任一排有探頭的點，依點的順序
+        self.cols = sorted({k for _, k in placed})
         self.rows: list[PositionRow] = []
-        for r in range(1, positions.SIZE + 1):
-            if any((r, k) in placed for k in range(1, positions.SIZE + 1)):
-                slots = [placed.get((r, k)) for k in range(1, positions.SIZE + 1)]
-                self.rows.append(PositionRow(self.names.row(r), f"第 {r} 排", slots))
-        for i in range(0, len(unplaced), positions.SIZE):
+        for r in sorted({r for r, _ in placed}):
+            self.rows.append(PositionRow(self.names.row(r), f"第 {r} 排", [placed.get((r, k)) for k in self.cols]))
+        per_line = len(self.cols) or positions.SIZE  # 「未設定位置」區每列的個數等於欄數
+        for i in range(0, len(unplaced), per_line):
             first = i == 0
             self.rows.append(PositionRow("未設定位置" if first else "", "請在設備設定\n設定探頭位置" if first else "",
-                                         unplaced[i:i + positions.SIZE], placeholders=False, unassigned=True))
+                                         unplaced[i:i + per_line], cols=per_line, unassigned=True))
         for row in self.rows:
             lay.addWidget(row)
         # 顯示名稱（PROPOSAL §5.2）：橫幅、匯出、3D 用；同名時加「（第 N 台 探頭 id）」

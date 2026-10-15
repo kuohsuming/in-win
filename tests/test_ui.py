@@ -847,7 +847,7 @@ class MainWindowTest(UiBase):
         self.assertEqual(w.rows[1].tiles[0].sub.text(), "第 2 台 中排")
         self.assertEqual(len(w.tiles), 12)
 
-    def test_layout_by_positions(self):  # POS-04：依排由上而下、每排固定 5 格、空格保留
+    def test_layout_by_positions(self):  # POS-04、POS-12：依排由上而下、各排同欄、空格保留
         from flatness import positions
         names = positions.Names(("前排", "排2", "後排", "排4", "排5"), positions.DEFAULT_POINTS)
         self.positioned({("00:01:FC:DE:3A:75", 2): (1, 3), ("00:01:FC:DE:3A:75", 3): (1, 5),
@@ -860,8 +860,27 @@ class MainWindowTest(UiBase):
         from flatness.ui.main_window import ProbeTile
         self.assertEqual([c.pos.text() if isinstance(c, ProbeTile) else None for c in cells],
                          ["左", None, "左中", None, "右中"])
-        self.assertEqual(len(w.rows[0].empty), 2)                              # 第 2、4 點空框
+        self.assertEqual(len(w.rows[0].empty), 2)                              # 第 2、4 點透明空位（POS-12）
         self.assertEqual([t.pos.text() for t in w.rows[3].tiles], ["右"])      # 前排「右」位置未定
+
+    def test_only_used_points_drawn(self):  # POS-12：只畫有探頭的點；空位透明、不往左補位、各排對齊
+        a, b, c = "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"
+        self.positioned({(a, 1): (1, 1), (a, 2): (1, 3), (a, 3): (1, 4), (a, 4): (2, 3),
+                         (b, 1): None, (b, 2): None, (b, 3): None, (b, 4): None,
+                         (c, 1): None, (c, 2): None, (c, 3): None, (c, 4): None})
+        w = self.win
+        self.assertEqual(w.cols, [1, 3, 4])
+        self.assertEqual([r.title for r in w.rows], ["排1", "排2", "未設定位置", "", ""])
+        from flatness.ui.main_window import ProbeTile
+        row2 = [w.rows[1]._grid.itemAtPosition(0, i).widget() for i in range(3)]
+        self.assertEqual([isinstance(x, ProbeTile) for x in row2], [False, True, False])  # 空位、方塊、空位
+        self.assertEqual(row2[0].styleSheet(), "")                                          # 透明空位，不畫框
+        self.assertEqual([len(r.tiles) for r in w.rows[2:]], [3, 3, 2])                     # 每列 3 個 = 欄數
+        w.show()
+        pump(self.app, 0.3)
+        x1 = w.rows[0]._grid.itemAtPosition(0, 1).widget().x()
+        self.assertEqual(row2[1].x(), x1)                                                   # 第 3 點上下對齊
+        w.hide()
 
     def test_slots_equal_width(self):  # POS-04：每格一樣寬，各排同一點的方格上下對齊
         from flatness import lan, positions
@@ -880,7 +899,7 @@ class MainWindowTest(UiBase):
         pump(self.app, 0.3)
         self.assertEqual([len(r.tiles) for r in w.rows], [1, 1])
         for r in w.rows:
-            widths = {r._grid.itemAtPosition(0, c).widget().width() for c in range(5)}
+            widths = {r._grid.itemAtPosition(0, c).widget().width() for c in range(r.cols)}
             self.assertLessEqual(max(widths) - min(widths), 1, (r.title, widths))
             for t in r.tiles:
                 self.assertGreaterEqual(t.width(), t.minimumSizeHint().width())  # 內容仍放得下
