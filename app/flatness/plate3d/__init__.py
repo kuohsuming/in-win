@@ -5,7 +5,7 @@
 - renderer／widget／dialog：繪圖與視窗（P3D-06～P3D-08）。
 """
 
-from .config import PlateConfig, probe_positions  # noqa: F401
+from .config import PlateConfig, probe_positions, unplaced  # noqa: F401
 from .model import ProbeReading, RefuseError, Snapshot, SurfaceModel, build_model  # noqa: F401
 
 

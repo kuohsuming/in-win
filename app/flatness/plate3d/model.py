@@ -1,6 +1,6 @@
 """3D 繪圖的計算（P3D-02～P3D-07）：純 Python，不依賴 Qt。
 
-- 有效點（有讀值的點）少於 3 個，或全部在同一直線上 → RefuseError（訊息即警告文字）。
+- 有探頭位置未定（POS-07）、有效點（有讀值的點）少於 3 個，或全部在同一直線上 → RefuseError（訊息即警告文字）。
 - 探頭在板子下方：讀值越大表示表面越低，高度 h = −讀值（mm）。
 - 兩種模式：「相對標準件」z = h（讀值已對標準件歸零，CAL-03）；「扣除傾斜」z = h − 最小平方平面。
 - 點與點之間以薄板樣條推估（只用來畫形狀，不得用於判定）；記下每個網格點是否在有效點凸包內。
@@ -21,6 +21,8 @@ MIN_POINTS = 3
 LINE_MM = 1.0          # 有效點在最窄方向的分佈小於 1 mm 視為同一直線（P3D-03）
 GRID_LONG = 41         # 長邊網格點數
 GRID_SHORT_MIN = 9
+# P3D-03（POS-07 修訂）：5 × 5 格時，都在同一排或都在同一點皆為同一直線
+LINE_MSG = "無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。"
 
 
 class RefuseError(Exception):
@@ -44,6 +46,7 @@ class Snapshot:
     serial: str
     judgment: str             # PASS／FAIL／ERROR
     points: tuple[ProbeReading, ...]
+    unplaced: tuple[str, ...] = ()   # 位置未定的探頭（顯示名稱）；有任一個就拒絕（POS-07）
 
 
 @dataclass
@@ -77,8 +80,11 @@ class SurfaceModel:
         return p.value_mm if self.mode == STANDARD else self.z_mm[key]
 
 
-def check(points: list[ProbeReading]) -> None:
-    """P3D-02、P3D-03：有效點不足或同一直線時拋出 RefuseError。"""
+def check(points: list[ProbeReading], unplaced=()) -> None:
+    """POS-07、P3D-02、P3D-03：有探頭位置未定、有效點不足或同一直線時拋出 RefuseError。"""
+    if unplaced:  # POS-07：先於 P3D-02、P3D-03
+        raise RefuseError(f"無法繪製 3D：有 {len(unplaced)} 個探頭未設定位置（第幾排、第幾點）。\n"
+                          f"{'、'.join(unplaced)}\n請工程人員在設備設定設定探頭位置")
     valid = [p for p in points if p.value_mm is not None]
     if len(valid) < MIN_POINTS:
         first = f"無法繪製 3D：本次只有 {len(valid)} 個有效量測點，至少需要 {MIN_POINTS} 個。"
@@ -89,7 +95,7 @@ def check(points: list[ProbeReading]) -> None:
             second = f"（設定 {len(points)} 個探頭；無數據：{'、'.join(missing)}）"
         raise RefuseError(f"{first}\n{second}")
     if spread_minor([(p.x, p.y) for p in valid]) < LINE_MM:
-        raise RefuseError("無法繪製 3D：所有有效量測點在同一直線上（例如只有 1 排），至少需要 2 排探頭。")
+        raise RefuseError(LINE_MSG)
 
 
 def fit_plane(pts: list[tuple[float, float, float]]) -> tuple[float, float, float] | None:
@@ -154,7 +160,7 @@ def build_model(points: list[ProbeReading], plate: PlateConfig, mode: str = STAN
     if mode == DETRENDED:
         plane = fit_plane([(p.x, p.y, h[p.key]) for p in valid])
         if plane is None:
-            raise RefuseError("無法繪製 3D：所有有效量測點在同一直線上（例如只有 1 排），至少需要 2 排探頭。")
+            raise RefuseError(LINE_MSG)
         a, b, c = plane
         z = {p.key: h[p.key] - (a + b * p.x / 1000 + c * p.y / 1000) for p in valid}
     else:
@@ -162,7 +168,7 @@ def build_model(points: list[ProbeReading], plate: PlateConfig, mode: str = STAN
     unit = max(plate.length, plate.width)       # 兩軸同比例；薄板樣條對縮放不變
     f = tps([(p.x / unit, p.y / unit, z[p.key]) for p in valid])
     if f is None:
-        raise RefuseError("無法繪製 3D：所有有效量測點在同一直線上（例如只有 1 排），至少需要 2 排探頭。")
+        raise RefuseError(LINE_MSG)
     nx, ny = grid_size(plate)
     hull = convex_hull([(p.x, p.y) for p in valid])
     tol = 1e-9 * unit * unit

@@ -1,7 +1,7 @@
 """板子尺寸（P3D-10）與探頭在板上的位置（P3D-05）。
 
 板子尺寸在主畫面「板子尺寸」設定，存於本機 QSettings（與取出測試數據記住的資料夾同一處），
-只影響 3D 繪圖。探頭固定在板子下方：前後依 DL-EN1 的位置「第幾排」、左右依探頭 ID 平均分佈。
+只影響 3D 繪圖。探頭固定在板子下方，位置為設備設定中每個探頭的第幾排、第幾點（固定 5 × 5 格，POS-07）。
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from .. import positions
 from ..lan import row_no
 
 log = logging.getLogger(__name__)
@@ -82,23 +83,29 @@ def save(plate: PlateConfig, settings=None) -> None:
 
 
 def probe_positions(devices: list[dict], plate: PlateConfig) -> dict[tuple[str, int], tuple[float, float]]:
-    """(排 key, 探頭 ID) → (x, y) mm（P3D-05）。
+    """(DL-EN1 key, 探頭 ID) → (x, y) mm（POS-07，修訂 P3D-05）。
 
-    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。前後依第 n 排，R 為使用中與維修中最大的排號：
-    y = 寬 × (n − 0.5) / R；排號照實際位置，中間沒有設備的排留空。左右依探頭 ID（1～N）：x = 長 × (id − 0.5) / N。
-    只回傳使用中設備的探頭。
+    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。探頭依設備設定的第幾排、第幾點放在固定 5 × 5 格：
+    x = 長 × (點 − 0.5) / 5、y = 寬 × (排 − 0.5) / 5。只回傳使用中設備、已設定位置的探頭；位置未定的見 unplaced。
     """
-    rows = [(row_no(d.get("key")), d) for d in devices]
-    rows = [(n, d) for n, d in rows if n]
-    if not rows:
-        return {}
-    r_max = max(n for n, _ in rows)
     out = {}
-    for n, d in rows:
+    for d in devices:
         if d.get("maint"):
             continue
-        ids = sorted(p["id"] for p in d.get("probes") or [])
-        count = len(ids)
-        for i, pid in enumerate(ids):
-            out[(d["key"], pid)] = (plate.length * (i + 0.5) / count, plate.width * (n - 0.5) / r_max)
+        for p in d.get("probes") or []:
+            where = positions.pos(p)
+            if where:
+                r, k = where
+                out[(d["key"], p["id"])] = (plate.length * (k - 0.5) / positions.SIZE,
+                                            plate.width * (r - 0.5) / positions.SIZE)
+    return out
+
+
+def unplaced(devices: list[dict]) -> list[tuple[str, int]]:
+    """使用中設備位置未定的探頭 (key, 探頭 ID)，依第幾台、探頭 ID（POS-07：有任一個就拒絕 3D）。"""
+    out = []
+    for d in sorted(devices, key=lambda d: (row_no(d.get("key")) or 99, d.get("key") or "")):
+        if d.get("maint"):
+            continue
+        out += [(d["key"], p["id"]) for p in sorted(d.get("probes") or [], key=lambda p: p["id"]) if not positions.pos(p)]
     return out

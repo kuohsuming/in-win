@@ -2,7 +2,9 @@
 
 records 與 results.to_record 相同格式：{"head": {...}, "points": [...]}，measured_at 為 datetime。
 工作表一「量測紀錄」一片一列：編號（文字）、量測時間、判定、重讀次數、各量測點測量值、不合格點、
-各排 DL-EN1 的 MAC（DAT-06，當日換過設備也看得出每片用哪一台）；
+各台 DL-EN1 的 MAC（DAT-06，當日換過設備也看得出每片用哪一台）；
+量測點依量測當時保存的位置（排、點）排列，位置未定與升級前的紀錄排在最後；欄位標題為顯示名稱
+「排名稱 位置名稱」（未定為「第 N 台 DL-EN1 名稱 位置名稱」），同名時加「（第 N 台 探頭 id）」（POS-08）；
 偏高、偏低的儲存格紅底，設備異常的儲存格黃底並寫「異常」。工作表二「當日標準值」列出各點當日使用的
 標準值與上下限（同一點當日改過標準時列出每一組與開始使用的時間）。
 """
@@ -13,6 +15,7 @@ import os
 from datetime import date
 from pathlib import Path
 
+from . import positions
 from .lan import row_label, row_no
 
 JUDGMENT = {"PASS": "合格", "FAIL": "不合格", "ERROR": "設備異常"}
@@ -29,12 +32,25 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
     if not records:
         raise ValueError(f"{day:%Y-%m-%d} 沒有紀錄")
     records = sorted(records, key=lambda r: r["head"]["measured_at"])
-    names: dict[tuple, str] = {}
-    for r in records:  # 量測點欄位：依排、探頭 ID；名稱取當日最後一次
+    last: dict[tuple, dict] = {}
+    for r in records:  # 量測點欄位：（key, 探頭 ID）一欄；位置與名稱取當日最後一次
         for p in r["points"]:
-            names[(p["device_key"], p["probe_id"])] = f"{p['device_name']} {p['probe_description']}".strip()
-    cols = sorted(names, key=lambda k: (row_no(k[0]) or 1 << 30, k[0], k[1]))
-    devs: dict[str, str] = {}  # 每排 DL-EN1 一欄 MAC（DAT-06）：key → 設備名稱（當日最後一次）
+            last[(p["device_key"], p["probe_id"])] = p
+
+    def where(k):
+        p = last[k]
+        return (p.get("pos_row"), p.get("pos_point")) if p.get("pos_row") and p.get("pos_point") else None
+
+    def label(k):
+        p = last[k]
+        if where(k):
+            row = p.get("row_name") or f"第 {p['pos_row']} 排"
+            return f"{row} {p['probe_description']}".strip()
+        return positions.device_call(k[0], p["device_name"], p["probe_description"])
+
+    cols = sorted(last, key=lambda k: ((0, *where(k)) if where(k) else (1, row_no(k[0]) or 1 << 30, 0), k[0], k[1]))
+    names = dict(zip(cols, positions.disambiguate([(label(k), k[0], k[1]) for k in cols])))
+    devs: dict[str, str] = {}  # 每台 DL-EN1 一欄 MAC（DAT-06）：key → 設備名稱（當日最後一次）
     for r in records:
         for p in r["points"]:
             devs[p["device_key"]] = p["device_name"]
@@ -47,7 +63,7 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
     ws = wb.active
     ws.title = "量測紀錄"
     ws.append(["編號", "量測時間", "判定", "重讀次數", *(names[k] for k in cols), "不合格點",
-               *(f"{devs[k]} DL-EN1 MAC" for k in dev_cols)])
+               *(f"{positions.device_label(k, devs[k])} DL-EN1 MAC" for k in dev_cols)])
     for r in records:
         h = r["head"]
         by = {(p["device_key"], p["probe_id"]): p for p in r["points"]}
@@ -80,7 +96,7 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
     ws.freeze_panes = "B2"
 
     st = wb.create_sheet("當日標準值")
-    st.append(["排", "探頭 ID", "量測點", "標準值", "下限", "上限", "開始使用時間"])
+    st.append(["第幾台", "探頭 ID", "量測點", "位置", "標準值", "下限", "上限", "開始使用時間"])
     for k in cols:
         seen = []
         for r in records:
@@ -90,17 +106,18 @@ def write_xlsx(path, records: list[dict], day: date) -> int:
             std = tuple(float(p[f]) for f in ("standard_value", "lower_limit", "upper_limit"))
             if not seen or seen[-1][0] != std:
                 seen.append((std, r["head"]["measured_at"]))
+        at = f"第 {where(k)[0]} 排第 {where(k)[1]} 點" if where(k) else positions.UNSET
         if not seen:
-            st.append([row_label(k[0]), k[1], names[k], "未設定", None, None, None])
+            st.append([row_label(k[0]), k[1], names[k], at, "未設定", None, None, None])
         for std, since in seen:
-            st.append([row_label(k[0]), k[1], names[k], *std, since])
+            st.append([row_label(k[0]), k[1], names[k], at, *std, since])
             n = st.max_row
-            for i in (4, 5, 6):
+            for i in (5, 6, 7):
                 st.cell(n, i).number_format = "0.000"
-            st.cell(n, 7).number_format = "yyyy-mm-dd hh:mm:ss"
+            st.cell(n, 8).number_format = "yyyy-mm-dd hh:mm:ss"
     for c in st[1]:
         c.font = bold
-    for i, w in enumerate([10, 8, 20, 10, 10, 10, 21], start=1):
+    for i, w in enumerate([10, 8, 24, 16, 10, 10, 10, 21], start=1):
         st.column_dimensions[get_column_letter(i)].width = w
 
     path = Path(path)

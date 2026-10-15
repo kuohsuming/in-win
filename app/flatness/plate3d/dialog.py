@@ -285,7 +285,7 @@ class Plate3DDialog(QDialog):
 def prepare(snapshot: Snapshot, plate: PlateConfig) -> dict[str, SurfaceModel]:
     """檢查並算出兩種模式；不足或同一直線時拋出 RefuseError。"""
     pts = list(snapshot.points)
-    check(pts)
+    check(pts, snapshot.unplaced)
     return {STANDARD: build_model(pts, plate, STANDARD), DETRENDED: build_model(pts, plate, DETRENDED)}
 
 

@@ -908,8 +908,10 @@ class MainWindowTest(UiBase):
         faded = [t for r in w.rows for t in r.tiles if t.state == "ok"]
         self.assertTrue(faded and all(t._fx.opacity() == 0.55 for t in faded))  # 淡化規則
 
-    def test_3d_button_states_and_snapshot(self):  # P3D-01、P3D-04、P3D-05
+    def test_3d_button_states_and_snapshot(self):  # P3D-01、P3D-04、POS-07
         from unittest import mock
+        from flatness import positions
+        self.positioned(names=positions.Names(("前排", "中排", "後排", "排4", "排5"), positions.DEFAULT_POINTS))
         w = self.win
         w.detect()
         self.wait_state("idle")
@@ -926,8 +928,9 @@ class MainWindowTest(UiBase):
         self.assertEqual(snap.judgment, "FAIL")
         self.assertEqual(len(snap.points), 12)
         first = snap.points[0]
-        self.assertEqual((first.name, first.x, first.y), ("前排 左", 125.0, 100.0))
+        self.assertEqual((first.name, first.x, first.y), ("前排 左", 100.0, 60.0))  # 第 1 排第 1 點（5 × 5 格）
         self.assertEqual(snap.points[-1].name, "後排 右")
+        self.assertEqual(snap.unplaced, ())
         self.assertEqual(snap.points[-1].tolerance_mm, w.result.points[-1].std.upper)
         with mock.patch("flatness.plate3d.open_plate3d") as op:
             w.banner.btn_3d.click()
@@ -937,6 +940,7 @@ class MainWindowTest(UiBase):
         self.assertNotEqual(snap.points[0].value_mm, 99.0)
 
     def test_3d_error_points_are_no_data(self):  # P3D-04：設備異常、未校準的點視為無數據
+        self.positioned()
         w = self.win
         w.detect()
         self.wait_state("idle")
@@ -947,9 +951,30 @@ class MainWindowTest(UiBase):
         snap, _ = w.plate_snapshot()
         errs = [p for p in w.result.points if p.state == "err"]
         self.assertTrue(errs)
-        by = {p.name: p for p in snap.points}
+        from flatness import lan
+        by = {p.key: p for p in snap.points}
         for e in errs:
-            self.assertIsNone(by[f"{e.device_name} {e.description}"].value_mm)
+            self.assertIsNone(by[f"{lan.row_no(e.key)}-{e.probe_id}"].value_mm)
+
+    def test_3d_refused_when_position_unset(self):  # POS-07：任一使用中探頭位置未定 → 警告，不開視窗
+        from unittest import mock
+        from flatness.plate3d import dialog
+        self.positioned({("00:01:FC:DE:3A:76", 3): None})
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        self.stations[-1].force = "pass"
+        w.next_piece()
+        self.wait_state("pass")
+        snap, plate = w.plate_snapshot()
+        self.assertEqual(snap.unplaced, ("第 2 台 中排 右中",))
+        with mock.patch.object(dialog, "show_message") as sm, mock.patch.object(dialog, "Plate3DDialog") as dlg:
+            w.open_3d()
+        dlg.assert_not_called()
+        text = sm.call_args[0][1]
+        self.assertTrue(text.startswith("無法繪製 3D：有 1 個探頭未設定位置（第幾排、第幾點）。"), text)
+        self.assertIn("第 2 台 中排 右中", text)
+        self.assertIn("請工程人員在設備設定設定探頭位置", text)
 
     def test_3d_refuse_message(self):  # P3D-02：有效點不足 → 警告，不開視窗
         from unittest import mock

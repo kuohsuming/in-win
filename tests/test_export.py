@@ -33,20 +33,21 @@ class WriteXlsxTest(unittest.TestCase):
         wb = load_workbook(self.path)
         ws = wb["量測紀錄"]
         rows = list(ws.iter_rows(values_only=True))
-        self.assertEqual(rows[0], ("編號", "量測時間", "判定", "重讀次數", "前排 左", "前排 右", "前排 中", "不合格點",
-                                   "前排 DL-EN1 MAC"))
+        self.assertEqual(rows[0], ("編號", "量測時間", "判定", "重讀次數", "第 1 台 前排 左", "第 1 台 前排 右",
+                                   "第 1 台 前排 中", "不合格點", "第 1 台 前排 DL-EN1 MAC"))  # 位置未定：設備稱呼
         first = rows[1]
         self.assertEqual(first[:4], ("20261007143005123", T, "不合格", 1))  # 依量測時間排序
         self.assertIsInstance(first[0], str)                                # 編號為文字
         self.assertEqual(ws.cell(2, 1).number_format, "@")
         self.assertEqual(first[4:7], (-0.2971, 12.5012, "異常"))
-        self.assertEqual(first[7:], ("前排 左（偏低）、前排 中（異常）", "00:01:FC:DE:3A:75"))
+        self.assertEqual(first[7:], ("第 1 台 前排 左（偏低）、第 1 台 前排 中（異常）", "00:01:FC:DE:3A:75"))
         self.assertEqual(ws.cell(2, 5).fill.fgColor.rgb[-6:], "FFC7CE")    # 偏低：紅底
         self.assertEqual(ws.cell(2, 6).fill.fill_type, None)              # 合格：無底色
         self.assertEqual(ws.cell(2, 7).fill.fgColor.rgb[-6:], "FFEB9C")    # 異常：黃底
         std = list(wb["當日標準值"].iter_rows(values_only=True))
-        self.assertEqual(std[1][:6], ("第 1 台", 1, "前排 左", 12.5, 12.45, 12.55))
-        self.assertEqual(std[3][3], "未設定")                              # 探頭 3 沒有標準
+        self.assertEqual(std[0], ("第幾台", "探頭 ID", "量測點", "位置", "標準值", "下限", "上限", "開始使用時間"))
+        self.assertEqual(std[1][:7], ("第 1 台", 1, "第 1 台 前排 左", "未定", 12.5, 12.45, 12.55))
+        self.assertEqual(std[3][4], "未設定")                              # 探頭 3 沒有標準
         self.assertEqual(list(Path(self.tmp.name).iterdir()), [self.path])  # 沒有留下暫存檔
 
     def test_mac_per_row_and_replacement(self):  # DAT-06：每排一欄；當日換機時各片顯示當時的 MAC
@@ -57,9 +58,30 @@ class WriteXlsxTest(unittest.TestCase):
         a["points"].append(extra)
         export.write_xlsx(self.path, [a, b], T.date())
         rows = list(load_workbook(self.path)["量測紀錄"].iter_rows(values_only=True))
-        self.assertEqual(rows[0][-2:], ("前排 DL-EN1 MAC", "後排 DL-EN1 MAC"))
+        self.assertEqual(rows[0][-2:], ("第 1 台 前排 DL-EN1 MAC", "第 2 台 後排 DL-EN1 MAC"))
         self.assertEqual(rows[1][-2:], ("00:01:FC:DE:3A:75", "00:01:FC:AA:BB:CC"))
         self.assertEqual(rows[2][-2:], ("00:01:FC:12:39:A0", None))
+
+    def test_columns_follow_positions(self):  # POS-08：依量測當時的位置排列，標題「排名稱 位置名稱」，未定排最後
+        r = rec("20261007143005123")
+        pts = r["points"]                     # 前排 左、右、中（探頭 1～3）
+        pts[0].update(pos_row=2, pos_point=1, row_name="中間")
+        pts[1].update(pos_row=1, pos_point=4, row_name="前排")
+        export.write_xlsx(self.path, [r], T.date())
+        wb = load_workbook(self.path)
+        rows = list(wb["量測紀錄"].iter_rows(values_only=True))
+        self.assertEqual(rows[0][4:7], ("前排 右", "中間 左", "第 1 台 前排 中"))
+        self.assertEqual(rows[1][4:7], (12.5012, -0.2971, "異常"))
+        std = list(wb["當日標準值"].iter_rows(values_only=True))
+        self.assertEqual([x[3] for x in std[1:]], ["第 1 排第 4 點", "第 2 排第 1 點", "未定"])
+
+    def test_same_display_name_disambiguated(self):  # PROPOSAL §5.2：同名加「（第 N 台 探頭 id）」
+        r = rec("20261007143005123")
+        for p, k in zip(r["points"][:2], (1, 2)):
+            p.update(pos_row=1, pos_point=k, row_name="前排", probe_description="左")
+        export.write_xlsx(self.path, [r], T.date())
+        rows = list(load_workbook(self.path)["量測紀錄"].iter_rows(values_only=True))
+        self.assertEqual(rows[0][4:6], ("前排 左（第 1 台 探頭 1）", "前排 左（第 1 台 探頭 2）"))
 
     def test_no_records_no_file(self):  # EXP-04
         with self.assertRaises(ValueError):

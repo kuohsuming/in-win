@@ -1,4 +1,4 @@
-"""3D 繪圖設定（P3D-05、P3D-10）：板子尺寸檢查、儲存與讀回、探頭位置。"""
+"""3D 繪圖設定（P3D-10、POS-07）：板子尺寸檢查、儲存與讀回、探頭位置。"""
 
 import unittest
 
@@ -55,31 +55,37 @@ class Plate(unittest.TestCase):
 
 
 class Positions(unittest.TestCase):
-    def test_three_rows(self):
-        """P3D-05：前排左 (125, 100)、後排右 (875, 500)。"""
-        pos = probe_positions([dev("row-1", 4), dev("row-2", 4), dev("row-3", 4)], PlateConfig())
-        self.assertEqual(pos[("row-1", 1)], (125.0, 100.0))
-        self.assertEqual(pos[("row-3", 4)], (875.0, 500.0))
-        self.assertEqual(len(pos), 12)
+    """POS-07（修訂 P3D-05）：每個探頭的第幾排、第幾點，固定 5 × 5 格。"""
 
-    def test_mosa_one_row_two_probes(self):
-        pos = probe_positions([dev("row-1", 2)], PlateConfig())
-        self.assertEqual(pos, {("row-1", 1): (250.0, 300.0), ("row-1", 2): (750.0, 300.0)})
+    @staticmethod
+    def placed(key, spots, maint=False):
+        d = dev(key, len(spots), maint)
+        for p, spot in zip(d["probes"], spots):
+            if spot:
+                p["row"], p["point"] = spot
+        return d
 
-    def test_maint_row_keeps_gap(self):
-        """第 1、3 排使用中、第 2 排維修中 → y 為 100、500，中間留空，維修中不畫。"""
-        pos = probe_positions([dev("row-1", 4), dev("row-2", 4, maint=True), dev("row-3", 4)], PlateConfig())
-        self.assertEqual({y for _, y in pos.values()}, {100.0, 500.0})
-        self.assertNotIn(("row-2", 1), pos)
+    def test_corners(self):
+        """板子 1000 × 600：第 1 排第 1 點 → (100, 60)、第 5 排第 5 點 → (900, 540)。"""
+        pos = probe_positions([self.placed("row-1", [(1, 1), (5, 5)])], PlateConfig())
+        self.assertEqual(pos, {("row-1", 1): (100.0, 60.0), ("row-1", 2): (900.0, 540.0)})
 
-    def test_skipped_row_number(self):
-        pos = probe_positions([dev("row-1", 2), dev("row-3", 2)], PlateConfig())
-        self.assertEqual(pos[("row-3", 1)], (250.0, 500.0))
+    def test_device_split_across_rows(self):  # 一台的探頭可在不同排；一排可混不同台
+        pos = probe_positions([self.placed("row-1", [(1, 2), (3, 2)]), self.placed("row-2", [(1, 4)])], PlateConfig())
+        self.assertEqual(pos[("row-1", 2)], (300.0, 300.0))
+        self.assertEqual(pos[("row-2", 1)][1], pos[("row-1", 1)][1])
+
+    def test_unplaced_and_maint(self):
+        devs = [self.placed("row-2", [(1, 1), None]), self.placed("row-1", [None]),
+                self.placed("row-3", [None, (2, 2)], maint=True)]
+        pos = probe_positions(devs, PlateConfig())
+        self.assertEqual(set(pos), {("row-2", 1)})                     # 未定與維修中不畫
+        self.assertEqual(config.unplaced(devs), [("row-1", 1), ("row-2", 2)])  # 依第幾台；維修中不算
 
     def test_plate_size(self):
-        pos = probe_positions([dev("row-1", 4), dev("row-2", 4)], PlateConfig(800, 400, 3))
-        self.assertEqual(pos[("row-1", 1)], (100.0, 100.0))
-        self.assertEqual(pos[("row-2", 4)], (700.0, 300.0))
+        pos = probe_positions([self.placed("row-1", [(1, 1), (2, 5)])], PlateConfig(800, 400, 3))
+        self.assertEqual(pos[("row-1", 1)], (80.0, 40.0))
+        self.assertEqual(pos[("row-1", 2)], (720.0, 120.0))
 
 
 if __name__ == "__main__":

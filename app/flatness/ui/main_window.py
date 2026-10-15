@@ -1536,9 +1536,11 @@ class MainWindow(QMainWindow):
             self._modal(ExportDialog(self.sink, self))
 
     def plate_snapshot(self):
-        """P3D-01、P3D-04、P3D-05：以畫面上這一片的結果做成快照；位置依第幾排與探頭 ID，名稱為排名稱 位置名稱。"""
+        """P3D-01、P3D-04、POS-07：以畫面上這一片的結果做成快照；位置為每個探頭的第幾排、第幾點（5 × 5 格），
+        標籤為顯示名稱「排名稱 位置名稱」；位置未定的探頭列入 unplaced（按下即拒絕）。"""
         plate = plate3d_config.load()
-        pos = plate3d_config.probe_positions(self.layout.get("dl_en1", []), plate)
+        devices = self.layout.get("dl_en1", [])
+        pos = plate3d_config.probe_positions(devices, plate)
         r = self.result
         pts = []
         for p in r.points:
@@ -1547,9 +1549,10 @@ class MainWindow(QMainWindow):
                 continue
             value = None if p.state == ERR or p.value is None else p.value  # 設備異常、未校準等視為無數據
             tol = p.std.upper if p.std is not None else lan.DEFAULT_TOLERANCE
-            pts.append(plate3d.ProbeReading(f"{lan.row_no(p.key)}-{p.probe_id}", f"{p.device_name} {p.description}",
+            pts.append(plate3d.ProbeReading(f"{lan.row_no(p.key)}-{p.probe_id}", self._point_name(p.key, p.probe_id),
                                             xy[0], xy[1], value, tol, p.state))
-        return plate3d.Snapshot(r.serial, r.judgment, tuple(pts)), plate
+        missing = tuple(self._point_name(k, pid) for k, pid in plate3d_config.unplaced(devices))
+        return plate3d.Snapshot(r.serial, r.judgment, tuple(pts), missing), plate
 
     def open_3d(self):
         """P3D-01～P3D-03：有效點不足或同一直線時警告拒絕，否則開啟 3D 繪圖。"""

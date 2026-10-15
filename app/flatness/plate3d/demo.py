@@ -26,9 +26,11 @@ SAMPLE = [0.003, -0.002, 0.012, -0.009, -0.004, 0.009, 0.150, 0.217, -0.300, -0.
 
 
 def grid_snapshot(values, rows, cols, tol=0.2, plate=PlateConfig(), judgment="FAIL") -> Snapshot:
+    spread = {1: [3], 2: [1, 5], 3: [1, 3, 5], 4: [1, 2, 4, 5]}.get(cols, list(range(1, cols + 1)))
     devs = [{"key": f"row-{r + 1}", "name": ROWS[r] if r < 3 else f"第{r + 1}排",
-             "probes": [{"id": c + 1, "description": NAMES[c] if cols == 4 else f"探頭{c + 1}"} for c in range(cols)]}
-            for r in range(rows)]
+             "probes": [{"id": c + 1, "description": NAMES[c] if cols == 4 else f"探頭{c + 1}",
+                         "row": [1, 3, 5][r] if rows == 3 else r + 1, "point": spread[c]} for c in range(cols)]}
+            for r in range(rows)]  # 示範：探頭位置（第幾排、第幾點，POS-07）
     pos = probe_positions(devs, plate)
     pts = []
     for k, v in enumerate(values):

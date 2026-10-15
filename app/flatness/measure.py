@@ -110,7 +110,12 @@ class DemoStation:
         if not points:
             return []
         plate = PlateConfig(length=1.0, width=1.0)
-        pos = probe_positions(self.definition["dl_en1"], plate)
+        pos = probe_positions(self.definition["dl_en1"], plate)  # 設定的第幾排、第幾點（POS-07）
+        devs = self.definition["dl_en1"]
+        for n, d in enumerate(devs):  # 位置未定的探頭：依第幾台、探頭順序估一個位置，讓虛擬的面仍然平滑
+            ids = sorted(p["id"] for p in d["probes"])
+            for i, pid in enumerate(ids):
+                pos.setdefault((d["key"], pid), ((i + 0.5) / len(ids), (n + 0.5) / len(devs)))
         center = self.rng.choice(points)
         tilt = (self.rng.uniform(-0.3, 0.3), self.rng.uniform(-0.3, 0.3))  # 左→右、前→後，以允許誤差的一半為單位
         depth = self.rng.choice((1, -1)) * (self.rng.uniform(1.15, 1.5) if mode == "fail" else self.rng.uniform(0.35, 0.6))
