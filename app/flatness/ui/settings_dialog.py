@@ -33,6 +33,8 @@ from .widgets import Backdrop, MessageDialog, Toast, pick_path, show_message
 
 log = logging.getLogger(__name__)
 
+SHOW_REPLACE = False  # 「替換…」區塊暫時隱藏（PO 2026-10-15）；改回 True 即恢復（DSC-14）
+
 STATUS_ORDER = (UNCLASSIFIED, LIVE, MAINT, RETIRED, OTHER)
 STATUS_HELP = {
     UNCLASSIFIED: "新偵測到、尚未確認身分。不配發 IP、不顯示在主畫面，紀錄保留在清單中。",
@@ -810,7 +812,7 @@ class SettingsDialog(QDialog):
                                    p.get("row"), p.get("point"))
         self._refresh_pos_options()
         self._fill_names()
-        self.replace_row.setVisible(d.status == LIVE and self.original.get(d.mac) is not None
+        self.replace_row.setVisible(SHOW_REPLACE and d.status == LIVE and self.original.get(d.mac) is not None
                                     and self.original[d.mac].status == LIVE)
         for w in (self.name_edit, self.ip_edit, self.port_edit):
             w.setReadOnly(self.read_only)
