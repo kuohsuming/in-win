@@ -415,6 +415,8 @@ class PositionRow(QFrame):
                     t.setStyleSheet(f"QFrame#slot {{ border:2px dashed {C['line']}; border-radius:6px;"
                                     f" background:transparent; }}")
                 self.empty.append(t)
+            # 每格一樣寬：不依方塊內容的寬度分配，各排同一點的方格上下對齊（POS-04）
+            t.setSizePolicy(QSizePolicy.Ignored, t.sizePolicy().verticalPolicy())
             grid.addWidget(t, 0, c)
             grid.setColumnStretch(c, 1)
         lay.addLayout(grid, 1)
@@ -433,6 +435,14 @@ class PositionRow(QFrame):
         self._grid.invalidate()
         self._lay.invalidate()
         return self._lay.sizeHint().height() + 2
+
+    @property
+    def min_width(self) -> int:
+        """此比例下排的最小寬度：5 格都要放得下最寬的方塊內容（每格一樣寬，_fit 以此檢查寬度）。"""
+        tile = max((t.minimumSizeHint().width() for t in self.tiles), default=0)
+        m = self._lay.contentsMargins()
+        return (m.left() + m.right() + self._left.width() + self._lay.spacing()
+                + self.COLS * tile + (self.COLS - 1) * self._grid.horizontalSpacing())
 
     def set_scale(self, k: float):
         """排與探頭方塊依縮放比例調整（UI-11）。"""
@@ -949,8 +959,9 @@ class MainWindow(QMainWindow):
             self._apply_scale(k)  # 套用後版面已重新計算：以排區實際高度比較
             rows = self.rows[:count]
             h = sum(r.maximumHeight() for r in rows) + 12 * (len(rows) - 1)  # 排高已固定（_apply_scale）
-            w = max(r.minimumSizeHint().width() for r in self.rows)
-            return h <= self.rows_area.height() and w <= avail_w
+            # 方格寬度不依內容（PositionRow）：以排實際的內部寬度（扣除捲軸、框線）檢查 5 格放得下
+            wide = all(r.min_width <= min(r.contentsRect().width(), avail_w) for r in self.rows)
+            return h <= self.rows_area.height() and wide
 
         n = len(self.rows)
         counts = [n] if n <= self.MIN_VISIBLE_ROWS else [n, self.MIN_VISIBLE_ROWS]

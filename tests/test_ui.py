@@ -825,6 +825,29 @@ class MainWindowTest(UiBase):
         self.assertEqual(len(w.rows[0].empty), 2)                              # 第 2、4 點空框
         self.assertEqual([t.pos.text() for t in w.rows[3].tiles], ["右"])      # 前排「右」位置未定
 
+    def test_slots_equal_width(self):  # POS-04：每格一樣寬，各排同一點的方格上下對齊
+        from flatness import lan, positions
+        old = self.store.load()
+        new = [d.copy() for d in old]
+        for d in new:  # 只留第 1 台，探頭分在第 1、2 排各 1 個：放大時方塊仍不可比空格寬
+            if d.mac == "00:01:FC:DE:3A:75":
+                d.config["probes"] = d.config["probes"][:2]
+                positions.set_pos(d.config["probes"][0], 1, 1)
+                positions.set_pos(d.config["probes"][1], 2, 1)
+            elif d.status == lan.LIVE:
+                d.status = lan.RETIRED
+        self.win.rebuild(self.be.apply(old, new).layout)
+        w = self.win
+        w.show()
+        pump(self.app, 0.3)
+        self.assertEqual([len(r.tiles) for r in w.rows], [1, 1])
+        for r in w.rows:
+            widths = {r._grid.itemAtPosition(0, c).widget().width() for c in range(5)}
+            self.assertLessEqual(max(widths) - min(widths), 1, (r.title, widths))
+            for t in r.tiles:
+                self.assertGreaterEqual(t.width(), t.minimumSizeHint().width())  # 內容仍放得下
+        w.hide()
+
     def test_device_split_across_rows_goes_down(self):  # POS-G2：一台的探頭分在兩排，斷線時兩排都標示
         from flatness import measure
         self.positioned({("00:01:FC:DE:3A:76", 1): (1, 5), ("00:01:FC:DE:3A:76", 2): (3, 5),
