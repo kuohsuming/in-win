@@ -1,7 +1,7 @@
 ---
 target: docs/pm/probe-position/PROPOSAL.md
 target_slug: probe-position-proposal
-total_rounds: 2
+total_rounds: 3
 last_round_date: 2026-10-15
 last_verdict: ship-as-is
 schema_version: enhanced-v1
@@ -16,7 +16,8 @@ contract_version: spectra-contract-v1
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | 1 | 2026-10-15 | 3 | 8 | 8 | 6 | fix-blockers |
 | 2 | 2026-10-15 | 0 | 4 | 9 | 6 | ship-as-is |
-| **Total** | | **3** | **12** | **17** | — | — |
+| 3 | 2026-10-15 | 0 | 4 | 5 | 5 | ship-as-is |
+| **Total** | | **3** | **16** | **22** | — | — |
 
 ## Issue Status Matrix
 
@@ -46,21 +47,26 @@ contract_version: spectra-contract-v1
 | 2 | C3 | 🟡 | 規格書 POS-04 與提案的 UI-11 計算不一致 | — | — | ✅ fixed（POS-04 改為以列計算） | PO 指示全部修正 |
 | 2 | C4 | 🟡 | 依賴 §10 的段落未全部標示 | — | — | ✅ fixed（§0、§10 各項列出依賴段落） | PO 指示全部修正 |
 | 2 | N1～N9 | 🟢 | 自動帶入邊界、Excel 當日位置、降版描述、grep 範圍、訊息格式、檔案對照、未設定區維修中、離線維修中、內嵌 Schema | — | — | ✅ fixed（rev 3） | — |
+| 3 | C1 | 🟡 | IP 不符在優先表中蓋掉探頭狀態與量測結果 | — | — | ✅ fixed（rev 4 §5.5 改為附加標示） | PO 指示全部修正 |
+| 3 | C2 | 🟡 | 佔用者以顯示名稱稱呼造成自我指涉 | — | — | ✅ fixed（rev 4 §5.2 新增「設備稱呼」；POS-02 同步） | PO 指示全部修正 |
+| 3 | C3 | 🟡 | 新設備預設名稱不觸發自動帶入、POS-09 與提案不一致 | — | — | ✅ fixed（default_config 改探頭 1～4；POS-09 同步） | PO 指示全部修正 |
+| 3 | C4 | 🟡 | 升級順序未定義，新表不存在時啟動走離線路徑 | — | — | ✅ fixed（rev 4 §8 升級順序、load_names 容錯） | PO 指示全部修正 |
+| 3 | N1～N5 | 🟢 | 未設定允收標準、訊息格式、j/k、降版描述、P3D-03 訊息 | — | — | ✅ fixed（rev 4；POS-07 納入 P3D-03 訊息修訂） | — |
 
 ## Quality Health Score
 
-- total_findings: 44
-- fixed: 32
+- total_findings: 58
+- fixed: 41
 - pending: 0
 - no_decision: 0
 - rejected: 0
 - deferred: 0
-- valued: 12（STRENGTH）
+- valued: 17（STRENGTH）
 - fix_rate: 100%
 - close_rate: 100%
 - avg_severity_open: 0
 - po_overrides: 0
-- convergence_signal: ⚠（第 2 輪 0 BLOCKER、4 CONCERN，待第 3 輪確認）
+- convergence_signal: ⚠（第 3 輪 0 BLOCKER、4 CONCERN；有效成本 45 → 15.9 → 9.3，待第 4 輪確認）
 
 ## Hotspot History
 
