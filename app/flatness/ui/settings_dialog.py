@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from .. import bootp, calibrate, definition, lan, netinfo, positions
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
+from . import icons
 from .theme import C, tag_style
 from .widgets import Backdrop, MessageDialog, Toast, pick_path, show_message
 
@@ -480,8 +481,19 @@ class SettingsDialog(QDialog):
         prow.addWidget(self.btn_probe_add)
         prow.addWidget(self.btn_probe_del)
         prow.addStretch()
+        self.btn_names = QPushButton()  # 排與點名稱區塊：預設隱藏，按筆圖示開啟／隱藏
+        self.btn_names.setProperty("kind", "icon")
+        self.btn_names.setCheckable(True)
+        self.btn_names.setIcon(icons.icon("edit", C["ink"], 18))
+        self.btn_names.setIconSize(icons.pixmap("edit", C["ink"], 18).size() / 2)
+        self.btn_names.setToolTip("編輯排名稱與點名稱")
+        self.btn_names.setCursor(Qt.PointingHandCursor)
+        prow.addWidget(self.btn_names)
         pb.addLayout(prow)
-        pb.addWidget(self._names_block())
+        self.names_box = self._names_block()
+        self.names_box.hide()
+        self.btn_names.toggled.connect(self.names_box.setVisible)
+        pb.addWidget(self.names_box)
         d.addWidget(self.probe_box)
 
         self.replace_row = QWidget()

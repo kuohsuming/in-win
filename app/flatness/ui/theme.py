@@ -85,6 +85,7 @@ QPushButton[kind="small-danger"] {{ font-size: 14px; padding: 5px 10px; border-w
                                    border-color: {C['ng']}; }}
 QPushButton[kind="tool"] {{ font-size: 17px; font-weight: 700; padding: 10px 18px; }}
 QPushButton[kind="icon"] {{ padding: 0; min-width: 42px; max-width: 42px; min-height: 42px; max-height: 42px; }}
+QPushButton[kind="icon"]:checked {{ background: {C['line']}; }}
 
 /* ---- 輸入框（5.10）---- */
 QLineEdit, QSpinBox, QComboBox {{ font-size: 16px; padding: 6px 8px; border: 2px solid {C['line']};

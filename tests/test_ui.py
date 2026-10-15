@@ -311,6 +311,11 @@ class SettingsDialogTest(UiBase):
     def test_names_edit_and_save(self):  # POS-03
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
+        self.assertTrue(d.names_box.isHidden())  # 預設隱藏，按筆圖示開啟／隱藏
+        d.btn_names.click()
+        self.assertFalse(d.names_box.isHidden())
+        d.btn_names.click()
+        self.assertTrue(d.names_box.isHidden())
         self.assertEqual([e.text() for e in d.name_edits["rows"]], ["排1", "排2", "排3", "排4", "排5"])
         self.type(d.name_edits["rows"][0], "前排")
         self.assertTrue(d.is_dirty())
