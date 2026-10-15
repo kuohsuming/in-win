@@ -26,7 +26,7 @@ class PlateDialog(QDialog):
         title = QLabel("板子尺寸")
         title.setObjectName("h1")
         lay.addWidget(title)
-        note = QLabel("只影響 3D 繪圖，不影響判定。探頭在板子下方，依設備設定的第幾排與探頭 ID 平均分佈。")
+        note = QLabel("只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點（5 × 5 格）。")
         note.setObjectName("note")
         note.setWordWrap(True)
         lay.addWidget(note)

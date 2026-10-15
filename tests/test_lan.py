@@ -59,7 +59,7 @@ class ValidateTest(unittest.TestCase):
         for bad in ("rear", "row-0", "row-11", ""):
             by_mac(devs)["00:01:FC:DE:3A:77"].config["key"] = bad
             msgs = [i.message for i in lan.validate(devs, NET) if i.field == "key"]
-            self.assertEqual(msgs, ["請選擇第 1～10 排其中一排"], bad)
+            self.assertEqual(msgs, ["請選擇第 1～10 台其中一台"], bad)
 
     def test_new_dl_en1_gets_smallest_free_row(self):  # EDT-05
         devs = sample_devices()

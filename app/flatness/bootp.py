@@ -27,7 +27,7 @@ from . import positions
 DEFAULT_PORT = 64000
 BACKUP_KEEP = 20
 
-_KEY_RE = re.compile(r"^row-([1-9]|10)$")  # 位置標籤：第 1～10 排（EDT-05）
+_KEY_RE = re.compile(r"^row-([1-9]|10)$")  # 位置標籤：第 1～10 台（EDT-05、POS-06）
 _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
@@ -91,7 +91,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
 
         key = dev.get("key")
         if "key" in dev and not (isinstance(key, str) and _KEY_RE.match(key)):
-            errors.append((f"{at}.key", "位置須為 row-1～row-10（第 1～10 排）"))
+            errors.append((f"{at}.key", "第幾台須為 row-1～row-10（第 1～10 台）"))
         if "name" in dev:
             _check_str(errors, f"{at}.name", dev["name"], 1, 10)
 

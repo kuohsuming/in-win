@@ -31,7 +31,7 @@ class RefuseError(Exception):
 
 @dataclass(frozen=True)
 class ProbeReading:
-    key: str                  # 內部識別「排號-探頭 ID」，例「2-3」（不顯示）
+    key: str                  # 內部識別「第幾台-探頭 ID」，例「2-3」（不顯示）
     name: str                 # 顯示名稱：排名稱 + 位置名稱，例「中排 右中」
     x: float                  # mm
     y: float                  # mm

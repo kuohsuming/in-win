@@ -465,7 +465,7 @@ class SettingsDialog(QDialog):
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
         pt.setMinimumHeight(180)
         pt.setMaximumHeight(180)
-        for col, width in ((P_ID, 80), (P_ROW, 96), (P_PT, 96), (P_CAL, 190), (P_BTN, 90), (P_TOL, 120)):
+        for col, width in ((P_ID, 70), (P_ROW, 118), (P_PT, 118), (P_CAL, 180), (P_BTN, 90), (P_TOL, 110)):
             pt.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
             pt.setColumnWidth(col, width)
         pt.horizontalHeader().setSectionResizeMode(P_DESC, QHeaderView.Stretch)
@@ -839,7 +839,7 @@ class SettingsDialog(QDialog):
         self._render_ip_note()
 
     def _fill_rows(self, d):
-        """位置選單：目前的排選取；其他使用中／維修中設備佔用的排標示佔用者並停用（每排一台）。"""
+        """第幾台選單：目前的選取；其他使用中／維修中設備佔用的標示佔用者並停用（每個編號一台）。"""
         used = {(x.config or {}).get("key"): x for x in self._devices()
                 if x.status in lan.DL_STATUSES and x.mac != d.mac}
         model = self.row_box.model()

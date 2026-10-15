@@ -12,15 +12,21 @@ OUT = Path("docs/manual/images")
 
 class Shots(test_ui.UiBase):
     def runTest(self):
-        from flatness import lan, measure
+        from flatness import lan, measure, positions
         from flatness.ui.main_window import MainWindow, ExportDialog
         from flatness.ui.settings_dialog import SettingsDialog
         devs = sample_devices()
+        rows = {"row-1": 1, "row-2": 2, "row-3": 3}
         for d in devs:
             if d.is_dl_en1 and d.config:
                 for p in d.config["probes"]:
                     p.update(zero_offset=-0.3219, zeroed_at="2026-10-08T08:30:00", tolerance=0.2)
+                    if d.status == lan.LIVE and d.config["key"] in rows:  # 探頭位置（POS-01）
+                        positions.set_pos(p, rows[d.config["key"]], p["id"])
         be = self.make_backend(devs)
+        old = be.load_devices()  # 排名稱（POS-03）
+        be.apply(old, [d.copy() for d in old],
+                 names=positions.Names(("前排", "中排", "後排", "排4", "排5"), positions.DEFAULT_POINTS))
         stations = []
         def factory(defn):
             s = measure.DemoStation(defn, lan.standards(defn), seed=3, delay=0.05)
@@ -52,8 +58,12 @@ class Shots(test_ui.UiBase):
         unk = next((d for d in devs if d.status == lan.UNCLASSIFIED), None)
         if unk: s.select(unk.mac); shot("settings-unknown", s)
         s.select(live.mac)
-        box = s.probe_table.cellWidget(0, 4); box.setCurrentIndex(box.findText("0.5 mm"))
+        from flatness.ui.settings_dialog import P_TOL
+        box = s.probe_table.cellWidget(0, P_TOL); box.setCurrentIndex(box.findText("0.5 mm"))
         s.btn_save.click(); shot("settings-confirm", s)
         s._ask = lambda *a, **k: True; s.close(); w.close()
 
-t = Shots(); t.setUpClass(); t.runTest()
+from unittest import mock
+from flatness.plate3d.config import PlateConfig
+with mock.patch("flatness.plate3d.config.load", return_value=PlateConfig()):  # 不受本機已存的板子尺寸影響
+    t = Shots(); t.setUpClass(); t.runTest()

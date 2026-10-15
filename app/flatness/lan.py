@@ -125,12 +125,12 @@ def config_from_entry(entry: dict) -> dict:
 
 
 def live_devices(devices) -> list[LanDevice]:
-    """「DL-EN1 使用中」依主畫面順序（排號）。"""
+    """「DL-EN1 使用中」依第幾台（POS-06）。"""
     return sorted((d for d in devices if d.status == LIVE), key=_row_key)
 
 
 def screen_devices(devices) -> list[LanDevice]:
-    """主畫面上的排：「使用中」與「維修中」，依位置標籤的排號由上而下（DSC-15、EDT-05）。"""
+    """主畫面版面的設備：「使用中」與「維修中」，依第幾台（DSC-15、EDT-05、POS-06）。"""
     return sorted((d for d in devices if d.status in DL_STATUSES), key=_row_key)
 
 
@@ -164,7 +164,7 @@ def free_row(devices, exclude_mac: str | None = None) -> str | None:
 
 
 def _row_key(d: LanDevice):
-    """主畫面順序：依位置標籤的排號（EDT-05）；與設定頁清單順序（DSC-17）無關。"""
+    """設備順序：依第幾台（EDT-05、POS-06）；與設定頁清單順序（DSC-17）無關。"""
     return (row_no((d.config or {}).get("key")) or ROWS + 1, _list_key(d))
 
 
@@ -294,7 +294,7 @@ def _entry_issues(d: LanDevice, equip_net) -> list[tuple[str, str]]:
             elif fld == "ipv4":
                 continue  # IP 由 ip_problem 檢查，訊息較具體
             elif fld == "key":
-                out.append(("key", f"請選擇第 1～{ROWS} 排其中一排"))
+                out.append(("key", f"請選擇第 1～{ROWS} 台其中一台"))
             else:
                 out.append((fld.split(".")[0], why))
         return out
