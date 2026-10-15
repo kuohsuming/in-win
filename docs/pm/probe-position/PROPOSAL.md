@@ -2,7 +2,7 @@
 
 > 表面平整檢查系統的設定與畫面調整。探頭在板子下方的位置，由工程人員在「設備設定」逐一設定「第幾排」「第幾點」，不再由所屬 DL-EN1 的位置與探頭順序推定。
 > 對應需求：需求規格書 3.13 探頭位置（POS-01～POS-09，**待確認**）。全部條文簽核前不實作。
-> 狀態：草稿 rev 4（2026-10-15，依 spectra-review 第 1～3 輪修訂）。變更紀錄：`docs/release/changes/2026-10-15-probe-position-requirements.md`。審查紀錄：`docs/reviews/probe-position/`。
+> 狀態：草稿 rev 5（2026-10-15，依 spectra-review 第 1～4 輪修訂）。變更紀錄：`docs/release/changes/2026-10-15-probe-position-requirements.md`。審查紀錄：`docs/reviews/probe-position/`。
 
 ---
 
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS flatness.plate_position_name (
 
 同一個畫面或檔案中若有兩個探頭顯示名稱相同（例如工程人員把同一排兩個點的位置名稱都改成「左」），兩者都在後面加「（第 N 台 探頭 id）」。使用處（給作業員看的地方）：結果橫幅（偏高、偏低、設備異常原因）、頂端摘要、3D 標籤與拒絕訊息、Excel 欄位標題與「不合格點」。主畫面方塊本身不用顯示名稱，而是大字位置名稱加小字「第 N 台 名稱」（POS-05）。
 
-設備設定頁說的是「哪一台的哪一個探頭」，不論有沒有位置，一律用「**設備稱呼**」：第 N 台＋空格＋DL-EN1 名稱＋空格＋位置名稱，例「第 2 台 中排 點2」；同一台有兩個探頭位置名稱相同時加「（探頭 id）」。使用處：佔用者標示、位置衝突與其他檢查訊息、確認儲存的變更清單。
+設備設定頁說的是「哪一台的哪一個探頭」，不論有沒有位置，一律用「**設備稱呼**」：第 N 台＋空格＋DL-EN1 名稱＋空格＋位置名稱，例「第 2 台 中排 點2」；同一台有兩個探頭位置名稱相同時加「（探頭 id）」。使用處：佔用者標示、位置衝突與其他檢查訊息、確認儲存的變更清單（包含現有的探頭變更行，例 `lan.py` 產生的「探頭 ID n「名稱」…」改為「第 2 台 中排 點2：…」；`tests/test_ui.py` 與操作說明書中依賴此文字的地方在 M2、M5 一併更新）。
 
 ### 5.3 設備設定
 
@@ -204,7 +204,7 @@ DL-EN1 詳細區：
 
 - 排名稱、點名稱的變更算在「有變更」之內：`Preview` 與 `is_dirty` 要納入名稱比對；只改名稱也可以預覽與儲存（目前 `lan.diff` 只比對設備，只改名稱時會顯示「沒有任何變更」並停用儲存）。
 - 變更清單列出位置與名稱變更，例「第 2 台 中排 探頭 1：未定 → 排1 點2」「排1 名稱：排1 → 前排」。
-- `sync.apply(..., names=)` 在既有的同一個資料庫交易內寫入名稱，再寫定義檔（含 `position_names`）。失敗時名稱與設備一起還原；`MemoryStore` 的交易快照要包含名稱。
+- 設定頁儲存時，只有名稱區塊有變更才傳入 `names`，否則傳 `None`（名稱不變，不寫 `plate_position_name`）。`sync.apply(..., names=)` 在既有的同一個資料庫交易內寫入名稱，再寫定義檔（含 `position_names`）。失敗時名稱與設備一起還原；`MemoryStore` 的交易快照要包含名稱。
 
 ### 5.4 量測主畫面
 
@@ -242,7 +242,7 @@ DL-EN1 詳細區：
 | 4 | 探頭無回應、未校準、未設定允收標準 | 只有該探頭，同現在 | 同現在，以顯示名稱稱呼 | 不變 |
 | 5 | 量測結果 | 同現在 | 同現在，以顯示名稱稱呼 | 不變 |
 
-**IP 不符（DSC-20）不是方塊狀態，而是附加標示**：該台每個方塊加警示色外框與小標「IP 不符」，方塊內容仍依上表顯示（照常量測，第 4、5 列看得到哪一點有問題）；維修中時小標為「維修中・IP 不符」（同現在）。結果橫幅不列入；頂端沿用 DSC-20 的提示，文字中的「第 N 排」改為「第 N 台」，與上表任何一列同時成立時仍顯示。
+**IP 不符（DSC-20）不是方塊狀態，而是附加標示**：該台每個方塊加警示色外框與小標「IP 不符」，方塊內容仍依上表顯示（照常量測，第 4、5 列看得到哪一點有問題）；維修中時小標為「IP 不符・維修中」（同現在）。偵測不到（第 2 列）或整台設備異常（第 3 列）時，方塊不加 IP 不符標示，以設備異常優先（DSC-20，同現在 `DeviceRow.set_down` 的做法）；頂端兩種提示都顯示。結果橫幅不列入；頂端沿用 DSC-20 的提示，文字中的「第 N 排」改為「第 N 台」，與上表任何一列同時成立時仍顯示。
 
 頂端的「維修中」「偵測不到／設備異常」提示各最多列 2 台，其餘以「等 N 台」表示（同 UI-11 的做法）。左側的設備摘要（`sum_text`，例「3 台 DL-EN1、10 個探頭正常」）不變。
 
@@ -308,11 +308,11 @@ DL-EN1 詳細區：
 | `app/flatness/results.py` | `to_record` 加入位置與排名稱；本機暫存檔相容舊格式 |
 | `app/flatness/ui/settings_dialog.py` | 探頭清單兩欄與選單規則、自動帶入名稱、名稱區塊、`Preview`／`is_dirty` 納入名稱、刪除探頭時保留位置、「第幾台」文字；下載目前設定（`_download`）與匯入（`import_file`）帶 `position_names` |
 | `app/flatness/ui/main_window.py` | `PointResult` 加入位置與排名稱；`MemorySink`（示範模式）同步；`DeviceRow` 改為「位置排」與「未設定位置」區；維修中方塊；狀態優先順序；`set_flag("dev")`、`set_flag("maint")`；橫幅與訊息用顯示名稱；`_fit` 以列計算 |
-| `app/flatness/plate3d/config.py`、`dialog.py`、`model.py` | 5 × 5 格位置、未定拒絕、標籤 |
+| `app/flatness/plate3d/config.py`、`dialog.py`、`model.py` | P3D-03 拒絕訊息改寫（`model.py` 中三處）；5 × 5 格位置、未定拒絕、標籤 |
 | `app/flatness/export.py` | 欄位順序、顯示名稱、第二工作表、MAC 欄標題 |
 | `tests/` | 見第 7 節 |
 
-**文件**：`docs/ui/screen-design-spec.md`、`docs/ui/screens-device-settings.md`、`docs/manual/操作說明書.md`（截圖、PDF）、`docs/ui/prototype/board-station.html`、安裝說明（降版注意事項）。
+**文件**（含寫死預設名稱「左、左中、右中、右」的段落：操作說明書「設為 DL-EN1」一節、畫面設計規格 5.10 預先帶入的設定）：`docs/ui/screen-design-spec.md`、`docs/ui/screens-device-settings.md`、`docs/manual/操作說明書.md`（截圖、PDF）、`docs/ui/prototype/board-station.html`、安裝說明（降版注意事項）。
 
 ---
 

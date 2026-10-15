@@ -2,7 +2,7 @@
 date: 2026-10-15
 type: changed
 scope: spec
-requirements: POS-01～POS-09, DEF-04, EDT-05, DSC-15, P3D-05, TBD-06
+requirements: POS-01～POS-09, DEF-04, EDT-05, DSC-15, P3D-03, P3D-05, TBD-06
 ---
 
 # 探頭位置改為每個探頭設定第幾排、第幾點（需求草稿，待確認）
@@ -12,3 +12,4 @@ requirements: POS-01～POS-09, DEF-04, EDT-05, DSC-15, P3D-05, TBD-06
 - 需求規格書新增 3.13 探頭位置（POS-01～POS-09、POS-G1～G2、POS-A1～A5），3.7.1 探頭欄位新增 `row`、`point`；DEF-04、EDT-05、DSC-15、P3D-05、TBD-06 加註受影響處。全部待確認，簽核前不實作。
 - PO 決定：主畫面依探頭的排排列（每排固定 5 格、空位留白，未定的探頭在最下方「未設定位置」區）；方塊加小字「第 N 台 名稱」；每排可自訂排名稱；DL-EN1 畫面上改稱「第 N 台」；3D 固定 5 × 5 格，任一探頭未定即拒絕。
 - PO 補充：排和點都給預設名稱（排1～排5、點1～點5，POS-09），可在設備設定修改；選了點就自動帶入點名稱為位置名稱，手動改過的不覆蓋。排名稱與點名稱存於新資料表 `plate_position_name`（POS-03 修訂）。
+- spectra-review 第 1～4 輪（`docs/reviews/probe-position/`）：提案修訂至 rev 5；規格書 POS-02～POS-05、POS-07、POS-09 依審查同步調整，P3D-03 加註受 POS-07 影響（拒絕訊息改寫）。
