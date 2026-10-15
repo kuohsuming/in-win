@@ -93,7 +93,7 @@ class StartupResult:
 
     def __post_init__(self):
         if self.layout is None:
-            self.layout = self.definition
+            self.layout = lan.enabled_view(self.definition)  # 只含啟用的探頭（PDT-04）
         if self.names is None:
             self.names = positions.Names.from_definition(self.definition)
 

@@ -897,6 +897,39 @@ class MainWindowTest(UiBase):
         self.assertEqual(len(w.rows[0].empty), 2)                              # 第 2、4 點透明空位（POS-12）
         self.assertEqual([t.pos.text() for t in w.rows[3].tiles], ["右"])      # 前排「右」位置未定
 
+    def test_disabled_probe_not_shown_or_judged(self):  # PDT-04：未啟用的探頭不顯示、不讀值、不判定、不算 3D
+        from flatness import positions
+        old = self.store.load()
+        new = [d.copy() for d in old]
+        for d in new:
+            if d.mac == "00:01:FC:DE:3A:75":
+                positions.set_enabled(d.config["probes"][3], False)  # 前排「右」
+        self.win.rebuild(self.be.apply(old, new).layout)
+        w = self.win
+        self.assertNotIn(("row-1", 4), w.tiles)
+        self.assertEqual(len(w.tiles), 11)
+        self.assertEqual(w.layout["dl_en1"][0]["max_probes"], 4)   # 比對實際台數仍用清單總數（PDT-07）
+        self.stations[-1].force = "pass"
+        w.detect()
+        self.wait_state("idle")
+        w.next_piece()
+        self.wait_state("pass")
+        self.assertEqual(len(w.result.points), 11)
+        self.assertNotIn(("row-1", 4), {(p.key, p.probe_id) for p in w.result.points})
+        snap, _plate = w.plate_snapshot()
+        self.assertEqual(len(snap.unplaced), 11)                    # 3D 只要求啟用的探頭設定位置
+
+    def test_extra_amplifier_notice_does_not_block(self):  # PDT-07：實際放大器比設定多只提示
+        from flatness import measure
+        w = self.win
+        st = self.stations[-1]
+        st.detect = lambda: [measure.DeviceStatus("row-1", notice="偵測到 5 支、設定 4 支，請在設備設定按「探頭偵測」"),
+                             measure.DeviceStatus("row-2"), measure.DeviceStatus("row-3")]
+        w.detect()
+        self.wait_state("idle")
+        self.assertEqual(w.flags["extra"], "第 1 台 前排 偵測到 5 支、設定 4 支，請在設備設定按「探頭偵測」")
+        self.assertIsNone(w.flags.get("dev"))
+
     def test_only_used_points_drawn(self):  # POS-12：只畫有探頭的點；空位透明、不往左補位、各排對齊
         a, b, c = "00:01:FC:DE:3A:75", "00:01:FC:DE:3A:76", "00:01:FC:DE:3A:77"
         self.positioned({(a, 1): (1, 1), (a, 2): (1, 3), (a, 3): (1, 4), (a, 4): (2, 3),

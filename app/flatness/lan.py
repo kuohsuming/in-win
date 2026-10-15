@@ -135,7 +135,8 @@ def screen_devices(devices) -> list[LanDevice]:
 
 
 def screen_layout(devices, names: positions.Names | None = None) -> dict:
-    """主畫面版面：定義檔格式，維修中的設備另加 "maint": True（只在 App 內部使用，不寫入定義檔）。"""
+    """主畫面版面：定義檔格式，維修中的設備另加 "maint": True（只在 App 內部使用，不寫入定義檔）。
+    只含啟用的探頭（PDT-04）；max_probes 仍為清單的探頭總數（PDT-07 比對實際連接台數用）。"""
     names = names or positions.Names.default()
     out = []
     for d in screen_devices(devices):
@@ -143,7 +144,15 @@ def screen_layout(devices, names: positions.Names | None = None) -> dict:
         if d.status == MAINT:
             entry["maint"] = True
         out.append(entry)
-    return {"version": 1, "position_names": names.to_json(), "position_grid": names.grid_json(), "dl_en1": out}
+    return enabled_view({"version": 1, "position_names": names.to_json(), "position_grid": names.grid_json(),
+                         "dl_en1": out})
+
+
+def enabled_view(definition: dict) -> dict:
+    """定義檔（或主畫面版面）只留啟用的探頭（PDT-04）：主畫面、連線量測、判定、量測紀錄、3D 皆以此為準。"""
+    out = dict(definition)
+    out["dl_en1"] = [{**d, "probes": positions.enabled_probes(d.get("probes"))} for d in definition.get("dl_en1", [])]
+    return out
 
 
 def row_no(key) -> int | None:
