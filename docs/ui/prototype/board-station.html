@@ -110,6 +110,7 @@ button,select{font:inherit}
 .probes{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:10px}
 .slot{border:2px dashed var(--line);border-radius:6px;min-height:120px} .slot.none{border:0}
 .names{margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:6px;background:var(--panel)}
+.cntrow{display:flex;align-items:center;gap:8px} .enc{display:flex;align-items:center;gap:4px;font-size:14px} .bad-t{color:var(--ng)}
 .names .gridrow{display:flex;align-items:center;gap:8px;font-size:14px} .names .gridrow select{width:64px}
 .btn.pen.on{background:var(--line)}
 .names .nmrow{display:grid;grid-template-columns:56px repeat(5,minmax(0,1fr)) auto;gap:6px;align-items:center;font-size:14px}
@@ -484,6 +485,7 @@ let NAMES={rows:["前排","中排","後排","排4","排5"],points:[...DEF_NAMES.
 const gridText=g=>`${g.rows} 排 × ${g.points} 點`;
 const outGrid=(p,g)=>posOf(p)&&(p.row>g.rows||p.point>g.points);   // 位置超出版面（POS-11）
 let namesOpen=false;
+const SCAN={};                                                   // 最近一次探頭偵測的狀態：MAC → {ID: 狀態}（PDT-01）
 const SHOW_REPLACE=false;                                        // 「替換…」區塊暫時隱藏（2026-10-15 PO）                                             // 設定頁「板子版面與排、點名稱」區塊：預設隱藏，按筆圖示開啟
 const dispName=(c,p)=>posOf(p)?`${NAMES.rows[p.row-1]} ${p.description}`:devCall(c,p);   // 顯示名稱（給作業員）
 
@@ -504,7 +506,9 @@ const ARP={"192.168.10.50":"3C:52:82:44:55:66"};
 let LATER=[{mac:"00:01:FC:12:3B:11",req:"BOOTP",host:""}];
 
 /* 主畫面：DL-EN1 使用中與維修中，依位置第 1～10 排由上而下（EDT-05、DSC-15） */
-const shown=()=>DB.filter(d=>d.status==="active"||d.status==="maint").sort((a,b)=>rowNo(a.cfg.key)-rowNo(b.cfg.key));
+const _view=new WeakMap();   // 主畫面只看啟用的探頭（PDT-04）：每台一個固定的檢視物件
+const viewOf=d=>{ if(!_view.has(d)) _view.set(d,{...d,cfg:{...d.cfg,probes:d.cfg.probes.filter(p=>p.enabled!==false)}}); return _view.get(d); };
+const shown=()=>DB.filter(d=>d.status==="active"||d.status==="maint").map(viewOf).sort((a,b)=>rowNo(a.cfg.key)-rowNo(b.cfg.key));
 const live=()=>shown().filter(d=>d.status==="active");
 const nProbes=()=>live().reduce((n,d)=>n+d.cfg.probes.length,0);
 const tolOf=p=>p.tolerance??DEF_TOL;
@@ -814,6 +818,9 @@ function validate(list){
   list.filter(d=>d.cfg).forEach(d=>{ const o=DB.find(x=>x.mac===d.mac); (o?.cfg?.probes||[]).forEach(q=>{
     const p=d.cfg.probes.find(x=>x.id===q.id);
     if(p&&outGrid(q,G)&&!posOf(p)) E.push({mac:d.mac,f:"probe-pos",warn:true,msg:`${devCall(d.cfg,p)}（原第 ${q.row} 排第 ${q.point} 點）超出版面 ${gridText(G)}，改為未定（仍可儲存）`}); }); });
+  list.filter(d=>isDL(d)).forEach(d=>{ const o=DB.find(x=>x.mac===d.mac), now=new Set(d.cfg.probes.map(p=>p.id));   // PDT-03、PDT-06
+    (o?.cfg?.probes||[]).forEach(q=>{ if(!now.has(q.id)) E.push({mac:d.mac,f:"probes",warn:true,msg:`將移除：${rowLabel(d.cfg.key)} ID ${q.id} ${q.description}${posOf(q)?`（原第 ${q.row} 排第 ${q.point} 點）`:""}。若拔掉的是中間的放大器，後面探頭的 ID 會往前補，請確認位置並重新校準（仍可儲存）`}); });
+    if(d.cfg.probes.length&&!d.cfg.probes.some(p=>p.enabled!==false)) E.push({mac:d.mac,f:"probes",warn:true,msg:"沒有啟用的探頭，主畫面不會顯示這一台的探頭（仍可儲存）"}); });
   if(G.rows===1||G.points===1) E.push({mac:null,f:"names",warn:true,msg:`版面只有 ${G.rows===1?"1 排":"每排 1 點"}，探頭都在同一直線上，3D 繪圖將無法使用（仍可儲存）`});
   return E.concat(nameErrs());
 }
@@ -980,27 +987,31 @@ function renderDetail(){
   if(dl||d.status==="other") h+=`
       <label for="fIp">IPv4</label><input id="fIp" class="mono${bf("ipv4")}" data-f="ipv4" value="${esc(d.ipv4)}" placeholder="${dl?"例：192.168.10.11":"留空表示不配發"}"><span class="ipnote" id="ipNote"></span>`;
   if(dl) h+=`
-      <label for="fCnt">探頭數量</label><input id="fCnt" type="number" min="1" max="15" class="mono short${bf("probes")}" value="${c.probes.length}">`;
+      <label for="fCnt">探頭數量</label><div class="cntrow"><input id="fCnt" type="number" min="1" max="15" class="mono short${bf("probes")}" value="${c.probes.length}">
+        <span class="stdesc">（啟用 ${c.probes.filter(p=>p.enabled!==false).length}）</span>
+        <button class="btn sm" type="button" data-ed="scan" ${d.status==="active"&&d.ipv4?"":"disabled"} title="讀取這台 DL-EN1 實際連接的放大器數量與各探頭狀態（只讀取，儲存後生效）">探頭偵測</button></div>`;
   h+=`</div>`;
   if(dl){
     const blk=calBlock(d);
     h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span></h4>
-      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:100px">允許誤差</th></tr></thead><tbody id="pBody">
+      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:100px">允許誤差</th></tr></thead><tbody id="pBody">
       ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
         const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
         const full=r=>PN.every(k=>used[[r,k]]);
-        const rowSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="row" data-p="${pi}"><option value="">未定</option>${RN.map(r=>`<option value="${r}" ${p.row===r?"selected":""}>${r}（${esc(draftNames.rows[r-1])}${full(r)?"，已滿":""}）</option>`).join("")}</select>`;
-        const ptSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="point" data-p="${pi}"><option value="">未定</option>${PN.map(k=>{const w=p.row?used[[p.row,k]]:null;
+        const rowSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="row" data-p="${pi}" ${p.enabled===false?"disabled":""}><option value="">未定</option>${RN.map(r=>`<option value="${r}" ${p.row===r?"selected":""}>${r}（${esc(draftNames.rows[r-1])}${full(r)?"，已滿":""}）</option>`).join("")}</select>`;
+        const ptSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="point" data-p="${pi}" ${p.enabled===false?"disabled":""}><option value="">未定</option>${PN.map(k=>{const w=p.row?used[[p.row,k]]:null;
           return `<option value="${k}" ${p.point===k?"selected":""} ${w&&p.point!==k?"disabled":""}>${k}${w?`（已由 ${esc(w)} 使用）`:`（${esc(draftNames.points[k-1])}）`}</option>`;}).join("")}</select>`;
+        const on=p.enabled!==false, st=(SCAN[d.mac]||{})[p.id]||"";
         return `<tr data-prow="${pi}" class="${pi===selP?"on":""}">
         <td class="mono">${p.id}</td>
+        <td><label class="enc"><input type="checkbox" data-en="${pi}" ${on?"checked":""}> <span class="${st&&st!=="正常"?"bad-t":""}" title="${st?`探頭偵測：${esc(st)}`:""}">${esc(st.split("（")[0])}</span></label></td>
         <td><input class="cell${pe.some(e=>e.f==="probe-desc")?" bad":""}" data-pf="description" data-p="${pi}" value="${esc(p.description)}"></td>
         <td>${rowSel}</td><td>${ptSel}</td>
         <td class="cal${p.zero==null?" uncal":""}">${calText(p)}</td>
-        <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk?"disabled":""} title="${esc(blk||"以標準件校準此探頭（歸零）")}">校準</button></td>
+        <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk||!on?"disabled":""} title="${esc(blk||(on?"以標準件校準此探頭（歸零）":"未啟用的探頭不能校準"))}">校準</button></td>
         <td><select data-tol="${pi}">${TOLS.map(t=>`<option value="${t}" ${tolOf(p)===t?"selected":""}>${t} mm</option>`).join("")}</select></td></tr>`;}).join("")}
       </tbody></table></div>
-      <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP<0?"disabled":""}>刪除探頭</button>
+      <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP!==c.probes.length-1||selP<1?"disabled":""} title="${selP>=0&&selP<c.probes.length-1?"中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）":"只能刪除最後一支探頭"}">刪除探頭</button>
         ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
         <button class="btn sm pen${namesOpen?" on":""}" type="button" data-ed="nmtoggle" title="編輯板子版面與排、點名稱" aria-pressed="${namesOpen}" style="margin-left:auto">✎</button></div>
       ${namesOpen?`<div class="names"><b>板子版面與排、點名稱</b><span class="stdesc">（全機共用；探頭位置選項、主畫面、3D、匯出檔使用）</span>
@@ -1066,6 +1077,7 @@ function diff(oldL,newL){
         if(!y){ ch.push(`新增探頭 ${id}「${esc(x.description)}」`); return; }
         if(y.description!==x.description) ch.push(`探頭 ${id} 位置名稱「${esc(y.description)}」→「${esc(x.description)}」`);
         if(tolOf(y)!==tolOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）允許誤差：${tolOf(y)} mm → ${tolOf(x)} mm`);
+        if((y.enabled!==false)!==(x.enabled!==false)) ch.push(`${esc(devCall(b,x))}（ID ${id}）啟用：${y.enabled!==false?"是":"否"} → ${x.enabled!==false?"是":"否"}`);   // PDT-03
         const pt=q=>posOf(q)?`${draftNames.rows[q.row-1]} ${draftNames.points[q.point-1]}`:"未定";   // POS-01
         if(pt(y)!==pt(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）位置：${esc(pt(y))} → ${esc(pt(x))}`); });
       Object.keys(op).forEach(id=>{ if(!(id in np)){ ch.push(`移除探頭 ${id}「${esc(op[id].description)}」`); if(n.status==="active") removed.push(`${esc(a.name)} ${esc(op[id].description)}`);} }); }
@@ -1131,6 +1143,9 @@ edBody.addEventListener("change",e=>{
     draft.forEach(x=>(x.cfg?.probes||[]).forEach(p=>{ if(outGrid(p,draftNames.grid)){ delete p.row; delete p.point; n++; } }));
     if(n) toast(`版面改為 ${gridText(draftNames.grid)}：${n} 個探頭超出版面，已改為未定`);
     touch(); renderDetail(); return; }
+  if(t.dataset.en!=null&&d){   // PDT-03：取消啟用 → 位置改為未定
+    const p=d.cfg.probes[+t.dataset.en]; if(t.checked) delete p.enabled; else { p.enabled=false; delete p.row; delete p.point; }
+    touch(); renderDetail(); return; }
   if(t.dataset.pos&&d){   // POS-01、POS-02、POS-09
     const p=d.cfg.probes[+t.dataset.p], v=t.value?+t.value:null, oldPt=p.point||null;
     if(t.dataset.pos==="row"){ if(v) p.row=v; else delete p.row;
@@ -1176,9 +1191,17 @@ $("#edDlg").addEventListener("click",async e=>{
     selMac=(visible()[0]||{}).mac||null; renderEd(); toast(`已刪除 ${devLabel(d)}（${d.mac}）`); if(was) rebuildMain(); return; }
   if(a==="addp"&&d){ const P=d.cfg.probes; if(P.length>=15) return; P.push({id:P.length+1,description:`探頭 ${P.length+1}`,zero:null,zeroed_at:null});
     selP=P.length-1; touch(); renderDetail(); document.querySelector(`[data-pf="description"][data-p="${selP}"]`)?.focus(); return; }
-  if(a==="rmp"&&d&&selP>=0){   // 刪除後面的探頭 ID 往前遞補，遞補者變為未校準
-    const P=d.cfg.probes; P.splice(selP,1); P.forEach((p,i)=>{ if(p.id!==i+1){ p.id=i+1; p.zero=null; p.zeroed_at=null; } });
-    selP=-1; touch(); renderDetail(); return; }
+  if(a==="rmp"&&d&&selP===d.cfg.probes.length-1&&selP>=1){   // PDT-05：只能刪最後一支
+    d.cfg.probes.pop(); selP=-1; touch(); renderDetail(); return; }
+  if(a==="scan"&&d){   // PDT-01：示範——前排實際多接 1 台放大器但感測頭未接；其他台與設定相同
+    const P=d.cfg.probes, n=P.length+(d.cfg.key==="row-1"?1:0), st={};
+    for(let i=1;i<=n;i++) st[i]=(d.cfg.key==="row-1"&&i===n)?"感測頭錯誤（未接或故障）":"正常";
+    SCAN[d.mac]=st; const before=P.length;
+    while(P.length<n){ const id=P.length+1; const q={id,description:`探頭 ${id}`,zero:null,zeroed_at:null}; if(st[id]!=="正常") q.enabled=false; P.push(q); }
+    P.splice(Math.max(n,1));
+    const bad=Object.values(st).filter(v=>v!=="正常").length;
+    toast(`偵測到 ${n} 支探頭${bad?`（${bad} 支異常）`:""}${n===before?"，清單未變更":`，清單 ${before} → ${n} 支（儲存後生效）`}`);
+    if(n!==before) touch(); renderDetail(); return; }
   if(a==="cal"&&d){ calibrate(+b.dataset.p); return; }
   if(a==="nmtoggle"){ namesOpen=!namesOpen; renderDetail(); return; }
   if(a==="nmdef"){ draftNames[b.dataset.k]=[...DEF_NAMES[b.dataset.k]]; touch(); renderDetail(); return; }
