@@ -14,7 +14,7 @@ class PlateDialog(QDialog):
     FIELDS = ("length", "width", "height")
     HINT = {"length": "左右（作業員看過去）", "width": "前到後", "height": "板厚，圖上為示意"}
 
-    def __init__(self, plate: PlateConfig, parent=None):
+    def __init__(self, plate: PlateConfig, parent=None, grid=None):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.result_plate: PlateConfig | None = None
         self.setObjectName("platedlg")
@@ -26,7 +26,9 @@ class PlateDialog(QDialog):
         title = QLabel("板子尺寸")
         title.setObjectName("h1")
         lay.addWidget(title)
-        note = QLabel("只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點（5 × 5 格）。")
+        layout_text = grid.grid_text() if grid is not None else "5 排 × 5 點"
+        note = QLabel("只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點；"
+                      f"板子版面目前為 {layout_text}（在設備設定修改，POS-10）。")
         note.setObjectName("note")
         note.setWordWrap(True)
         lay.addWidget(note)

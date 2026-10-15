@@ -1545,11 +1545,11 @@ class MainWindow(QMainWindow):
             self._modal(ExportDialog(self.sink, self))
 
     def plate_snapshot(self):
-        """P3D-01、P3D-04、POS-07：以畫面上這一片的結果做成快照；位置為每個探頭的第幾排、第幾點（5 × 5 格），
+        """P3D-01、P3D-04、POS-07：以畫面上這一片的結果做成快照；位置為每個探頭的第幾排、第幾點（板子版面，POS-13），
         標籤為顯示名稱「排名稱 位置名稱」；位置未定的探頭列入 unplaced（按下即拒絕）。"""
         plate = plate3d_config.load()
         devices = self.layout.get("dl_en1", [])
-        pos = plate3d_config.probe_positions(devices, plate)
+        pos = plate3d_config.probe_positions(devices, plate, self.names)
         r = self.result
         pts = []
         for p in r.points:
@@ -1575,7 +1575,7 @@ class MainWindow(QMainWindow):
         if self.busy:
             return
         from ..plate3d.plate_dialog import PlateDialog
-        dlg = PlateDialog(plate3d_config.load())
+        dlg = PlateDialog(plate3d_config.load(), grid=self.names)
         if self._modal(dlg) and dlg.result_plate is not None:
             plate3d_config.save(dlg.result_plate)
             self.btn_plate.setText(dlg.result_plate.text())

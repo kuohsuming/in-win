@@ -55,7 +55,7 @@ class Plate(unittest.TestCase):
 
 
 class Positions(unittest.TestCase):
-    """POS-07（修訂 P3D-05）：每個探頭的第幾排、第幾點，固定 5 × 5 格。"""
+    """POS-07、POS-13（修訂 P3D-05）：每個探頭的第幾排、第幾點，依板子版面（預設 5 × 5）。"""
 
     @staticmethod
     def placed(key, spots, maint=False):
@@ -86,6 +86,13 @@ class Positions(unittest.TestCase):
         pos = probe_positions([self.placed("row-1", [(1, 1), (2, 5)])], PlateConfig(800, 400, 3))
         self.assertEqual(pos[("row-1", 1)], (80.0, 40.0))
         self.assertEqual(pos[("row-1", 2)], (720.0, 120.0))
+
+    def test_grid(self):  # POS-13：版面 2 排 × 3 點、板子 900 × 600 → 第 1 排第 3 點在 (750, 150)
+        from flatness.positions import Names
+        pos = probe_positions([self.placed("row-1", [(1, 3), (2, 1)])], PlateConfig(900, 600, 5),
+                              Names().with_grid(2, 3))
+        self.assertEqual(pos[("row-1", 1)], (750.0, 150.0))
+        self.assertEqual(pos[("row-1", 2)], (150.0, 450.0))
 
 
 if __name__ == "__main__":

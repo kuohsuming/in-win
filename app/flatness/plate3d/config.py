@@ -1,7 +1,7 @@
 """板子尺寸（P3D-10）與探頭在板上的位置（P3D-05）。
 
 板子尺寸在主畫面「板子尺寸」設定，存於本機 QSettings（與取出測試數據記住的資料夾同一處），
-只影響 3D 繪圖。探頭固定在板子下方，位置為設備設定中每個探頭的第幾排、第幾點（固定 5 × 5 格，POS-07）。
+只影響 3D 繪圖。探頭固定在板子下方，位置為設備設定中每個探頭的第幾排、第幾點，依設備設定的板子版面（POS-07、POS-13）。
 """
 
 from __future__ import annotations
@@ -82,12 +82,15 @@ def save(plate: PlateConfig, settings=None) -> None:
     log.info("板子尺寸設定為 %s", plate.text())
 
 
-def probe_positions(devices: list[dict], plate: PlateConfig) -> dict[tuple[str, int], tuple[float, float]]:
-    """(DL-EN1 key, 探頭 ID) → (x, y) mm（POS-07，修訂 P3D-05）。
+def probe_positions(devices: list[dict], plate: PlateConfig,
+                    grid: positions.Names | None = None) -> dict[tuple[str, int], tuple[float, float]]:
+    """(DL-EN1 key, 探頭 ID) → (x, y) mm（POS-07、POS-13，修訂 P3D-05）。
 
-    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。探頭依設備設定的第幾排、第幾點放在固定 5 × 5 格：
-    x = 長 × (點 − 0.5) / 5、y = 寬 × (排 − 0.5) / 5。只回傳使用中設備、已設定位置的探頭；位置未定的見 unplaced。
+    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。探頭依設備設定的第幾排、第幾點放在板子版面
+    （grid：R 排 × P 點，預設 5 × 5）的格子上：x = 長 × (點 − 0.5) / P、y = 寬 × (排 − 0.5) / R。
+    只回傳使用中設備、已設定位置的探頭；位置未定的見 unplaced。
     """
+    grid = grid or positions.Names.default()
     out = {}
     for d in devices:
         if d.get("maint"):
@@ -96,8 +99,8 @@ def probe_positions(devices: list[dict], plate: PlateConfig) -> dict[tuple[str, 
             where = positions.pos(p)
             if where:
                 r, k = where
-                out[(d["key"], p["id"])] = (plate.length * (k - 0.5) / positions.SIZE,
-                                            plate.width * (r - 0.5) / positions.SIZE)
+                out[(d["key"], p["id"])] = (plate.length * (k - 0.5) / grid.grid_points,
+                                            plate.width * (r - 0.5) / grid.grid_rows)
     return out
 
 

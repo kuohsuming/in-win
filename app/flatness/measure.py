@@ -110,7 +110,8 @@ class DemoStation:
         if not points:
             return []
         plate = PlateConfig(length=1.0, width=1.0)
-        pos = probe_positions(self.definition["dl_en1"], plate)  # 設定的第幾排、第幾點（POS-07）
+        from .positions import Names
+        pos = probe_positions(self.definition["dl_en1"], plate, Names.from_definition(self.definition))  # POS-07、POS-13
         devs = self.definition["dl_en1"]
         for n, d in enumerate(devs):  # 位置未定的探頭：依第幾台、探頭順序估一個位置，讓虛擬的面仍然平滑
             ids = sorted(p["id"] for p in d["probes"])
