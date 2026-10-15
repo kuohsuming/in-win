@@ -444,7 +444,7 @@ class SettingsDialogTest(UiBase):
         be2.start()
         self.assertEqual([x["key"] for x in be2.definition["dl_en1"]], ["row-1", "row-2", "row-3"])
         win = MainWindow(be2, lambda defn: None)
-        self.assertEqual([r.dev["name"] for r in win.rows], ["前排", "中排", "後排"])  # 主畫面依排號
+        self.assertEqual([d["name"] for d in win.devices], ["前排", "中排", "後排"])  # 依第幾台，不受清單順序影響
         d2 = SettingsDialog(be2)
         d2.enter_edit()
         self.assertEqual(self.list_macs(d2)[1:4], live)  # 設定頁
@@ -680,9 +680,9 @@ class ScreenFitTest(UiBase):
             win = self.window(n, probes=2 if n == 1 else 4)
             for state in ("blank", OK, LO, ERR, "down", "ip"):
                 for row in win.rows:
-                    row.set_down(state == "down")
-                    row.set_ip_mismatch("192.168.10.99" if state == "ip" else None)
-                    for t in row.tiles.values():
+                    for t in row.tiles:
+                        t.set_down(state == "down")
+                        t.set_ip("IP 不符" if state == "ip" else "")
                         if state == "blank":
                             t.set_blank("go", "設備正常")
                         elif state == ERR:
@@ -691,7 +691,7 @@ class ScreenFitTest(UiBase):
                             t.set_result(state, -0.2971, "低於下限 12.747" if state == LO else "")
                 pump(self.app, 0.05)
                 for row in win.rows:
-                    for t in row.tiles.values():
+                    for t in row.tiles:
                         self.assertGreaterEqual(t.height(), t.sizeHint().height(), (n, state, win.scale_k))
                         self.assertGreaterEqual(t.m.height(), t.m.sizeHint().height(), (n, state, win.scale_k))
 
@@ -742,7 +742,7 @@ class ScreenFitTest(UiBase):
     def test_tile_height_same_for_every_result(self):  # 結果改變時排不跳動
         from flatness.measure import ERR, HI, OK
         win = self.window(4)
-        t = next(iter(win.rows[0].tiles.values()))
+        t = win.rows[0].tiles[0]
         heights = set()
         for args in ((OK, 12.5), (HI, 12.6, "超出上限 0.050"), (ERR, None, "探頭無回應", "探頭無回應", True)):
             t.set_result(*args)
@@ -780,37 +780,105 @@ class MainWindowTest(UiBase):
                 return
         self.fail(f"橫幅狀態 {self.win.banner.state}，預期 {states}")
 
-    def test_layout_from_definition(self):  # DEF-04
-        self.assertEqual([r.dev["key"] for r in self.win.rows], ["row-1", "row-2", "row-3"])
-        self.assertEqual(sum(len(r.tiles) for r in self.win.rows), 12)
-        self.assertEqual([r.unit_text.text() for r in self.win.rows], ["第 1 台", "第 2 台", "第 3 台"])
+    def positioned(self, mapping=None, names=None):
+        """sample_devices 加上探頭位置：預設前排在第 1 排、中排第 2 排、後排第 3 排（點 1～4）。"""
+        from flatness import lan, positions
+        old = self.store.load()
+        new = [d.copy() for d in old]
+        rows = {"00:01:FC:DE:3A:75": 1, "00:01:FC:DE:3A:76": 2, "00:01:FC:DE:3A:77": 3}
+        for d in new:
+            if d.mac in rows:
+                for p in d.config["probes"]:
+                    where = (mapping or {}).get((d.mac, p["id"]), (rows[d.mac], p["id"]))
+                    positions.set_pos(p, *where) if where else positions.set_pos(p, None, None)
+        result = self.be.apply(old, new, names=names)
+        self.win.rebuild(result.layout)
+        return result
 
-    def test_row_tag_follows_position_not_screen_order(self):  # EDT-05：與設定頁的「第 N 排」一致
-        from flatness.ui.main_window import DeviceRow
-        row = DeviceRow(0, {"key": "row-5", "name": "加排", "probes": []}, {})
-        self.assertEqual(row.unit_text.text(), "第 5 台")
-        row.set_down(True)
-        self.assertEqual(row.unit_text.text(), "第 5 台\n偵測不到")
+    def test_layout_unassigned_area(self):  # POS-04：全部未定 → 只有「未設定位置」區，每 5 個一列
+        w = self.win
+        self.assertEqual([r.title for r in w.rows], ["未設定位置", "", ""])
+        self.assertEqual([len(r.tiles) for r in w.rows], [5, 5, 2])
+        self.assertEqual(w.rows[0].tiles[0].pos.text(), "左")
+        self.assertEqual(w.rows[0].tiles[0].sub.text(), "第 1 台 前排")       # POS-05
+        self.assertEqual(w.rows[1].tiles[0].sub.text(), "第 2 台 中排")
+        self.assertEqual(len(w.tiles), 12)
+
+    def test_layout_by_positions(self):  # POS-04：依排由上而下、每排固定 5 格、空格保留
+        from flatness import positions
+        names = positions.Names(("前排", "排2", "後排", "排4", "排5"), positions.DEFAULT_POINTS)
+        self.positioned({("00:01:FC:DE:3A:75", 2): (1, 3), ("00:01:FC:DE:3A:75", 3): (1, 5),
+                         ("00:01:FC:DE:3A:75", 4): None}, names)
+        w = self.win
+        self.assertEqual([r.title for r in w.rows], ["前排", "排2", "後排", "未設定位置"])
+        self.assertEqual([r.tag for r in w.rows[:3]], ["第 1 排", "第 2 排", "第 3 排"])
+        grid = w.rows[0]._grid
+        cells = [grid.itemAtPosition(0, c).widget() for c in range(5)]
+        from flatness.ui.main_window import ProbeTile
+        self.assertEqual([c.pos.text() if isinstance(c, ProbeTile) else None for c in cells],
+                         ["左", None, "左中", None, "右中"])
+        self.assertEqual(len(w.rows[0].empty), 2)                              # 第 2、4 點空框
+        self.assertEqual([t.pos.text() for t in w.rows[3].tiles], ["右"])      # 前排「右」位置未定
+
+    def test_device_split_across_rows_goes_down(self):  # POS-G2：一台的探頭分在兩排，斷線時兩排都標示
+        from flatness import measure
+        self.positioned({("00:01:FC:DE:3A:76", 1): (1, 5), ("00:01:FC:DE:3A:76", 2): (3, 5),
+                         ("00:01:FC:DE:3A:76", 3): None, ("00:01:FC:DE:3A:76", 4): None})
+        w = self.win
+        w.station.detect = lambda: [measure.DeviceStatus("row-1"), measure.DeviceStatus("row-2", reachable=False),
+                                    measure.DeviceStatus("row-3")]
+        w.detect()
+        self.wait_state("error")
+        down = [t for t in w.dev_tiles["row-2"]]
+        self.assertTrue(all(t.dev_text.text() == "DL-EN1 偵測不到" for t in down))
+        self.assertEqual([r.title for r in w.rows], ["排1", "排3", "未設定位置"])  # 沒有探頭的第 2 排略過
+        self.assertIn(down[0], w.rows[0].tiles)                                 # 第 1 排
+        self.assertIn(down[1], w.rows[1].tiles)                                 # 第 3 排
+        self.assertEqual(w.flags["dev"], "第 2 台 中排 偵測不到")
+        self.assertIn("第 2 台 中排 DL-EN1 偵測不到", w.banner.say.text())
+
+    def test_result_names_use_positions(self):  # PROPOSAL §5.2：橫幅以「排名稱 位置名稱」稱呼
+        from flatness import positions
+        names = positions.Names(("前排", "中排", "後排", "排4", "排5"), positions.DEFAULT_POINTS)
+        self.positioned(names=names)
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        self.stations[-1].force = "fail"
+        w.next_piece()
+        self.wait_state("fail")
+        self.assertRegex(w.banner.say.text(), "(前排|中排|後排) (左|左中|右中|右)偏")
+        p = next(p for p in w.result.points if p.key == "row-3" and p.probe_id == 2)
+        self.assertEqual((p.pos_row, p.pos_point, p.row_name), (3, 2, "後排"))   # POS-08：保存當時的位置
+
+    def test_tile_sub_uses_device_number(self):  # POS-06：方塊小字「第 N 台 名稱」，與設定頁一致
+        from flatness.ui.main_window import ProbeTile
+        from flatness import positions
+        t = ProbeTile("左", None, positions.device_label("row-5", "加排"))
+        self.assertEqual(t.sub.text(), "第 5 台 加排")
 
     def test_ip_mismatch_highlights_row_and_asks_for_reset(self):  # DSC-20
         from flatness.store import SeenEvent
-        w, row = self.win, self.win.rows[0]
-        mac, want = row.dev["mac"], row.dev["ipv4"]
+        w = self.win
+        dev = w.layout["dl_en1"][0]
+        mac, want = dev["mac"], dev["ipv4"]
+        tiles, others = w.dev_tiles["row-1"], w.dev_tiles["row-2"]
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 相同：不提示
         self.assertIsNone(w.flags["ip"])
-        self.assertIsNone(row.seen_ip)
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="192.168.10.99")])
-        self.assertEqual(row.seen_ip, "192.168.10.99")
-        self.assertIn("IP 不符", row.unit_text.text())
+        self.assertTrue(all(t.ip_tag_text == "IP 不符" for t in tiles))         # POS-05：該台每個方塊
+        self.assertFalse(any(t.ip_tag_text for t in others))                     # 其他台不受影響
         self.assertIn("RST 鍵 3 秒", w.flags["ip"])
-        self.assertIn("（第 1 台）實際 IP", w.flags["ip"])
+        self.assertIn("第 1 台 前排 實際 IP", w.flags["ip"])
         self.assertIn("192.168.10.99", w.flags["ip"])
-        self.assertIsNone(w.rows[1].seen_ip)                                       # 其他排不受影響
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip="10.0.0.5")])  # 不同網段
         self.assertIn("10.0.0.5（IP 不在設備網段 192.168.10.0/24）", w.flags["ip"])
+        tiles[0].set_down(True)                                                  # 偵測不到時不加 IP 不符標示
+        self.assertFalse(tiles[0].ip_tag.isVisibleTo(tiles[0]))
+        tiles[0].set_down(False)
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 重設後取得設定的 IP
         self.assertIsNone(w.flags["ip"])
-        self.assertNotIn("IP 不符", row.unit_text.text())
+        self.assertFalse(any(t.ip_tag_text for t in tiles))
 
     def test_detect_then_measure_pass_and_next_writes(self):  # DEV-01、MEA-01～MEA-06
         w = self.win
@@ -837,7 +905,7 @@ class MainWindowTest(UiBase):
         self.assertEqual((w.sink.rows[0].serial, w.sink.rows[0].rereads, w.sink.rows[0].judgment),
                          (first, 1, "PASS"))
         self.wait_state("fail")
-        faded = [t for r in w.rows for t in r.tiles.values() if t.state == "ok"]
+        faded = [t for r in w.rows for t in r.tiles if t.state == "ok"]
         self.assertTrue(faded and all(t._fx.opacity() == 0.55 for t in faded))  # 淡化規則
 
     def test_3d_button_states_and_snapshot(self):  # P3D-01、P3D-04、P3D-05
@@ -1028,8 +1096,9 @@ class MainWindowTest(UiBase):
                              measure.DeviceStatus("row-3")]
         w.detect()
         self.wait_state("error")
-        self.assertIn("中排 DL-EN1 偵測不到", w.banner.say.text())
-        self.assertIn("偵測不到", w.rows[1].unit_text.text())
+        self.assertIn("第 2 台 中排 DL-EN1 偵測不到", w.banner.say.text())
+        self.assertTrue(all(t.dev_text.text() == "DL-EN1 偵測不到" for t in w.dev_tiles["row-2"]))
+        self.assertEqual(w.flags["dev"], "第 2 台 中排 偵測不到")
 
     def test_standard_from_probe_tolerance(self):  # JDG-06：允收標準為 0 ± 探頭的允許誤差，取代 config.toml
         from flatness import measure
@@ -1053,9 +1122,8 @@ class MainWindowTest(UiBase):
         lan.set_status(new, "00:01:FC:DE:3A:76", lan.MAINT, NET)
         result = self.be.apply(old, new)
         w._on_settings_saved(result, lan.diff(old, new))
-        self.assertEqual([(r.dev["key"], r.maint) for r in w.rows],
-                         [("row-1", False), ("row-2", True), ("row-3", False)])
-        self.assertEqual([r.dev["key"] for r in w.live_rows], ["row-1", "row-3"])
+        self.assertTrue(all(t.state == "maint" for t in w.dev_tiles["row-2"]))
+        self.assertEqual(sorted({k for k, _ in w.tiles}), ["row-1", "row-3"])
         self.assertEqual([d["key"] for d in self.stations[-1].definition["dl_en1"]], ["row-1", "row-3"])
         self.wait_state("idle")
         self.assertEqual(w.detect_count, 2)
@@ -1068,8 +1136,9 @@ class MainWindowTest(UiBase):
         result = self.be.apply(old, new)
         w = self.win
         w.rebuild(result.layout)
-        self.assertEqual(w.rows[1].unit_text.text(), "第 2 台\n維修中")
-        self.assertEqual(w.rows[1].tiles, {})
+        self.assertTrue(all(t.state == "maint" and t.m.text() == "維修中" for t in w.dev_tiles["row-2"]))
+        self.assertEqual(w.flags["maint"], "第 2 台 中排 維修中")
+        self.assertNotIn(("row-2", 1), w.tiles)
         w.detect()
         self.wait_state("idle")
         self.assertIn("2 台 DL-EN1、8 個探頭正常", w.sum_text.text())

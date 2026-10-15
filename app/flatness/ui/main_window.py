@@ -16,11 +16,11 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPolygonF
 from PySide6.QtWidgets import (
-    QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
+    QApplication, QDateEdit, QDialog, QFileDialog, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from .. import lan, measure, plate3d
+from .. import lan, measure, plate3d, positions
 from ..plate3d import config as plate3d_config
 from ..measure import ERR, HI, LO, OK
 from . import icons
@@ -149,17 +149,32 @@ class ScaleBar(QWidget):
 
 
 class ProbeTile(QFrame):
-    """探頭方塊（5.5）。"""
+    """探頭方塊（5.5）：大字位置名稱、小字所屬「第 N 台 DL-EN1 名稱」（POS-05）。"""
 
-    def __init__(self, description: str, std):
+    def __init__(self, description: str, std, device: str = ""):
         super().__init__()
         self.std = std
         self.k = 1.0                     # 依螢幕自動縮放（UI-11）
+        self.ip_tag_text = ""            # IP 不符（DSC-20）的附加標示；空字串表示沒有
+        self.down = False                # 偵測不到：不加 IP 不符標示（PROPOSAL §5.5）
         self.setObjectName("probe")
         lay = self._lay = QVBoxLayout(self)
         top = QHBoxLayout()
+        name_col = QVBoxLayout()
+        name_col.setSpacing(0)
         self.pos = QLabel(description)
-        top.addWidget(self.pos)
+        name_col.addWidget(self.pos)
+        sub = QHBoxLayout()
+        sub.setSpacing(6)
+        self.sub = QLabel(device)
+        self.sub.setStyleSheet(f"color:{C['ink-2']}")
+        sub.addWidget(self.sub)
+        self.ip_tag = QLabel()
+        self.ip_tag.hide()
+        sub.addWidget(self.ip_tag)
+        sub.addStretch()
+        name_col.addLayout(sub)
+        top.addLayout(name_col)
         top.addStretch()
         self.badge_icon = QLabel()
         self.badge_text = QLabel()
@@ -232,6 +247,8 @@ class ProbeTile(QFrame):
         self._grid.setHorizontalSpacing(px(10))
         self._grid.setVerticalSpacing(px(2))
         self.pos.setFont(text_font(self._fpx(20), 700))
+        self.sub.setFont(text_font(self._fpx(13)))
+        self.ip_tag.setFont(text_font(self._fpx(13), 700))
         self.badge_text.setFont(text_font(self._fpx(22), 900))
         for lb in self._keys:
             lb.setFont(text_font(self._fpx(15)))
@@ -257,6 +274,10 @@ class ProbeTile(QFrame):
         fn(*args, **kw)
 
     def _frame(self, border_px, border, bg):
+        # IP 不符（DSC-20）：警告色外框；偵測不到時不加（以設備異常優先）
+        if self.ip_tag_text and not self.down:
+            border_px, border = 5, C["warn"]
+        self.ip_tag.setVisible(bool(self.ip_tag_text) and not self.down)
         # 邊框粗細不同時以內距補足，方塊內容與高度不變（UI-11）
         px, extra = self._px, 5 - border_px
         self._lay.setContentsMargins(px(14) + extra, px(12) + extra, px(14) + extra, px(12) + extra)
@@ -313,6 +334,39 @@ class ProbeTile(QFrame):
         else:
             self._device("go", device_text)
 
+    def set_maint(self):
+        """維修中（DSC-15、POS-05）：灰色，不連線、不量測、不判定，位置保留。"""
+        self._last = (self.set_maint, (), {})
+        self.state = "maint"
+        self._frame(3, C["line"], C["panel-2"])
+        self.badge_icon.clear()
+        self.badge_text.setText("維修中")
+        self.badge_text.setStyleSheet(f"color:{C['warn']}")
+        self.m.setFont(text_font(self._fpx(26), 900))
+        self.m.setText("維修中")
+        self.m.setStyleSheet(f"color:{C['ink-2']}")
+        self.s.setText("—")
+        self.rg.setText("—")  # 維修中不判定：不顯示「未設定」，以免看成異常
+        self.scale.hide()
+        self.note.hide()
+        self._device("stale", "不連線、不量測")
+        self.fade(False)
+
+    def set_ip(self, text: str):
+        """IP 不符的附加標示（空字串取消）；方塊內容不變（PROPOSAL §5.5）。"""
+        if text != self.ip_tag_text:
+            self.ip_tag_text = text
+            self.ip_tag.setText(text)
+            self.ip_tag.setStyleSheet(f"background:{C['warn']};color:white;padding:0 6px;border-radius:3px;")
+            fn, args, kw = self._last
+            fn(*args, **kw)
+
+    def set_down(self, down: bool):
+        if down != self.down:
+            self.down = down
+            fn, args, kw = self._last
+            fn(*args, **kw)
+
     def _value_html(self, value: float) -> str:
         return (f'{f3(value)}<span style="font-size:{self._fpx(18)}px;font-weight:500;color:{C["ink-2"]}">'
                 f'&nbsp;mm</span>')
@@ -321,15 +375,17 @@ class ProbeTile(QFrame):
         self._fx.setOpacity(0.55 if on else 1.0)
 
 
-class DeviceRow(QFrame):
-    """排（5.4）：左欄排名稱與 DL-EN1 標示，右欄探頭方塊；欄數最少 4、最多 6。"""
+class PositionRow(QFrame):
+    """位置排（POS-04）：左欄排名稱與「第 N 排」，右欄固定 5 格，第 k 點在第 k 格；空格以淡色框保留位置。
 
-    def __init__(self, index: int, dev: dict, standards: dict):
+    「未設定位置」區也用本類別：每 5 個探頭一列，空格不畫框（UI-11 以列計算）。
+    """
+
+    COLS = positions.SIZE
+
+    def __init__(self, title: str, tag: str, slots: list, placeholders: bool = True, unassigned: bool = False):
         super().__init__()
-        self.index, self.dev = index, dev
-        self.maint = bool(dev.get("maint"))  # 維修中：顯示但不連線、不量測（DSC-15）
-        self.seen_ip: str | None = None      # 實際使用 IP 與設定不同時為實際 IP（DSC-20）
-        self.border_px = 1                   # 目前的邊框粗細（set_down）
+        self.title, self.tag, self.unassigned = title, tag, unassigned
         self.setObjectName("row")
         lay = self._lay = QHBoxLayout(self)
         left = self._left = QFrame()
@@ -338,126 +394,59 @@ class DeviceRow(QFrame):
         ll.setContentsMargins(4, 10, 4, 10)
         ll.setSpacing(6)
         ll.addStretch()
-        self.name = QLabel(dev["name"])
+        # 不自動換行：左欄寬度隨縮放改變，自動換行的高度會受前一次寬度影響，排高不穩定（UI-11）
+        self.name = QLabel(title)
         self.name.setAlignment(Qt.AlignCenter)
-        self.name.setWordWrap(True)
         ll.addWidget(self.name)
-        unit = QHBoxLayout()
-        unit.setSpacing(4)
-        unit.addStretch()
-        self.unit_dot = Dot()
-        self.unit_text = QLabel(self.tag)
+        self.unit_text = QLabel(tag)
         self.unit_text.setAlignment(Qt.AlignCenter)
-        unit.addWidget(self.unit_dot)
-        unit.addWidget(self.unit_text)
-        unit.addStretch()
-        ll.addLayout(unit)
+        ll.addWidget(self.unit_text)
         ll.addStretch()
         lay.addWidget(left)
-
-        self.tiles: dict[int, ProbeTile] = {}
-        self._grid = self._note = None
-        if self.maint:
-            note = self._note = QLabel(f"維修中：不連線、不量測（{len(dev['probes'])} 個探頭）")
-            note.setAlignment(Qt.AlignCenter)
-            note.setStyleSheet(f"color:{C['ink-2']};background:{C['panel-2']};border:2px dashed {C['line']};"
-                               f"border-radius:6px;")
-            lay.addWidget(note, 1)
-            self.set_scale(1.0)
-            self.set_down(False)
-            return
         grid = self._grid = QGridLayout()
-        probes = sorted(dev["probes"], key=lambda p: p["id"])
-        ncols = min(max(len(probes), 4), 6)
-        for i, p in enumerate(probes):
-            t = ProbeTile(p["description"], (standards.get(dev["key"]) or {}).get(p["id"]))
-            self.tiles[p["id"]] = t
-            grid.addWidget(t, i // ncols, i % ncols)
-        for c in range(ncols):
+        self.tiles: list[ProbeTile] = [t for t in slots if t is not None]
+        self.empty: list[QFrame] = []
+        for c in range(self.COLS):
+            t = slots[c] if c < len(slots) else None
+            if t is None:
+                t = QFrame()
+                t.setObjectName("slot")
+                if placeholders:  # 這一點沒有探頭：淡色虛線框（POS-04）
+                    t.setStyleSheet(f"QFrame#slot {{ border:2px dashed {C['line']}; border-radius:6px;"
+                                    f" background:transparent; }}")
+                self.empty.append(t)
+            grid.addWidget(t, 0, c)
             grid.setColumnStretch(c, 1)
         lay.addLayout(grid, 1)
+        self.setStyleSheet(f"QFrame#row {{ background:{C['panel']}; border:1px solid {C['line']}; border-radius:6px; }}"
+                           f"QFrame#rowname {{ background:{C['warn-soft'] if unassigned else C['panel-2']};"
+                           f" border-radius:4px; border:none; }}")
+        self.name.setStyleSheet(f"color:{C['warn'] if unassigned else C['ink']}; background:transparent;")
+        self.unit_text.setStyleSheet(f"color:{C['ink-2']}; background:transparent;")
         self.set_scale(1.0)
-        self.set_down(False)
-
-    BORDER_MAX = 4  # 偵測不到、IP 不符時的邊框粗細
-
-    def _margins(self):
-        """邊框粗細不同時以內距補足，排內探頭方塊的高度不變（UI-11）。"""
-        m = max(1, round(12 * self._k) + 1 - self.border_px)  # 內距 ＋ 邊框 固定為 12 ＋ 1
-        self._lay.setContentsMargins(m, m, m, m)
 
     @property
     def fixed_height(self) -> int:
-        """此比例下排的固定高度：內容 ＋ 內距 ＋ 最粗的邊框（_apply_scale）。"""
-        return self._lay.sizeHint().height() + 2 * self.border_px
+        """此比例下排的固定高度（_apply_scale）：先讓方塊與排的版面重算，避免沿用上一個比例的高度。"""
+        for t in self.tiles:
+            t.layout().invalidate()
+        self._grid.invalidate()
+        self._lay.invalidate()
+        return self._lay.sizeHint().height() + 2
 
     def set_scale(self, k: float):
         """排與探頭方塊依縮放比例調整（UI-11）。"""
         px = lambda v: max(1, round(v * k))  # noqa: E731
         self._k = k
-        self._margins()
+        m = max(1, round(12 * k))
+        self._lay.setContentsMargins(m, m, m, m)
         self._lay.setSpacing(px(12))
         self._left.setFixedWidth(max(84, px(110)))
-        self.name.setFont(text_font(max(14, px(26)), 900))
-        self.unit_text.setFont(num_font(max(11, px(12))))
-        if self._note is not None:
-            self._note.setFont(text_font(px(22), 700))
-            self._note.setMinimumHeight(px(90))
-        if self._grid is not None:
-            self._grid.setSpacing(px(10))
-        for t in self.tiles.values():
+        self.name.setFont(text_font(max(14, px(26)), 900) if not self.unassigned else text_font(max(12, px(17)), 900))
+        self.unit_text.setFont(text_font(max(11, px(12))))
+        self._grid.setSpacing(px(10))
+        for t in self.tiles:
             t.set_scale(k)
-
-    @property
-    def tag(self) -> str:
-        """排的標示：位置標籤「第 N 排」（EDT-05），與設定頁一致；沒有位置標籤時用畫面上的序號。"""
-        key = self.dev.get("key")
-        return lan.row_label(key) if lan.row_no(key) else f"DL-EN1 #{self.index + 1}"
-
-    def set_index(self, index: int):
-        """排的位置改變時更新標示，維持目前的偵測狀態顯示。"""
-        self.index = index
-        self.set_down(*self._down_args)
-
-    def set_ip_mismatch(self, seen_ip: str | None):
-        """DSC-20：DL-EN1 實際使用的 IP 與設定不同時，以警告色框與「IP 不符」標示這一排。"""
-        if seen_ip != self.seen_ip:
-            self.seen_ip = seen_ip
-            self.set_down(*self._down_args)
-
-    def set_down(self, down: bool, dot="stale", blink=False):
-        self._down_args = (down, dot, blink)
-        self.border_px = self.BORDER_MAX if down or self.seen_ip else 1
-        if hasattr(self, "_k"):
-            self._margins()
-        border = (f"4px solid {C['ng']}" if down else f"4px solid {C['warn']}" if self.seen_ip
-                  else f"1px solid {C['line']}")
-        self.setStyleSheet(
-            f"QFrame#row {{ background:{C['panel']}; border:{border}; border-radius:6px; }}"
-            f"QFrame#rowname {{ background:{C['ng-soft'] if down else C['panel-2']}; border-radius:4px; border:none; }}")
-        self.name.setStyleSheet(f"color:{C['ng'] if down else (C['ink-2'] if self.maint else C['ink'])};"
-                                f" background:transparent;")
-        if self.seen_ip and not down:
-            self.unit_dot.hide()
-            self.unit_text.setText(f"{self.tag}\nIP 不符" + ("・維修中" if self.maint else ""))
-            self.unit_text.setStyleSheet(f"background:{C['warn']};color:white;font-weight:700;"
-                                         f"padding:2px 8px;border-radius:3px;")
-            return
-        if self.maint:
-            self.unit_dot.hide()
-            self.unit_text.setText(f"{self.tag}\n維修中")
-            self.unit_text.setStyleSheet(f"background:{C['warn-soft']};color:{C['warn']};font-weight:700;"
-                                         f"padding:2px 8px;border-radius:3px;")
-            return
-        if down:
-            self.unit_dot.hide()
-            self.unit_text.setText(f"{self.tag}\n偵測不到")
-            self.unit_text.setStyleSheet(f"background:{C['ng']};color:white;padding:2px 8px;border-radius:3px;")
-        else:
-            self.unit_dot.show()
-            self.unit_dot.set_color(dot, blink)
-            self.unit_text.setText(self.tag)
-            self.unit_text.setStyleSheet(f"color:{C['ink-2']};background:transparent;")
 
 
 class TightText(QWidget):
@@ -837,7 +826,8 @@ class MainWindow(QMainWindow):
         self.result: InspectionResult | None = None
         self.detect_count = 0
         self.busy = False                           # 倒數、讀取、偵測中
-        self.flags = {"sim": backend.simulate, "bootp": None, "db": None, "ip": None, "sync": None}
+        self.flags = {"sim": backend.simulate, "bootp": None, "db": None, "dev": None, "maint": None, "ip": None,
+                      "sync": None}
         self.seen_ips: dict[str, str] = {}  # MAC → 實際使用 IP（ARP 位址偵測封包，DSC-19）
         self._relay = _Relay()
         self._relay.detected.connect(self._on_detected)
@@ -926,6 +916,12 @@ class MainWindow(QMainWindow):
         self.banner.set_scale(min(1.0, 0.4 + 0.6 * k))  # 橫幅是主要結果，縮得比排少
         for r in self.rows:
             r.set_scale(k)
+        # 字型與樣式表的變更以事件延後套用：先處理完各排自己的，再量排高
+        for r in self.rows:
+            for w in (*r.findChildren(QWidget), r):
+                QApplication.sendPostedEvents(w, QEvent.Polish)
+                QApplication.sendPostedEvents(w, QEvent.LayoutRequest)
+        for r in self.rows:
             r.setFixedHeight(r.fixed_height)  # 排高固定為此比例所需，不被捲動區拉伸或壓縮
         holder = self.rows_area.widget()
         if holder is not None:  # 立即重新排版，避免沿用上一個比例的高度
@@ -967,7 +963,7 @@ class MainWindow(QMainWindow):
             while hi - lo > 0.01:
                 mid = (lo + hi) / 2
                 lo, hi = (mid, hi) if fits(mid, count) else (lo, mid)
-            self._apply_scale(round(lo, 3))
+            self._apply_scale(int(lo * 1000) / 1000)  # 無條件捨去：四捨五入可能超過可容納的比例
             return
         self._apply_scale(self.SCALE_MIN)
 
@@ -1064,6 +1060,7 @@ class MainWindow(QMainWindow):
                              f"padding:5px 10px;border-radius:4px;letter-spacing:0.15em;")
             self.flag_box.addWidget(lb)
         for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"]),
+                            ("dev", C["ng"], C["ng-soft"]), ("maint", C["ink-2"], C["panel-2"]),
                             ("ip", "white", C["warn"]), ("sync", C["warn"], C["warn-soft"])):
             text = self.flags.get(key)
             if text:
@@ -1086,21 +1083,24 @@ class MainWindow(QMainWindow):
             self._check_ips()
 
     def _check_ips(self):
-        """DSC-20：使用中／維修中 DL-EN1 實際使用的 IP 與設定不同時，該排以警告色標示，
+        """DSC-20：使用中／維修中 DL-EN1 實際使用的 IP 與設定不同時，該台每個探頭方塊加「IP 不符」標示（POS-05），
         頂端提示按住 DL-EN1 的 RST 鍵 3 秒重設，使其重新以 BOOTP 取得設定的 IP。"""
         notes = []
         net = self.backend.equip_net()
-        for row in self.rows:
+        for d in self.layout.get("dl_en1", []):
             try:
-                mac = lan.normalize_mac(row.dev.get("mac", ""))
+                mac = lan.normalize_mac(d.get("mac", ""))
             except ValueError:
                 mac = ""
-            seen, want = self.seen_ips.get(mac), row.dev.get("ipv4")
+            seen, want = self.seen_ips.get(mac), d.get("ipv4")
             bad = lan.ip_mismatch(seen, want)
-            row.set_ip_mismatch(seen if bad else None)
+            self.ip_bad[d["key"]] = seen if bad else None
+            text = ("IP 不符・維修中" if d.get("maint") else "IP 不符") if bad else ""
+            for t in self.dev_tiles.get(d["key"], []):
+                t.set_ip(text)
             if bad:
                 why = lan.seen_ip_problem(seen, net)
-                notes.append(f"{row.dev.get('name') or mac}（{row.tag}）實際 IP {seen}"
+                notes.append(f"{positions.device_label(d.get('key'), d.get('name'))} 實際 IP {seen}"
                              + (f"（{why}）" if why else "") + f"，設定為 {want}")
         self.set_flag("ip", ("IP 不符：" + "；".join(notes) + "。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，"
                              "使其重新取得設定的 IP") if notes else None)
@@ -1111,11 +1111,13 @@ class MainWindow(QMainWindow):
         self.set_flag("bootp", None if running or not reason else "BOOTP 服務停止，自動重新啟動中")
 
     def rebuild(self, layout: dict):
-        """依主畫面版面建立排與探頭（DEF-04）；套用設定後不需重啟程式。
+        """依主畫面版面建立位置排與探頭方塊（POS-04、POS-05）；套用設定後不需重啟程式。
 
-        layout 為定義檔格式，含使用中與維修中（"maint": True）；只有使用中連線、偵測、量測（DSC-15）。
+        layout 為定義檔格式，含使用中與維修中（"maint": True）與排名稱、點名稱；只有使用中連線、偵測、量測（DSC-15）。
+        探頭依設定的第幾排、第幾點放在第 1～5 排的第 1～5 格；位置未定的放在最下方「未設定位置」區。
         """
         self.layout = layout
+        self.names = positions.Names.from_json(layout.get("position_names"))
         self.devices = [d for d in layout.get("dl_en1", []) if not d.get("maint")]
         self.definition = {"version": 1, "dl_en1": self.devices}
         old = getattr(self, "station", None)
@@ -1127,12 +1129,51 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(holder)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
-        self.rows: list[DeviceRow] = []
         std = self.backend.standards()
-        for i, d in enumerate(layout.get("dl_en1", [])):
-            row = DeviceRow(i, d, std)
-            self.rows.append(row)
+        self.tiles: dict[tuple[str, int], ProbeTile] = {}      # (key, 探頭 id) → 方塊（使用中）
+        self.dev_tiles: dict[str, list[ProbeTile]] = {}        # key → 該台所有方塊（含維修中）
+        self.ip_bad: dict[str, str | None] = {}
+        self.point_pos: dict[tuple[str, int], tuple[int, int] | None] = {}
+        placed: dict[tuple[int, int], ProbeTile] = {}
+        unplaced: list[ProbeTile] = []
+        devs = sorted(layout.get("dl_en1", []), key=lambda d: (lan.row_no(d.get("key")) or 99, d.get("key") or ""))
+        for d in devs:
+            maint = bool(d.get("maint"))
+            for p in sorted(d.get("probes") or [], key=lambda p: p["id"]):
+                where = positions.pos(p)
+                t = ProbeTile(p["description"], None if maint else (std.get(d["key"]) or {}).get(p["id"]),
+                              positions.device_label(d.get("key"), d.get("name")))
+                if maint:
+                    t.set_maint()
+                else:
+                    self.tiles[(d["key"], p["id"])] = t
+                    self.point_pos[(d["key"], p["id"])] = where
+                self.dev_tiles.setdefault(d["key"], []).append(t)
+                if where and where not in placed:
+                    placed[where] = t
+                else:
+                    unplaced.append(t)
+        self.rows: list[PositionRow] = []
+        for r in range(1, positions.SIZE + 1):
+            if any((r, k) in placed for k in range(1, positions.SIZE + 1)):
+                slots = [placed.get((r, k)) for k in range(1, positions.SIZE + 1)]
+                self.rows.append(PositionRow(self.names.row(r), f"第 {r} 排", slots))
+        for i in range(0, len(unplaced), positions.SIZE):
+            first = i == 0
+            self.rows.append(PositionRow("未設定位置" if first else "", "請在設備設定\n設定探頭位置" if first else "",
+                                         unplaced[i:i + positions.SIZE], placeholders=False, unassigned=True))
+        for row in self.rows:
             lay.addWidget(row)
+        # 顯示名稱（PROPOSAL §5.2）：橫幅、匯出、3D 用；同名時加「（第 N 台 探頭 id）」
+        items = []
+        for d in self.devices:
+            for p in sorted(d["probes"], key=lambda p: p["id"]):
+                items.append((positions.display_name(self.names, positions.pos(p), d["key"], d.get("name"),
+                                                     p["description"]), d["key"], p["id"]))
+        self.point_names = dict(zip(((k, pid) for _, k, pid in items), positions.disambiguate(items)))
+        maint = [positions.device_label(d.get("key"), d.get("name")) for d in devs if d.get("maint")]
+        self.set_flag("maint", (f"{self._brief(maint)} 維修中" if maint else None))
+        self.set_flag("dev", None)
         if not self.devices:
             hint = QLabel("尚未設定「DL-EN1 使用中」的設備，請至「設備設定」設定。")
             hint.setFont(text_font(24, 700))
@@ -1146,9 +1187,22 @@ class MainWindow(QMainWindow):
         self._apply_scale(getattr(self, "scale_k", 1.0))
         self._fit_later()
 
+    @staticmethod
+    def _brief(items: list[str], n: int = 2) -> str:
+        """頂端提示最多列 n 台，其餘以「等 N 台」表示（PROPOSAL §5.5）。"""
+        return "、".join(items[:n]) + (f" 等 {len(items)} 台" if len(items) > n else "")
+
+    def _dev_name(self, d: dict) -> str:
+        return positions.device_label(d.get("key"), d.get("name"))
+
+    def _point_name(self, key: str, pid: int, d: dict | None = None) -> str:
+        if (key, pid) in self.point_names:
+            return self.point_names[(key, pid)]
+        return positions.device_call(key, (d or {}).get("name"), self._desc(d or {"probes": []}, pid))
+
     @property
-    def live_rows(self) -> list[DeviceRow]:
-        return [r for r in self.rows if not r.maint]
+    def live_tiles(self) -> list[ProbeTile]:
+        return list(self.tiles.values())
 
     @property
     def n_probes(self) -> int:
@@ -1181,10 +1235,9 @@ class MainWindow(QMainWindow):
         self.reread_label.setText(f"重讀 {self.rereads} 次" if self.rereads else "")
 
     def _clear_tiles(self, dev_color="stale", dev_text="", blink=False):
-        for row in self.live_rows:
-            row.set_down(False, dev_color, blink)
-            for t in row.tiles.values():
-                t.set_blank(dev_color, dev_text, blink)
+        for t in self.live_tiles:
+            t.down = False
+            t.set_blank(dev_color, dev_text, blink)
 
     def _run(self, fn, signal):
         def work():
@@ -1229,30 +1282,34 @@ class MainWindow(QMainWindow):
             self._boot_timer.start(1000)
             return
         errs, n_err = [], 0
+        down_devs = []
         std = self.backend.standards()
-        for row in self.live_rows:
-            d = row.dev
+        for d in self.devices:
+            tiles = {pid: self.tiles[(d["key"], pid)] for pid in sorted(p["id"] for p in d["probes"])}
+            dev = self._dev_name(d)
             s = by_key.get(d["key"], measure.DeviceStatus(d["key"], reachable=False))
-            if not s.reachable:
-                errs.append(f"{d['name']} DL-EN1 偵測不到")
-                row.set_down(True)
-                for t in row.tiles.values():
+            if not s.reachable:  # POS-05：該台每個方塊（不論分佈在哪幾排）
+                errs.append(f"{dev} DL-EN1 偵測不到")
+                down_devs.append(f"{dev} 偵測不到")
+                for t in tiles.values():
+                    t.down = True
                     t.set_result(ERR, device_text="DL-EN1 偵測不到", device_error=True)
                     n_err += 1
                 continue
             if s.error:  # 整台設備異常：連得上，但不能量測（本機錯誤、探頭台數超出定義 DEF-06）
-                errs.append(f"{d['name']} {s.error}")
-                row.set_down(False, "ng")
-                for t in row.tiles.values():
+                errs.append(f"{dev} {s.error}")
+                down_devs.append(f"{dev} {s.error}")
+                for t in tiles.values():
+                    t.down = False
                     t.set_result(ERR, note=s.error, device_text="設備異常", device_error=True)
                     n_err += 1
                 continue
-            row.set_down(False, "go")
             missing = uncal = 0
-            for pid, t in row.tiles.items():
+            for pid, t in tiles.items():
+                t.down = False
                 if pid in s.probe_errors:
                     t.set_result(ERR, note=s.probe_errors[pid], device_text="探頭無回應", device_error=True)
-                    errs.append(f"{d['name']} {self._desc(d, pid)}探頭無回應（{s.probe_errors[pid]}）")
+                    errs.append(f"{self._point_name(d['key'], pid, d)}探頭無回應（{s.probe_errors[pid]}）")
                     n_err += 1
                 elif pid in s.uncalibrated:  # CAL-07：未校準不量測
                     t.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
@@ -1265,9 +1322,10 @@ class MainWindow(QMainWindow):
                 else:
                     t.set_blank("go", "設備正常")
             if missing:
-                errs.append(f"{d['name']} 有 {missing} 個探頭未設定允收標準")
+                errs.append(f"{dev} 有 {missing} 個探頭未設定允收標準")
             if uncal:
-                errs.append(f"{d['name']} 有 {uncal} 個探頭未校準，請在設備設定以標準件校準")
+                errs.append(f"{dev} 有 {uncal} 個探頭未校準，請在設備設定以標準件校準")
+        self.set_flag("dev", self._brief(down_devs) if down_devs else None)
         if errs:
             self._summary("error", n_err)
             self.show_device_error(errs, [])
@@ -1401,23 +1459,25 @@ class MainWindow(QMainWindow):
         std = self.backend.standards()
         points, outs, errs, n_err = [], [], [], 0
         mac = {d["key"]: d.get("mac", "") for d in self.devices}
-        for row in self.live_rows:
-            d = row.dev
-            row.set_down(False, "go")
+        for d in self.devices:
             missing = 0
-            for pid, tile in row.tiles.items():
+            probes = {p["id"]: p for p in d["probes"]}
+            for pid in sorted(probes):
+                tile = self.tiles[(d["key"], pid)]
+                tile.down = False
                 r = by.get((d["key"], pid)) or measure.ProbeReading(d["key"], pid, None, "", "探頭無回應")
                 s = (std.get(d["key"]) or {}).get(pid)
-                desc = self._desc(d, pid)
+                desc = probes[pid]["description"]
+                who = self._point_name(d["key"], pid, d)
                 if r.error == measure.UNCALIBRATED:  # CAL-07
                     state = ERR
                     tile.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
-                    errs.append(f"{d['name']} {desc}未校準")
+                    errs.append(f"{who}未校準")
                     n_err += 1
                 elif r.error or r.value is None:
                     state = ERR
                     tile.set_result(ERR, note=r.error or "無有效數據", device_text="探頭無回應", device_error=True)
-                    errs.append(f"{d['name']} {desc}探頭無回應（{r.error or '無有效數據'}）")
+                    errs.append(f"{who}探頭無回應（{r.error or '無有效數據'}）")
                     n_err += 1
                 elif s is None:
                     state = ERR
@@ -1430,12 +1490,14 @@ class MainWindow(QMainWindow):
                             f"低於下限 {f3(s.lower - r.value)}" if state == LO else "")
                     tile.set_result(state, r.value, note)
                     if state != OK:
-                        outs.append(f"{d['name']} {desc}{WORD[state]}")
+                        outs.append(f"{who}{WORD[state]}")
+                where = self.point_pos.get((d["key"], pid))
                 points.append(PointResult(d["key"], pid, d["name"], desc, mac.get(d["key"], ""), state,
                                           r.value, s, r.raw, r.error or ("未設定允收標準" if s is None else None),
-                                          r.offset))
+                                          r.offset, where[0] if where else None, where[1] if where else None,
+                                          self.names.row(where[0]) if where else None))
             if missing:
-                errs.append(f"{d['name']} 有 {missing} 個探頭未設定允收標準")
+                errs.append(f"{self._dev_name(d)} 有 {missing} 個探頭未設定允收標準")
         verdict = measure.overall(p.state for p in points)
         self.result = InspectionResult(self.serial or make_serial(), measured_at or datetime.now(),
                                        {"pass": "PASS", "fail": "FAIL", "error": "ERROR"}[verdict],
@@ -1456,9 +1518,8 @@ class MainWindow(QMainWindow):
 
     def _fade_ok(self, on: bool):
         """淡化規則（5.5）：不合格或設備異常時，合格方塊透明度 55%。"""
-        for row in self.live_rows:
-            for t in row.tiles.values():
-                t.fade(on and t.state == OK)
+        for t in self.live_tiles:
+            t.fade(on and t.state == OK)
 
     # ------------------------------------------------------------------ 對話框
 
