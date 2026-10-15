@@ -32,7 +32,7 @@ import time
 
 from .bootp import DEFAULT_PORT
 from .calibrate import Cancelled, SampleError
-from .measure import UNCALIBRATED, DeviceStatus, ProbeReading
+from .measure import HEAD_ERROR, UNCALIBRATED, DeviceStatus, ProbeReading, ProbeScan
 
 log = logging.getLogger(__name__)
 
@@ -158,8 +158,9 @@ class DlEn1Station:
                 where, code = _int(link.ask("SR,00,008")), _int(link.ask("SR,00,009"))
                 st.error = f"DL-EN1 本機錯誤（錯誤代碼 {code}，位置 {where}）"
                 log.warning("%s：整體狀態 %s，008=%s，009=%s", d["name"], state, where, code)
-            if count > d.get("max_probes", len(ids)):
-                st.error = f"探頭台數超出定義（連接 {count} 台，設定 {d.get('max_probes', len(ids))} 台）"  # DEF-06
+            total = d.get("max_probes", len(ids))
+            if count > total:  # PDT-07（修訂 DEF-06）：只提示、不擋量測
+                st.notice = f"偵測到 {count} 支、設定 {total} 支，請在設備設定按「探頭偵測」"
             for pid in ids:
                 if pid > count:  # DEF-06：連接台數少於已安裝探頭的 ID
                     st.probe_errors[pid] = f"放大器未連接（DL-EN1 只連接 {count} 台）"
@@ -183,6 +184,26 @@ class DlEn1Station:
             st.reachable = False
             log.warning("偵測 %s（%s）：偵測不到（%s）", d["name"], link.ip, exc)
         return st
+
+    def scan(self, ip: str, port: int | None = None, key: str | None = None) -> ProbeScan:
+        """探頭偵測（PDT-01）：只送讀取命令，讀連接台數（SR,00,077）與各 ID 的錯誤代碼（SR,00,668＋ID）。
+
+        DL-EN1 只接受一條連線：這一台已在量測連線中（同一 key、同一 IP）時沿用該連線，否則暫時連線、讀完即關閉。
+        錯誤代碼 2 為感測頭錯誤（ErH，未接或故障）。連不上時拋出 OSError，DL-EN1 錯誤回應拋出 CommandError。
+        """
+        own = self.links.get(key)
+        link = own if own is not None and own.ip == ip else Link(ip, port or DEFAULT_PORT, 3.0, 3.0)
+        try:
+            count = _int(link.ask("SR,00,077"))
+            states = {}
+            for pid in range(1, count + 1):
+                code = _int(link.ask(f"SR,00,{AMP_ERROR_BASE + pid}"))
+                states[pid] = "ok" if code == 0 else "head" if code == HEAD_ERROR else f"amp:{code}"
+            log.info("探頭偵測 %s：連接 %d 台，狀態 %s", ip, count, states)
+            return ProbeScan(count, states)
+        finally:
+            if link is not own:
+                link.close()
 
     def _decimals(self, link: Link, key: str, pid: int) -> int:
         dec = self.decimals.get((key, pid))

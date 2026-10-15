@@ -1069,7 +1069,8 @@ class MainWindow(QMainWindow):
             self.flag_box.addWidget(lb)
         for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"]),
                             ("dev", C["ng"], C["ng-soft"]), ("maint", C["ink-2"], C["panel-2"]),
-                            ("ip", "white", C["warn"]), ("sync", C["warn"], C["warn-soft"])):
+                            ("ip", "white", C["warn"]), ("sync", C["warn"], C["warn-soft"]),
+                            ("extra", C["warn"], C["warn-soft"])):
             text = self.flags.get(key)
             if text:
                 lb = QLabel(f'<span style="color:{fg}">●</span> {html.escape(text)}')
@@ -1293,6 +1294,10 @@ class MainWindow(QMainWindow):
         errs, n_err = [], 0
         down_devs = []
         std = self.backend.standards()
+        # PDT-07：實際放大器比設定多只提示、不擋量測
+        extra = [f"{self._dev_name(d)} {by_key[d['key']].notice}" for d in self.devices
+                 if by_key.get(d["key"]) is not None and by_key[d["key"]].notice]
+        self.set_flag("extra", "；".join(extra) if extra else None)
         for d in self.devices:
             tiles = {pid: self.tiles[(d["key"], pid)] for pid in sorted(p["id"] for p in d["probes"])}
             dev = self._dev_name(d)
@@ -1305,7 +1310,7 @@ class MainWindow(QMainWindow):
                     t.set_result(ERR, device_text="DL-EN1 偵測不到", device_error=True)
                     n_err += 1
                 continue
-            if s.error:  # 整台設備異常：連得上，但不能量測（本機錯誤、探頭台數超出定義 DEF-06）
+            if s.error:  # 整台設備異常：連得上，但不能量測（本機錯誤）
                 errs.append(f"{dev} {s.error}")
                 down_devs.append(f"{dev} {s.error}")
                 for t in tiles.values():

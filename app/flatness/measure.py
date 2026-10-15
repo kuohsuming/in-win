@@ -28,13 +28,32 @@ class ProbeReading:
     offset: float | None = None       # 校準時的歸零基準（CAL-09）；value 為放大器歸零後的值
 
 
+HEAD_ERROR = 2   # DL-EN1 錯誤代碼 02H：感測頭錯誤（ErH，未接或故障）
+
+
+@dataclass
+class ProbeScan:
+    """探頭偵測（PDT-01）：連接台數與各 ID 的狀態。states：id → "ok"／"head"（感測頭錯誤）／"amp:代碼"。"""
+    count: int
+    states: dict = field(default_factory=dict)
+
+    def text(self, pid: int) -> str:
+        st = self.states.get(pid, "ok")
+        if st == "ok":
+            return "正常"
+        if st == "head":
+            return "感測頭錯誤（未接或故障）"
+        return f"放大器錯誤（代碼 {st.split(':', 1)[1]}）"
+
+
 @dataclass
 class DeviceStatus:
     key: str
     reachable: bool = True            # False：DL-EN1 偵測不到（DEV-04）
     probe_errors: dict = field(default_factory=dict)  # probe_id → 原因（探頭無回應等）
     booting: bool = False             # ER,**,031／254：設備啟動中（DEV-07）
-    error: str | None = None          # 整台設備異常：本機錯誤、探頭台數超出定義（DEF-06）等
+    error: str | None = None          # 整台設備異常：本機錯誤等
+    notice: str | None = None         # 只提示、不擋量測：實際放大器比設定多（PDT-07）
     uncalibrated: dict = field(default_factory=dict)  # 未校準的探頭 id → 原因（CAL-07）
 
 
@@ -69,6 +88,13 @@ class DemoStation:
         self.rng = random.Random(seed)
         self.force: str | None = None  # 測試用："pass"／"fail"／"error"
         self.zero: dict = {}           # 示範用放大器的歸零基準（校準）
+
+    def scan(self, ip: str, port: int | None = None, key: str | None = None) -> ProbeScan:
+        """示範用探頭偵測（PDT-01）：回報設定中的探頭數，皆正常。"""
+        time.sleep(self.delay)
+        d = next((d for d in self.definition["dl_en1"] if d.get("key") == key or d.get("ipv4") == ip), None)
+        n = d.get("max_probes") or len(d.get("probes") or []) if d else 4
+        return ProbeScan(n, {i: "ok" for i in range(1, n + 1)})
 
     def detect(self) -> list[DeviceStatus]:
         time.sleep(self.delay * 2)

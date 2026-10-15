@@ -149,10 +149,31 @@ class DlEn1StationTest(unittest.TestCase):
         self.assertIn("放大器未連接", s.probe_errors[3])
         self.assertEqual(st.read()[2].error, "探頭無回應（放大器未連接）")
 
-    def test_more_amplifiers_than_defined(self):  # DEF-06
+    def test_more_amplifiers_than_defined(self):  # PDT-07（修訂 DEF-06）：只提示、不擋量測
         _, st = self.station(REAL, probes=(1,), max_probes=1)
         (s,) = st.detect()
-        self.assertEqual(s.error, "探頭台數超出定義（連接 2 台，設定 1 台）")
+        self.assertIsNone(s.error)
+        self.assertEqual(s.notice, "偵測到 2 支、設定 1 支，請在設備設定按「探頭偵測」")
+        self.assertEqual([(x.probe_id, x.value) for x in st.read()], [(1, -0.2971)])
+
+    def test_scan_real_head_unplugged(self):  # PDT-01：真機（2026-10-15）拔掉 ID01 感測頭後的回應
+        replies = dict(REAL, MS="MS,03,+100000000,02,-000001936")
+        replies.update({"SR,00,669": "SR,00,669,+000000002", "SR,00,670": "SR,00,670,+000000000"})
+        dev, st = self.station(replies)
+        scan = st.scan("127.0.0.1", dev.port, "row-1")
+        self.assertEqual((scan.count, scan.states), (2, {1: "head", 2: "ok"}))
+        self.assertEqual(scan.text(1), "感測頭錯誤（未接或故障）")
+        self.assertEqual(dev.conns, 1)                                      # 沿用量測連線
+        self.assertTrue(all(c.startswith("SR,") for c in dev.received))     # 只送讀取命令（PDT-A3）
+
+    def test_scan_unsaved_device_temporary_link(self):  # 尚未在量測中的設備：暫時連線、讀完即關閉
+        from flatness.dlen1 import DlEn1Station
+        other = FakeDlEn1({"SR,00,077": "SR,00,077,+000000001", "SR,00,669": "SR,00,669,+000000007"})
+        self.addCleanup(other.close)
+        st = DlEn1Station({"dl_en1": []})
+        self.addCleanup(st.close)
+        scan = st.scan("127.0.0.1", other.port, "row-5")
+        self.assertEqual((scan.count, scan.states, scan.text(1)), (1, {1: "amp:7"}, "放大器錯誤（代碼 7）"))
 
     def test_no_data_and_amp_error(self):  # 5.1 特殊值、輸出狀態 03
         replies = dict(REAL, MS="MS,02,+099999999,03,+000000000")
