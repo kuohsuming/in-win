@@ -33,11 +33,11 @@
 
 | 部位 | 類別 | 說明 |
 | --- | --- | --- |
-| 頂端工具列 | `MainWindow._topbar()` | 標題、系統狀態提示（`set_flag()`；`dev`：偵測不到／整台設備異常、`maint`：維修中、`ip`：IP 不符等，POS-05）、設備狀態摘要、「偵測設備」「取出測試數據」「板子尺寸」、鉛筆按鍵 |
+| 頂端工具列 | `MainWindow._topbar()` | 標題、系統狀態提示（`set_flag()`；`nip`／`nipm`：拿不到 IP（使用中／維修中，DSC-23）、`dev`：偵測不到／整台設備異常、`maint`：維修中、`ip`：IP 不符等，POS-05）、設備狀態摘要、「偵測設備」「取出測試數據」「板子尺寸」、鉛筆按鍵 |
 | 編號列 | `MainWindow._serialbar()` | 17 碼編號（DAT-01）、重讀次數、每秒更新的時鐘 |
 | 結果橫幅 | `Banner.set(state, …)` | `detecting`／`booting`／`idle`／`countdown`／`reading`／`pass`／`fail`／`error`，按鍵可用性依 5.3 |
 | 排 | `PositionRow` | 排名稱與「第 N 排」，欄為 `MainWindow.cols`（任一排有探頭的點），空格為透明空位；各格等寬（`min_width` 供縮放檢查）；「未設定位置」區每列個數等於欄數（POS-04、POS-12）。`MainWindow.tiles` 為使用中的方塊（`(key, 探頭 id)`），`dev_tiles` 為每台的所有方塊（含維修中），整台的狀態依此標在方塊上（POS-05） |
-| 探頭方塊 | `ProbeTile` | 大字位置名稱、小字「第 N 台 名稱」；`set_blank()`、`set_result(state, value, note, …)`、`set_maint()`、`set_ip(text)`（IP 不符附加標示）、`set_down(bool)`（偵測不到時不加 IP 標示）、`fade()`（5.5）；`set_scale(k)` 依比例調整字級與間距 |
+| 探頭方塊 | `ProbeTile` | 大字位置名稱、小字「第 N 台 名稱」；`set_blank()`、`set_result(state, value, note, …)`、`set_maint(note)`（BOOTP 被拒時 note 為「拿不到 IP・維修中」）、`set_ip(text)`（IP 不符附加標示）、`set_down(bool)`（偵測不到時不加 IP 標示）、`fade()`（5.5）；`set_scale(k)` 依比例調整字級與間距 |
 | 自動縮放 | `MainWindow.fit_to_screen()` | 視窗或排區大小改變、重建排後執行；二分搜尋最大的比例 `scale_k`（無條件捨去），使至少 4 列不需捲動（UI-11）；排高固定為該比例所需（量測前先處理各排待處理的樣式與版面事件，避免沿用上一個比例的高度） |
 | 刻度條 | `ScaleBar` | 5.6 公式，`paintEvent` 繪製 |
 
@@ -99,7 +99,8 @@
 | `apply(old, new, summary, deleted=(), names=None)` | 套用設備設定；`names` 為有變更時的排與點名稱（`None` 表示不變，POS-03） |
 | `names`／`load_names()` | 排與點名稱；資料庫無法連線時沿用定義檔中的（DSC-06） |
 | `standards()` | 允收標準 `{key: {probe_id: Standard}}` |
-| 訊號 `devices_seen`、`bootp_state`、`db_state` | 探索到設備、BOOTP 服務狀態、資料庫狀態 |
+| 訊號 `devices_seen`、`bootp_state`、`db_state`、`bootp_refusals` | 探索到設備、BOOTP 服務狀態、資料庫狀態、BOOTP 拒絕配發狀態有變更（DSC-23） |
+| `bootp_watch` | `bootp_watch.BootpWatch`：使用中／維修中設備的 BOOTP 拒絕狀態（`refusal()`、`message()`、`requesting()`），只在記憶體中 |
 
 ### 5.2 不含 Qt 的模組
 
@@ -109,6 +110,7 @@
 | `store.py` | `MySQLStore`（正式）、`MemoryStore`（測試） |
 | `sync.py` | 資料庫 → 定義檔與 BOOTP 主機對應（DSC-06）、套用與還原 |
 | `discovery.py` | 解析 dnsmasq 輸出、背景寫入資料庫（資料庫斷線時暫存） |
+| `bootp_watch.py` | 從 dnsmasq 的 BOOTP 行判斷拒絕配發與恢復（DSC-23）；讀取舊安裝的租約檔找出佔用者（DSC-22 ②） |
 | `dnsmasq.py` | 以子程序執行 dnsmasq，異常結束自動重新啟動 |
 | `netinfo.py` | 設備網卡位址、ARP 探測 |
 | `measure.py` | 判定（JDG-01～JDG-04）與示範量測來源 `DemoStation` |

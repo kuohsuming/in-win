@@ -42,9 +42,9 @@ def bootp(mac, table):
     xid = random.randint(1000, 999999)
     if mac in table:
         ip, name = table[mac]
-        out(f"{xid} BOOTP({IFACE}) {ip} {mac} {name}".rstrip())
+        out(f"{xid} BOOTP({IFACE}) {ip} {mac} ")  # 實機 dnsmasq 2.90：配發成功時行尾沒有文字
     else:
-        out(f"{xid} BOOTP({IFACE}) {mac} no address configured")
+        out(f"{xid} BOOTP({IFACE}) {mac} no address available")
 
 
 def dhcp(mac, table, name=None, vendor=None, kind="DHCPDISCOVER"):

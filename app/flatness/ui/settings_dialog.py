@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import bootp, calibrate, definition, lan, netinfo, positions
+from .. import bootp, bootp_watch, calibrate, definition, lan, netinfo, positions
 from ..lan import DL_STATUSES, LIVE, MAINT, OTHER, RETIRED, STATUS_NAME, STATUS_SHORT, UNCLASSIFIED
 from ..store import StoreError
 from .theme import C, tag_style
@@ -143,6 +143,7 @@ class SettingsDialog(QDialog):
         self.remembered: dict[str, dict] = {}
         self.replaced_from: dict[str, str] = {}   # 新機 MAC → 舊機 MAC（DSC-14 探測時辨識舊機）
         self.ip_checks: dict[str, tuple[str, str, str]] = {}  # mac → (ip, 狀態, 文字)
+        self.ip_check_macs: dict[str, str | None] = {}       # mac → ARP 回應者的 MAC（DSC-22 與 DSC-10 合併用）
         self.selected: str | None = None
         self.read_only = False
         self.issues: list[lan.Issue] = []
@@ -169,6 +170,8 @@ class SettingsDialog(QDialog):
         outer.addWidget(self.pages, 1)
         self.toast = Toast(self)
         backend.devices_seen.connect(lambda _events: self._refresh_timer.start())
+        if hasattr(backend, "bootp_refusals"):  # DSC-23：資訊列的 BOOTP 狀態
+            backend.bootp_refusals.connect(self._render_info)
         self._size_for(0)
 
     # ================================================================ 版面
@@ -813,6 +816,11 @@ class SettingsDialog(QDialog):
             if d.assigns_ip and lan.ip_mismatch(d.seen_ip, d.ipv4):
                 seen += f'　<span style="color:{C["warn"]}">⚠ 與設定的 {d.ipv4} 不同</span>'
             rows.append(("實際使用 IP", seen))
+        watch = getattr(self.backend, "bootp_watch", None)
+        r = watch.refusal(d.mac) if watch is not None else None
+        if r is not None:  # DSC-23：BOOTP 拒絕配發
+            rows.append(("BOOTP", f'<span style="color:{C["ng"]};font-weight:700">✘ 拒絕配發（{html.escape(r.text)}），'
+                                  f'最近 {datetime.fromtimestamp(r.last):%H:%M:%S}</span>'))
         if d.hostname:
             rows.append(("主機名稱", html.escape(d.hostname)))
         if d.vendor_class:
@@ -1176,6 +1184,23 @@ class SettingsDialog(QDialog):
             d = self.work.get(mac)
             if st == "taken" and d and d.ipv4 == ip and d.assigns_ip:
                 out.append(lan.Issue(mac, "ipv4", text, d.label()))
+        # DSC-22：不在線的佔用者，只檢查新設定或變更的 IP；不阻擋儲存
+        devs = self._devices()
+        for d in devs:
+            if not (d.assigns_ip and d.ipv4 and self._needs_probe(d)):
+                continue
+            check = self.ip_checks.get(d.mac)
+            online = self.ip_check_macs.get(d.mac) if check and check[0] == d.ipv4 else None
+            old_mac = self.replaced_from.get(d.mac)
+            for o in lan.offline_occupants(devs, d.ipv4, d.mac):
+                if o.mac == online:
+                    continue  # 已由 DSC-10 的 ARP 探測回報（在線），合併為一條
+                text = ("舊機仍記得此 IP，請勿再接上網路" if o.mac == old_mac  # DSC-14：不論是否在線
+                        else lan.offline_occupant_text(o, d.ipv4))
+                out.append(lan.Issue(d.mac, "ipv4", text, d.label()))
+            holder = bootp_watch.lease_holder(d.ipv4, d.mac)
+            if holder:
+                out.append(lan.Issue(d.mac, "ipv4", bootp_watch.lease_text(d.ipv4, holder), d.label()))
         return out
 
     def _save_blocked_reason(self) -> str:
@@ -1600,10 +1625,25 @@ class SettingsDialog(QDialog):
         d = self.work.get(mac)
         who = lan.row_label((d.config or {}).get("key")) if d else mac
         if isinstance(res, str):
-            self.toast.show_text(f"偵測不到{who}，清單未變更")
+            self.toast.show_text(self._scan_failed_text(mac, who))
             self._update_probe_buttons()
             return
         self.apply_scan(mac, res)
+
+    def _scan_failed_text(self, mac: str, who: str) -> str:
+        """探頭偵測失敗的說明（PDT-01 修訂、DSC-23）：尚未儲存優先（偵測連的是畫面上的 IP），其次是 BOOTP 拒絕配發。"""
+        d, o = self.work.get(mac), self.original.get(mac)
+        watch = getattr(self.backend, "bootp_watch", None)
+        if d is not None and d.ipv4 and not (o is not None and o.assigns_ip and o.ipv4 == d.ipv4):
+            text = f"偵測不到{who}：設定尚未儲存，BOOTP 還沒有配發 {d.ipv4}；請先儲存"
+            # 設備手上有另一個 IP（最近沒有在要 IP）：DL-EN1 記住舊 IP，須按 RST 才會重新要 IP
+            if d.seen_ip and d.seen_ip != d.ipv4 and not (watch is not None and watch.requesting(mac)):
+                text += "，儲存後按住該台 DL-EN1 的 RST 鍵 3 秒"
+            return text
+        reason = watch.message(mac) if watch is not None else None
+        if reason:
+            return f"偵測不到{who}：拿不到 IP，{reason}"
+        return f"偵測不到{who}，清單未變更"
 
     def apply_scan(self, mac: str, scan):
         """依探頭偵測結果，從清單末端新增或移除探頭（PDT-01）：新增的狀態正常者啟用，感測頭錯誤者不啟用（PDT-02）。
@@ -1809,6 +1849,7 @@ class SettingsDialog(QDialog):
         else:
             st = {netinfo.FREE: "ok", netinfo.SELF: "ok", netinfo.TAKEN: "taken", netinfo.UNKNOWN: "warn"}[result.status]
         self.ip_checks[mac] = (result.ip, st, result.text(old_mac))
+        self.ip_check_macs[mac] = result.mac if result.status == netinfo.TAKEN else None
         self._render_list()
         self._render_field_errors()
         self._render_ip_note()
@@ -1952,7 +1993,7 @@ class SettingsDialog(QDialog):
         impacts = []
         conflicts = [i.text() for i in self._ip_warnings()]
         if conflicts:
-            impacts.append(("網路上已有其他設備使用下列 IP，儲存後可能發生 IP 衝突：", conflicts))
+            impacts.append(("下列 IP 可能已被其他設備使用（在線或曾經使用），儲存後可能發生 IP 衝突或拿不到 IP：", conflicts))
         if p.reset:
             impacts.append(("請按住下列 DL-EN1 上的 RST 鍵 3 秒重設，才會取得新 IP：", p.reset))
         if p.power_cycle:

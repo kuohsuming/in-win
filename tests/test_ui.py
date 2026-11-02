@@ -33,6 +33,8 @@ class UiBase(unittest.TestCase):
         from flatness.ui import theme
         theme.load_fonts()
         cls.app.setStyleSheet(theme.qss())
+        from flatness import bootp_watch  # DSC-22 ②：不讀本機真正的 dnsmasq 主設定與租約檔
+        bootp_watch.CONF_PATH = bootp_watch.LEASE_PATH = "/nonexistent/flatness-test"
 
     def make_backend(self, devices=None, probe_result=None):
         from flatness import config, netinfo, sync
@@ -443,6 +445,64 @@ class SettingsDialogTest(UiBase):
         d.btn_save.click()
         confirm = " ".join(w.text() for w in d.pages.widget(2).findChildren(QLabel))
         self.assertIn("儲存後可能發生 IP 衝突", confirm)
+
+    def _warns(self, d):
+        return [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+
+    def test_offline_occupant_warns(self):  # DSC-22 ①、AC-4：已停用、不在線的設備曾使用此 IP
+        self.dlg.deleteLater()
+        from flatness.ui.settings_dialog import SettingsDialog
+        devs = sample_devices()
+        old = by_mac(devs)["00:01:FC:DE:3A:70"]
+        old.seen_ip, old.last_seen = "192.168.10.60", datetime(2026, 10, 7, 13, 51)
+        d = SettingsDialog(self.make_backend(devs))
+        d.enter_edit()
+        d.select("00:01:FC:DE:3A:77")
+        self.type(d.ip_edit, "192.168.10.60")
+        w = [x for x in self._warns(d) if "曾使用" in x]
+        self.assertEqual(len(w), 1, self._warns(d))
+        self.assertIn("00:01:FC:DE:3A:70（DL-EN1 已停用 舊機）曾使用 192.168.10.60，最後出現 10/07 13:51；"
+                      "它仍記得這個 IP，接上網路會衝突", w[0])
+        self.assertTrue(d.btn_save.isEnabled())                                   # 只提示，不阻擋
+        self.type(d.ip_edit, "192.168.10.13")                                     # 改回原本的 IP：不檢查
+        self.assertFalse([x for x in self._warns(d) if "曾使用" in x])
+
+    def test_stale_lease_warns(self):  # DSC-22 ②、AC-2：舊安裝的租約檔
+        from flatness import bootp_watch
+        conf, leases = Path(self.tmp.name) / "dnsmasq.conf", Path(self.tmp.name) / "dnsmasq.leases"
+        conf.write_text("port=0\nlog-dhcp\n")
+        leases.write_text("0 00:01:fc:de:3a:75 192.168.10.61 row-1 *\n")
+        old = (bootp_watch.CONF_PATH, bootp_watch.LEASE_PATH)
+        bootp_watch.CONF_PATH, bootp_watch.LEASE_PATH = str(conf), str(leases)
+        try:
+            d = self.dlg
+            d.select("00:01:FC:DE:3A:77")
+            self.type(d.ip_edit, "192.168.10.61")
+            self.assertTrue(any("192.168.10.61 仍被舊租約登記給 00:01:FC:DE:3A:75，BOOTP 會拒絕配發" in x
+                                for x in self._warns(d)), self._warns(d))
+            conf.write_text("port=0\nleasefile-ro\n")                             # 已升級：不再檢查
+            self.type(d.ip_edit, "192.168.10.62")
+            self.type(d.ip_edit, "192.168.10.61")
+            self.assertFalse([x for x in self._warns(d) if "舊租約" in x])
+        finally:
+            bootp_watch.CONF_PATH, bootp_watch.LEASE_PATH = old
+
+    def test_scan_failed_explains(self):  # PDT-01 修訂、DSC-23、AC-6
+        d = self.dlg
+        mac = "00:01:FC:DE:3A:77"
+        watch = self.be.bootp_watch if hasattr(self, "be") else d.backend.bootp_watch
+        d.select(mac)
+        d.work[mac].seen_ip = "192.168.10.13"
+        self.assertEqual(d._scan_failed_text(mac, "第 3 台"), "偵測不到第 3 台，清單未變更")
+        watch.feed(f"BOOTP({watch.interface}) 192.168.10.13 {mac.lower()} address in use")   # ④ 已儲存、被拒
+        self.assertIn("拿不到 IP，192.168.10.13 被其他設備佔用", d._scan_failed_text(mac, "第 3 台"))
+        self.type(d.ip_edit, "192.168.10.63")                                     # ③ 改 IP 未儲存：尚未儲存優先
+        text = d._scan_failed_text(mac, "第 3 台")
+        self.assertIn("設定尚未儲存，BOOTP 還沒有配發 192.168.10.63；請先儲存", text)
+        self.assertNotIn("RST", text)                                             # 正在要 IP：不提示 RST
+        self.assertNotIn("佔用", text)
+        watch.clock = lambda: time.time() + 120                                   # ② 最近沒有要 IP：手上有舊 IP
+        self.assertIn("儲存後按住該台 DL-EN1 的 RST 鍵 3 秒", d._scan_failed_text(mac, "第 3 台"))
 
     def test_unchanged_ip_not_probed(self):  # DSC-10-A1
         d = self.dlg
@@ -1031,6 +1091,55 @@ class MainWindowTest(UiBase):
         w._on_seen([SeenEvent(mac.upper(), "ARP", datetime.now(), ip=want)])     # 重設後取得設定的 IP
         self.assertIsNone(w.flags["ip"])
         self.assertFalse(any(t.ip_tag_text for t in tiles))
+
+    def _refuse(self, dev, tail="address in use"):
+        """DSC-23：模擬 dnsmasq 拒絕這台的 BOOTP 請求。"""
+        watch = self.be.bootp_watch
+        watch.feed(f"BOOTP({watch.interface}) {dev['ipv4']} {dev['mac'].lower()} {tail}")
+        self.be.bootp_refusals.emit()
+        pump(self.app)
+
+    def test_bootp_refused_replaces_down_and_ip_mismatch(self):  # DSC-23、AC-11、AC-12
+        from flatness.store import SeenEvent
+        w = self.win
+        dev = w.layout["dl_en1"][0]
+        w._on_seen([SeenEvent(dev["mac"].upper(), "ARP", datetime.now(), ip="192.168.10.99")])
+        self.assertIsNotNone(w.flags["ip"])
+        self._refuse(dev)
+        self.assertIn("第 1 台 前排 拿不到 IP：192.168.10.11 被其他設備佔用", w.flags["nip"])
+        self.assertIsNone(w.flags["ip"])                                         # 被拒期間暫停 IP 不符
+        self.assertFalse(any(t.ip_tag_text for t in w.dev_tiles["row-1"]))
+        w.detect()                                                               # 連得上（佔用者在線）也以設備異常計
+        self.wait_state("error")
+        self.assertTrue(all(t.dev_text.text() == "拿不到 IP" for t in w.dev_tiles["row-1"]))
+        self.assertIn("拿不到 IP", w.banner.say.text())
+        self.assertNotIn("偵測不到", w.banner.say.text())
+        self.assertIsNone(w.flags["dev"])
+        self.stations[-1].force = "pass"
+        w.next_piece()
+        self.wait_state("error")                                                 # 不會合格
+        self.assertEqual(w.result.judgment, "ERROR")
+        self.assertTrue(all(p.value is None for p in w.result.points if p.key == "row-1"))
+        self.be.bootp_watch.feed(f"BOOTP({self.be.bootp_watch.interface}) {dev['ipv4']} {dev['mac'].lower()} ")
+        self.be.bootp_refusals.emit()
+        pump(self.app)
+        self.assertIsNone(w.flags["nip"])                                        # 配發成功即消失
+        self.assertIsNotNone(w.flags["ip"])                                      # DSC-20 照常判斷
+
+    def test_bootp_refused_maint(self):  # DSC-23、AC-8：維修中不進入異常橫幅
+        from flatness import lan
+        old = self.store.load()
+        new = [x.copy() for x in old]
+        lan.set_status(new, "00:01:FC:DE:3A:76", lan.MAINT, NET)
+        w = self.win
+        w.rebuild(self.be.apply(old, new).layout)
+        dev = next(d for d in w.layout["dl_en1"] if d["key"] == "row-2")
+        self._refuse(dev, "no address available")
+        self.assertTrue(all(t.state == "maint" and t.dev_text.text() == "拿不到 IP・維修中" for t in w.dev_tiles["row-2"]))
+        self.assertIn("第 2 台 中排 拿不到 IP：BOOTP 沒有配發", w.flags["nipm"])
+        self.assertIsNone(w.flags["nip"])
+        w.detect()
+        self.wait_state("idle")
 
     def test_detect_then_measure_pass_and_next_writes(self):  # DEV-01、MEA-01～MEA-06
         w = self.win

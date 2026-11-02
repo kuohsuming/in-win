@@ -373,6 +373,7 @@ dialog.pl{width:min(480px,92vw)}
     <button type="button" data-flag="bootp" aria-pressed="false">BOOTP 服務停止</button>
     <button type="button" data-flag="db" aria-pressed="false">資料庫無法連線</button>
     <button type="button" data-flag="ip" aria-pressed="false">IP 不符</button>
+    <button type="button" data-flag="nip" aria-pressed="false">拿不到 IP</button>
     <button type="button" data-flag="sim" aria-pressed="false">模擬模式</button>
     <button type="button" id="unplacedBtn" aria-pressed="false">部分探頭未設定位置</button>
     <span class="hint">規格溝通用，正式版不顯示</span>
@@ -703,18 +704,23 @@ function show(){
 }
 
 /* ================= 系統狀態提示（示範切換；DSC-06、DSC-07、DSC-20） ================= */
-const FLAGS={bootp:false,db:false,ip:false,sim:false};
-const ipKey=()=>FLAGS.ip?(live()[1]||live()[0])?.cfg.key:null;      // 示範：第 2 台 IP 不符
+const FLAGS={bootp:false,db:false,ip:false,sim:false,nip:false};
+const nipKey=()=>FLAGS.nip?live()[0]?.cfg.key:null;                  // 示範：第 1 台 BOOTP 拒絕配發（DSC-23）
+const ipKey=()=>{ const k=FLAGS.ip?(live()[1]||live()[0])?.cfg.key:null; return k===nipKey()?null:k; };  // 被拒期間暫停 IP 不符
 /* IP 不符：該台每個方塊加警示外框與「IP 不符」標籤，內容照常；偵測不到時以偵測不到優先（DSC-20、POS-05） */
-function paintIp(){ const k=ipKey(); document.querySelectorAll(".probe").forEach(el=>el.classList.toggle("ipbad",el.dataset.dev===k&&!el.classList.contains("devdown"))); }
+function paintIp(){ const k=ipKey(); document.querySelectorAll(".probe").forEach(el=>el.classList.toggle("ipbad",el.dataset.dev===k&&!el.classList.contains("devdown")));
+  /* DSC-23：拿不到 IP 取代偵測不到；連得上也以設備異常計，不顯示讀值 */
+  const n=nipKey(); if(n) document.querySelectorAll(`.probe[data-dev="${n}"]`).forEach(el=>setDev(el,"err","拿不到 IP")); }
 const brief=a=>a.slice(0,2).join("、")+(a.length>2?` 等 ${a.length} 台`:"");
 function renderFlagsOnly(){
-  const d=live().find(x=>x.cfg.key===ipKey()), downs=live().filter(x=>DOWN.has(x.cfg.key)).map(x=>devTag(x.cfg)),
+  const d=live().find(x=>x.cfg.key===ipKey()), nd=live().find(x=>x.cfg.key===nipKey()),
+        downs=live().filter(x=>DOWN.has(x.cfg.key)&&x.cfg.key!==nipKey()).map(x=>devTag(x.cfg)),
         maints=shown().filter(x=>x.status==="maint").map(x=>devTag(x.cfg));
   $("#sysflags").innerHTML=
     (FLAGS.sim?`<span class="flag sim">模擬模式</span>`:"")+
     (FLAGS.bootp?`<span class="flag ng"><i class="dot err"></i>BOOTP 服務停止，自動重新啟動中</span>`:"")+
     (FLAGS.db?`<span class="flag warn"><i class="dot warn"></i>無法讀取資料庫，使用上次的設定</span>`:"")+
+    (nd?`<span class="flag ng"><i class="dot err"></i>${esc(devTag(nd.cfg))} 拿不到 IP：${esc(nd.ipv4)} 被其他設備佔用（BOOTP 拒絕配發），請洽維護人員</span>`:"")+
     (downs.length?`<span class="flag ng"><i class="dot err"></i>${esc(brief(downs))} 偵測不到</span>`:"")+
     (maints.length?`<span class="flag gray"><i class="dot stale"></i>${esc(brief(maints))} 維修中</span>`:"")+
     (FLAGS.ip&&d?`<span class="flag ipw">IP 不符：${esc(devTag(d.cfg))} 實際 IP 192.168.10.57，設定為 ${esc(d.ipv4)}。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，使其重新取得設定的 IP</span>`:"");
@@ -728,7 +734,8 @@ $("#unplacedBtn").addEventListener("click",e=>{ if(busy||detecting) return;
   else { UNPLACED_SAVED=P.map(p=>({row:p.row,point:p.point})); P.forEach(p=>{ delete p.row; delete p.point; }); }
   e.currentTarget.setAttribute("aria-pressed",!!UNPLACED_SAVED); rebuildMain(); });
 document.querySelectorAll("[data-flag]").forEach(b=>b.addEventListener("click",()=>{
-  const k=b.dataset.flag; FLAGS[k]=!FLAGS[k]; b.setAttribute("aria-pressed",FLAGS[k]); renderFlags(); }));
+  const k=b.dataset.flag; FLAGS[k]=!FLAGS[k]; b.setAttribute("aria-pressed",FLAGS[k]);
+  if(k==="nip"&&!FLAGS[k]&&!busy&&!detecting) rebuildMain(); else renderFlags(); }));
 
 /* ================= 訊息框 ================= */
 const ICON={info:"i-ok",warn:"i-warn",ask:"i-err",danger:"i-warn"};

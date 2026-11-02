@@ -334,9 +334,10 @@ class ProbeTile(QFrame):
         else:
             self._device("go", device_text)
 
-    def set_maint(self):
-        """維修中（DSC-15、POS-05）：灰色，不連線、不量測、不判定，位置保留。"""
-        self._last = (self.set_maint, (), {})
+    def set_maint(self, note: str = ""):
+        """維修中（DSC-15、POS-05）：灰色，不連線、不量測、不判定，位置保留。
+        note：BOOTP 拒絕配發時為「拿不到 IP・維修中」（DSC-23），不進入異常橫幅。"""
+        self._last = (self.set_maint, (note,), {})
         self.state = "maint"
         self._frame(3, C["line"], C["panel-2"])
         self.badge_icon.clear()
@@ -349,7 +350,10 @@ class ProbeTile(QFrame):
         self.rg.setText("—")  # 維修中不判定：不顯示「未設定」，以免看成異常
         self.scale.hide()
         self.note.hide()
-        self._device("stale", "不連線、不量測")
+        if note:
+            self._device("ng", note, bold=True)
+        else:
+            self._device("stale", "不連線、不量測")
         self.fade(False)
 
     def set_ip(self, text: str):
@@ -888,6 +892,7 @@ class MainWindow(QMainWindow):
 
         backend.bootp_state.connect(self._on_bootp)
         backend.devices_seen.connect(self._on_seen)
+        backend.bootp_refusals.connect(self._on_bootp_refusals)
         backend.db_state.connect(lambda ok: self.set_flag("db", None if ok else "無法讀取資料庫，使用上次的設定"))
         r = backend.startup_result
         if r is not None and r.problem:
@@ -1068,7 +1073,8 @@ class MainWindow(QMainWindow):
                              f"padding:5px 10px;border-radius:4px;letter-spacing:0.15em;")
             self.flag_box.addWidget(lb)
         for key, fg, bg in (("bootp", C["ng"], C["ng-soft"]), ("db", C["warn"], C["warn-soft"]),
-                            ("dev", C["ng"], C["ng-soft"]), ("maint", C["ink-2"], C["panel-2"]),
+                            ("nip", C["ng"], C["ng-soft"]), ("dev", C["ng"], C["ng-soft"]),
+                            ("nipm", C["ink-2"], C["panel-2"]), ("maint", C["ink-2"], C["panel-2"]),
                             ("ip", "white", C["warn"]), ("sync", C["warn"], C["warn-soft"]),
                             ("extra", C["warn"], C["warn-soft"])):
             text = self.flags.get(key)
@@ -1076,8 +1082,8 @@ class MainWindow(QMainWindow):
                 lb = QLabel(f'<span style="color:{fg}">●</span> {html.escape(text)}')
                 lb.setStyleSheet(f"background:{bg};color:{fg};font-size:15px;font-weight:700;padding:5px 10px;"
                                  f"border-radius:4px;")
-                lb.setMaximumWidth(900 if key == "ip" else 520)
-                lb.setWordWrap(key == "ip")
+                lb.setMaximumWidth(900 if key in ("ip", "nip", "nipm") else 520)
+                lb.setWordWrap(key in ("ip", "nip", "nipm"))
                 lb.setToolTip(text)
                 self.flag_box.addWidget(lb)
 
@@ -1102,7 +1108,8 @@ class MainWindow(QMainWindow):
             except ValueError:
                 mac = ""
             seen, want = self.seen_ips.get(mac), d.get("ipv4")
-            bad = lan.ip_mismatch(seen, want)
+            # DSC-23：BOOTP 被拒期間暫停 IP 不符（設備手上沒有 IP，seen_ip 是舊值；不再叫人按 RST）
+            bad = lan.ip_mismatch(seen, want) and self._refusal(d) is None
             self.ip_bad[d["key"]] = seen if bad else None
             text = ("IP 不符・維修中" if d.get("maint") else "IP 不符") if bad else ""
             for t in self.dev_tiles.get(d["key"], []):
@@ -1115,6 +1122,28 @@ class MainWindow(QMainWindow):
                              "使其重新取得設定的 IP") if notes else None)
         if notes:
             log.warning("DL-EN1 IP 不符：%s", "；".join(notes))
+
+    def _refusal(self, d: dict):
+        """DSC-23：這台的 BOOTP 拒絕狀態（沒有被拒時為 None）。"""
+        watch = getattr(self.backend, "bootp_watch", None)
+        return watch.refusal(d.get("mac", "")) if watch is not None else None
+
+    def _refusal_text(self, d: dict) -> str:
+        return f"{self._dev_name(d)} 拿不到 IP：{self.backend.bootp_watch.message(d.get('mac', ''))}"
+
+    def _on_bootp_refusals(self):
+        """DSC-23：拒絕狀態變更：更新頂端提示、維修中方塊與 IP 不符；使用中方塊在下一次偵測或量測時更新。"""
+        live, maint = [], []
+        for d in self.layout.get("dl_en1", []):
+            refused = self._refusal(d) is not None
+            if d.get("maint"):
+                for t in self.dev_tiles.get(d["key"], []):
+                    t.set_maint("拿不到 IP・維修中" if refused else "")
+            if refused:
+                (maint if d.get("maint") else live).append(self._refusal_text(d))
+        self.set_flag("nip", "；".join(live) if live else None)
+        self.set_flag("nipm", "；".join(f"{m}（維修中）" for m in maint) if maint else None)
+        self._check_ips()
 
     def _on_bootp(self, running: bool, reason: str):
         self.set_flag("bootp", None if running or not reason else "BOOTP 服務停止，自動重新啟動中")
@@ -1193,7 +1222,7 @@ class MainWindow(QMainWindow):
         lay.addStretch()
         self.rows_area.setWidget(holder)
         self.seen_ips.update({d.mac: d.seen_ip for d in self.backend.cached_devices() if d.seen_ip})
-        self._check_ips()
+        self._on_bootp_refusals()  # 含 _check_ips
         self._apply_scale(getattr(self, "scale_k", 1.0))
         self._fit_later()
 
@@ -1302,6 +1331,16 @@ class MainWindow(QMainWindow):
             tiles = {pid: self.tiles[(d["key"], pid)] for pid in sorted(p["id"] for p in d["probes"])}
             dev = self._dev_name(d)
             s = by_key.get(d["key"], measure.DeviceStatus(d["key"], reachable=False))
+            if self._refusal(d) is not None:
+                # DSC-23：BOOTP 拒絕配發：取代「偵測不到」；連得上也一樣（可能連到佔用者），以設備異常計
+                if s.reachable:
+                    self.backend.bootp_watch.connected(d.get("mac", ""))
+                errs.append(self._refusal_text(d))
+                for t in tiles.values():
+                    t.down = True
+                    t.set_result(ERR, device_text="拿不到 IP", device_error=True)
+                    n_err += 1
+                continue
             if not s.reachable:  # POS-05：該台每個方塊（不論分佈在哪幾排）
                 errs.append(f"{dev} DL-EN1 偵測不到")
                 down_devs.append(f"{dev} 偵測不到")
@@ -1476,14 +1515,24 @@ class MainWindow(QMainWindow):
         for d in self.devices:
             missing = 0
             probes = {p["id"]: p for p in d["probes"]}
+            refused = self._refusal(d) is not None  # DSC-23：被拒期間不採用讀值，以設備異常計
+            if refused:
+                errs.append(self._refusal_text(d))
             for pid in sorted(probes):
                 tile = self.tiles[(d["key"], pid)]
                 tile.down = False
                 r = by.get((d["key"], pid)) or measure.ProbeReading(d["key"], pid, None, "", "探頭無回應")
+                if refused:
+                    r = measure.ProbeReading(d["key"], pid, None, "", "拿不到 IP")
                 s = (std.get(d["key"]) or {}).get(pid)
                 desc = probes[pid]["description"]
                 who = self._point_name(d["key"], pid, d)
-                if r.error == measure.UNCALIBRATED:  # CAL-07
+                if refused:
+                    state = ERR
+                    tile.down = True
+                    tile.set_result(ERR, device_text="拿不到 IP", device_error=True)
+                    n_err += 1
+                elif r.error == measure.UNCALIBRATED:  # CAL-07
                     state = ERR
                     tile.set_result(ERR, note="請在設備設定校準", device_text="未校準", device_error=True)
                     errs.append(f"{who}未校準")

@@ -10,9 +10,9 @@ import ipaddress
 import logging
 import threading
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
-from . import arpwatch, lan, netinfo, positions, sync
+from . import arpwatch, bootp_watch, lan, netinfo, positions, sync
 from .config import Config
 from .discovery import Recorder, RequestParser
 from .dnsmasq import DnsmasqService
@@ -26,6 +26,7 @@ class Backend(QObject):
     devices_seen = Signal(list)        # 探索事件已寫入資料庫（list[SeenEvent]）
     bootp_state = Signal(bool, str)    # dnsmasq 執行中？、原因（DSC-07「BOOTP 服務停止」）
     db_state = Signal(bool)            # 探索寫入資料庫是否正常（DSC-05）
+    bootp_refusals = Signal()          # 使用中／維修中設備的 BOOTP 拒絕狀態有變更（DSC-23）
 
     def __init__(self, cfg: Config, store, files: sync.Files, dnsmasq_cmd=None, *,
                  simulate: bool = False, equip_net: ipaddress.IPv4Interface | None = None,
@@ -52,6 +53,11 @@ class Backend(QObject):
                                        restart_delay=30.0, name="ARP 監聽", stop_command=None,
                                        clear_old=False)
         self._cache: list[lan.LanDevice] = []
+        # DSC-23：BOOTP 拒絕配發的狀態（只在記憶體中，App 重新啟動後歸零）；逾時與連線後的確認每 5 秒檢查
+        self.bootp_watch = bootp_watch.BootpWatch(interface=cfg.equip_if)
+        self._bootp_timer = QTimer(self)
+        self._bootp_timer.setInterval(5000)
+        self._bootp_timer.timeout.connect(self._bootp_tick)
 
     # ------------------------------------------------------------ 生命週期
 
@@ -71,8 +77,10 @@ class Backend(QObject):
         self._db_ok = r.db_ok
         if r.devices is not None:
             self._cache = r.devices
+        self._watch_layout()
         if not self.simulate:
             self._recorder.start()
+            self._bootp_timer.start()
         self.dnsmasq.start()
         self.arpwatch.start()
         return r
@@ -87,6 +95,8 @@ class Backend(QObject):
 
     def _on_line(self, line: str):
         dnsmasq_log.info("%s", line)
+        if self.bootp_watch.feed(line):
+            self.bootp_refusals.emit()
         events = self._parser.feed(line)
         if events:
             self._recorder.put(events)
@@ -96,9 +106,27 @@ class Backend(QObject):
         if events:
             e = events[0]
             log.info("ARP 位址偵測：%s 使用 %s", e.mac, e.ip)
+            if self.bootp_watch.arp(e.mac, e.ip):  # DSC-23：被拒之後 ARP 顯示使用設定的 IP 即恢復，不等資料庫寫入
+                self.bootp_refusals.emit()
             self._recorder.put(events)
         elif not line.startswith("ARP "):
             log.info("ARP 監聽：%s", line)
+
+    def _bootp_tick(self):
+        if self.bootp_watch.tick():
+            self.bootp_refusals.emit()
+
+    def _watch_layout(self):
+        """DSC-23：只追蹤主畫面版面中的設備（使用中與維修中）。"""
+        watched = {}
+        for d in self.layout.get("dl_en1", []):
+            try:
+                mac = lan.normalize_mac(d.get("mac", ""))
+            except ValueError:
+                continue
+            watched[mac] = bootp_watch.Watched(positions.device_label(d.get("key"), d.get("name")),
+                                               d.get("ipv4"), bool(d.get("maint")))
+        self.bootp_watch.watch(watched)
 
     def _recorded(self, events):
         self.devices_seen.emit(events)
@@ -152,6 +180,8 @@ class Backend(QObject):
         result = sync.apply(self.store, self.files, self.equip_net(), old, new, restart, summary, deleted, names)
         self.definition, self.layout = result.definition, result.layout
         self.names = result.names or self.names
+        self._watch_layout()
+        self.bootp_refusals.emit()
         return result
 
     def load_names(self) -> positions.Names:

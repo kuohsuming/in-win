@@ -8,6 +8,8 @@ BOOTP_DIR=/var/lib/flatness/bootp
 BOOTP_HOSTS=$BOOTP_DIR/dl-en1.hosts
 DNSMASQ_CONF=/etc/flatness/dnsmasq.conf
 OLD_DNSMASQ_CONF=/etc/dnsmasq.d/flatness-dl-en1.conf   # 舊版安裝包（由系統服務啟動）留下的設定
+# dnsmasq 預設的租約檔；主設定加入 leasefile-ro 後不再使用（DSC-21）
+LEASE_FILE=/var/lib/misc/dnsmasq.leases
 # 與 app/flatness/dnsmasq.py 的 COMMAND 必須完全相同
 DNSMASQ_CMD="/usr/sbin/dnsmasq --keep-in-foreground --log-facility=- --conf-file=$DNSMASQ_CONF"
 # 與 app/flatness/dnsmasq.py 的 STOP_COMMAND 相同：停止 App 啟動的 dnsmasq（含 App 當掉後的殘留）
@@ -17,7 +19,7 @@ ARP_HELPER=/usr/local/sbin/flatness-arp-watch
 
 step_bootp() {
   log "步驟 3：BOOTP 服務（dnsmasq，由 App 啟動）"
-  local net_addr netmask
+  local net_addr netmask conf_changed=0
 
   read -r net_addr netmask < <(python3 -c '
 import ipaddress, sys
@@ -50,9 +52,20 @@ dhcp-hostsfile=$BOOTP_HOSTS
 log-dhcp
 # 由 App 管理程序，不寫 PID 檔
 pid-file=
+# 不保存租約：IP 只依主機對應配發；App 重新啟動 dnsmasq 即清除記憶體中的租約（DSC-21）
+# 否則舊設備的永久租約會佔住 IP，新設備被拒絕配發（address in use）
+leasefile-ro
 EOF
   then
+    conf_changed=1
     ok "已寫入 $DNSMASQ_CONF"
+    # 舊租約檔改名保存（DSC-21）：避免日後設定被改回時，舊的永久租約整批復活
+    if [[ -f $LEASE_FILE ]]; then
+      local old_leases
+      old_leases="$LEASE_FILE.flatness-old-$(date +%Y%m%d-%H%M%S)"
+      mv "$LEASE_FILE" "$old_leases"
+      ok "舊租約檔已改名為 $old_leases"
+    fi
   else
     ok "dnsmasq 主設定未變更"
   fi
@@ -103,4 +116,16 @@ EOF
   visudo -cf "$sudoers_tmp" >/dev/null || { rm -f "$sudoers_tmp"; fail "sudoers 內容錯誤"; }
   write_if_changed /etc/sudoers.d/flatness 440 < "$sudoers_tmp" && ok "已設定 /etc/sudoers.d/flatness"
   rm -f "$sudoers_tmp"
+
+  # 8. 主設定有變更時，停止 App 的 dnsmasq，App 約 2 秒後以新主設定自動重新啟動（DSC-21）
+  #    放在最後：停止程式、sudoers、主設定檢查都已完成；任何結束碼都只記錄，不中斷安裝
+  if (( conf_changed )); then
+    local rc=0
+    "$STOP_HELPER" || rc=$?
+    case $rc in
+      0) ok "已停止 App 的 dnsmasq，App 將以新主設定重新啟動" ;;
+      1) ok "沒有找到 App 的 dnsmasq（App 可能沒在執行），下次啟動 App 時套用新主設定" ;;
+      *) log "  ⚠ 無法停止 dnsmasq（結束碼 $rc），請重新啟動 App 以套用新主設定" ;;
+    esac
+  fi
 }

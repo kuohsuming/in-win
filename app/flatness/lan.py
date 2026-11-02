@@ -271,6 +271,20 @@ def occupant(devices, ip: str, exclude_mac: str | None = None) -> LanDevice | No
     return None
 
 
+def offline_occupants(devices, ip: str, exclude_mac: str | None = None) -> list[LanDevice]:
+    """DSC-22 ①：實際使用 IP（seen_ip，DSC-19）等於此 IP 的其他設備，不論狀態、是否在線；
+    排除 DSC-08 已報錯者（會配發 IP 且設定的 IP 相同）。這些設備仍記得這個 IP，接上網路會衝突。"""
+    return [d for d in devices
+            if d.mac != exclude_mac and d.seen_ip == ip and not (d.assigns_ip and d.ipv4 == ip)]
+
+
+def offline_occupant_text(d: LanDevice, ip: str) -> str:
+    """DSC-22 ①：「00:01:FC:DE:3A:70（已停用 舊機）曾使用 192.168.10.12，最後出現 10/07 13:51；…」。"""
+    name = f" {d.name}" if d.name else ""
+    seen = f"，最後出現 {d.last_seen:%m/%d %H:%M}" if d.last_seen else ""
+    return f"{d.mac}（{STATUS_NAME[d.status]}{name}）曾使用 {ip}{seen}；它仍記得這個 IP，接上網路會衝突"
+
+
 def occupied_text(d: LanDevice) -> str:
     """DSC-08：「已由 {狀態} {MAC}（{名稱}）使用」。"""
     name = f"（{d.name}）" if d.name else ""

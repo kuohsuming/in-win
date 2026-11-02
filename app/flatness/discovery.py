@@ -1,13 +1,14 @@
 """設備網路探索（DSC-01、DSC-05）：解析 dnsmasq 的 log-dhcp 輸出，記錄到資料表 lan_device。
 
 dnsmasq（--log-facility=- 與 log-dhcp）每收到一個請求輸出一行，例：
-    dnsmasq-dhcp: 3911 BOOTP(eno2) 192.168.10.11 00:01:fc:de:3a:75 row-1
-    dnsmasq-dhcp: 3911 BOOTP(eno2) 00:01:fc:12:39:a0 no address configured
+    dnsmasq-dhcp: 3911 BOOTP(eno2) 192.168.10.11 00:01:fc:de:3a:75
+    dnsmasq-dhcp: 3911 BOOTP(eno2) 00:01:fc:12:39:a0 no address available
     dnsmasq-dhcp: 2716 DHCPDISCOVER(eno2) 3c:52:82:11:22:33
     dnsmasq-dhcp: 2716 client provides name: eng-laptop
     dnsmasq-dhcp: 2716 vendor class: MSFT 5.0
 開頭的數字是交易編號（xid），用來把主機名稱與廠商識別對回 MAC。
-格式依 dnsmasq 2.90 原始碼（rfc2131.c log_packet）；須以實機 DL-EN1 驗證（3.10 設計備註）。
+格式依 dnsmasq 2.90 原始碼（rfc2131.c log_packet），BOOTP 行已以實機 DL-EN1 驗證（2026-11-02）：
+配發成功時行尾沒有文字；主機對應沒有這台時為 no address available；IP 被舊租約佔用時為 address in use（DSC-23）。
 """
 
 from __future__ import annotations

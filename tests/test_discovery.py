@@ -25,7 +25,7 @@ class ParserTest(unittest.TestCase):
     def test_bootp_assigned_and_unknown(self):
         (e,) = self.feed("dnsmasq-dhcp: 3911 BOOTP(eno2) 192.168.10.11 00:01:fc:de:3a:75 front")
         self.assertEqual((e.mac, e.kind, e.count), ("00:01:FC:DE:3A:75", "BOOTP", 1))
-        (e,) = self.feed("dnsmasq-dhcp[812]: 3912 BOOTP(eno2) 00:01:fc:12:39:a0 no address configured")
+        (e,) = self.feed("dnsmasq-dhcp[812]: 3912 BOOTP(eno2) 00:01:fc:12:39:a0 no address available")
         self.assertEqual(e.mac, "00:01:FC:12:39:A0")
 
     def test_without_xid_and_syslog_prefix(self):
