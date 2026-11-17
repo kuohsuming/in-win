@@ -308,7 +308,7 @@ table.ptbl select{padding:3px 6px;font-size:15px;border-width:1px}
 /* 3D 繪圖（P3D-01～P3D-09；畫面設計規格 5.11）與板子尺寸（P3D-10；5.12） */
 .result .act.v3btn{display:inline-flex;align-items:center;gap:8px;margin-left:14px}
 .result .act.v3btn svg{width:26px;height:26px}
-dialog.v3{width:min(1280px,96vw);max-width:96vw;height:min(94vh,max(640px,calc(min(1280px,96vw)*.62)));max-height:94vh}
+dialog.v3{width:min(820px,62vw);max-width:96vw;height:min(94vh,calc(min(820px,62vw)*1.2));max-height:94vh}
 .v3{display:flex;flex-direction:column;gap:12px;padding:16px 22px;height:100%}
 .v3-head{display:flex;align-items:center;gap:14px}
 .v3-head h3{margin:0;font-size:20px}
@@ -449,9 +449,9 @@ dialog.pl{width:min(480px,92vw)}
   <div class="v3">
     <div class="v3-head"><h3 id="v3Title">變形曲面示意圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
       <button class="x" type="button" id="v3x" aria-label="關閉">✕</button></div>
-    <div class="v3-body"><canvas id="v3cv" aria-label="變形曲面示意圖（俯視熱力圖）"></canvas><div class="v3-side" id="v3side"></div></div>
+    <div class="v3-body"><canvas id="v3cv" aria-label="變形曲面示意圖（俯視熱力圖）"></canvas></div>
     <div class="v3-ctl">
-      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3next">30° ▶</button>
+      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3play">▶ 播放</button><button type="button" id="v3next">30° ▶</button>
       <span class="v3-ang" id="v3ang"></span>
       <button class="primary" type="button" id="v3done" autofocus>關閉</button>
     </div>
@@ -1341,7 +1341,7 @@ $("#plDlg").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefaul
 
 /* ================= 變形曲面示意圖（P3D；5.11，2026-11-18 PO 改為俯視 jet 熱力圖；與 App 的 flatness/plate3d 同一套計算與配色） ================= */
 let lastData=null, lastJudg="";
-const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9, STEP_DEG=30;
+const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9, STEP_DEG=30, STEP_MS=700;
 const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。";
 
 /* POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點、首尾落板緣：x = 長 ×（點 − 1）／（P − 1）、y = 寬 ×（排 − 1）／（R − 1）（P 或 R 為 1 時取 0.5） */
@@ -1423,7 +1423,8 @@ function draw3d(){
   const rotp=(x,y)=>{ const X=x-L/2, Y=y-W/2; return [X*ca-Y*sa, X*sa+Y*ca]; };
   const corners=[rotp(0,0),rotp(L,0),rotp(L,W),rotp(0,W)], xs=corners.map(c=>c[0]), ys=corners.map(c=>c[1]);
   const bw=(Math.max(...xs)-Math.min(...xs))||1, bh=(Math.max(...ys)-Math.min(...ys))||1;
-  const areaX=8, areaY=headH, areaW=w-16, areaH=Math.max(1,hh-headH-12), sc=Math.min(areaW/bw,areaH/bh)*0.98;
+  const n=pts.length, rowsN=Math.max(1,Math.floor((n+2)/3)), legendH=24+rowsN*20, barH=42;
+  const areaX=8, areaY=headH, areaW=w-16, areaH=Math.max(1,hh-headH-legendH-barH-12), sc=Math.min(areaW/bw,areaH/bh)*0.98;
   const ccx=areaX+areaW/2, ccy=areaY+areaH/2, scr=(x,y)=>{ const [rx,ry]=rotp(x,y); return [ccx+sc*rx, ccy+sc*ry]; };
   /* 網格各點上色到離屏小圖，再雙線性平滑放大貼到板面（連續漸層、不馬賽克）；推估範圍外往白拉近 */
   const off=document.createElement("canvas"); off.width=nx; off.height=ny;
@@ -1455,21 +1456,31 @@ function draw3d(){
     if(p.key===hiK){ ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx,sy,7,0,2*Math.PI); ctx.stroke();
       ctx.fillStyle=ng; ctx.font=`700 12px ${TXT}`; ctx.fillText("最高",sx,sy+14); }
     if(p.key===loK){ ctx.fillStyle=focus; ctx.font=`700 12px ${TXT}`; ctx.fillText("最低",sx,sy+14); } });
+  /* 點位相對高度清單（偏高紅／偏低藍／合格）＋ jet 色條，畫在同一張圖內（與 renderer.render() 同版面） */
+  const wordRel={hi:"偏高",lo:"偏低",ok:"合格"}, listTop=hh-legendH-barH-8, colW=(w-48)/3;
+  ctx.fillStyle=ink; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font=`700 14px ${TXT}`;
+  ctx.fillText("點位相對高度 (mm)",24,listTop+10);
+  ctx.font=`500 13px ${TXT}`;
+  pts.forEach(p=>{ const num=numof.get(p.key), idx=num-1, c=Math.floor(idx/rowsN), r=idx%rowsN;
+    let txt,col; if(p.v==null){ txt=`${num}：無數據`; col=C3("--ink-2"); }
+    else { txt=`${num}：${rel(m.z[p.key]).toFixed(4)} ${wordRel[p.st]||""}`; col=p.st==="hi"?ng:p.st==="lo"?focus:ink; }
+    ctx.fillStyle=col; ctx.fillText(txt,24+c*colW,listTop+24+r*20+9); });
+  const barX=60, barY=hh-30, barW=w-220, barHt=16, grd=ctx.createLinearGradient(barX,0,barX+barW,0);
+  for(let i=0;i<=10;i++){ const [r,gg,b]=jet(i/10); grd.addColorStop(i/10,`rgb(${r},${gg},${b})`); }
+  ctx.fillStyle=grd; ctx.fillRect(barX,barY,barW,barHt);
+  ctx.strokeStyle="rgba(0,0,0,.47)"; ctx.lineWidth=1; ctx.strokeRect(barX+.5,barY+.5,barW-1,barHt-1);
+  ctx.fillStyle=C3("--ink-2"); ctx.font=`500 11px ${TXT}`; ctx.textAlign="center"; ctx.textBaseline="top";
+  for(let i=0;i<=5;i++){ const t=i/5; ctx.fillText((t*spread).toFixed(4),barX+t*barW,barY+barHt+2); }
+  ctx.fillStyle=ink; ctx.font=`500 13px ${TXT}`; ctx.textAlign="left"; ctx.textBaseline="middle";
+  ctx.fillText("相對高度 (mm)",barX+barW+8,barY+8);
   $("#v3ang").textContent=`旋轉 ${V3.rot}°`;
 }
-/* 側欄：點位相對高度逐點清單（偏高紅／偏低藍／合格）＋ jet 色條（相對高度 mm，0..最大） */
-function side3d(){ const m=V3.model, zmin=m.lo[1], rel=z=>z-zmin, spread=m.spread||1e-9;
-  const numof=new Map(m.pts.map((p,i)=>[p.key,i+1])), word={hi:"偏高",lo:"偏低",ok:"合格"};
-  const rows=m.pts.map(p=>{ const n=numof.get(p.key);
-    if(p.v==null) return `<li class="miss">${n}：無數據</li>`;
-    const cls=p.st==="hi"?"hi":p.st==="lo"?"lo":"";
-    return `<li class="${cls}">${n}：${rel(m.z[p.key]).toFixed(4)} ${word[p.st]||""}</li>`; }).join("");
-  const ticks=[0,1,2,3,4,5].map(i=>`<span>${(i/5*spread).toFixed(4)}</span>`).join("");
-  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">點位相對高度 (mm)</span><ul class="v3-list">${rows}</ul></div>
-    <div class="v3-card v3-leg"><span class="s">相對高度 (mm)</span><div class="bar" style="background:${jetCss()}"></div>
-      <div class="tk">${ticks}</div></div>`; }
+/* 點位相對高度清單與 jet 色條已改為畫在 canvas 內（draw3d，與 renderer.render() 一致），不再用 HTML 側欄 */
 const V3={model:null,rot:20};   // 預設平面內傾斜 20°，讓橫向板子填滿直式畫面、探點散開（5.11 行為）
-function v3Turn(d){ V3.rot=(V3.rot+d+360)%360; draw3d(); }
+function v3Turn(d){ v3Play(false); V3.rot=(V3.rot+d+360)%360; draw3d(); }
+let v3timer=null;
+function v3Play(on){ if(on){ if(!v3timer) v3timer=setInterval(()=>{ V3.rot=(V3.rot+STEP_DEG)%360; draw3d(); },STEP_MS); }
+  else { clearInterval(v3timer); v3timer=null; } const b=$("#v3play"); if(b) b.textContent=on?"❚❚ 暫停":"▶ 播放"; }
 function upd3d(){ const b=$("#v3dBtn"), on=!!lastData&&!busy&&!detecting; b.disabled=!on;
   b.title=on?"以熱力圖檢視這一片的表面高低":"量測完成後可檢視這一片的變形曲面示意圖"; }
 async function open3d(){ if(!lastData||busy||detecting) return;
@@ -1478,11 +1489,12 @@ async function open3d(){ if(!lastData||busy||detecting) return;
   if(why) return showMsg("3D 繪圖",why,["關閉"],"warn");
   V3.model=model; V3.rot=20;
   $("#v3sn").textContent=serial||""; const rs=$("#v3rs"); rs.className="v3-rs "+lastJudg; rs.textContent={PASS:"合格",FAIL:"不合格",ERROR:"設備異常"}[lastJudg];
-  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ side3d(); draw3d(); }); }
+  $("#v3Dlg").showModal(); v3Play(false); requestAnimationFrame(()=>{ draw3d(); }); }
 $("#v3dBtn").addEventListener("click",open3d);
 $("#v3prev").addEventListener("click",()=>v3Turn(-STEP_DEG)); $("#v3next").addEventListener("click",()=>v3Turn(STEP_DEG));
-[$("#v3x"),$("#v3done")].forEach(b=>b.addEventListener("click",()=>$("#v3Dlg").close()));
-$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG); });
+$("#v3play").addEventListener("click",()=>v3Play(!v3timer));
+[$("#v3x"),$("#v3done")].forEach(b=>b.addEventListener("click",()=>{ v3Play(false); $("#v3Dlg").close(); }));
+$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG); else if(e.key===" "){ e.preventDefault(); v3Play(!v3timer); } });
 window.addEventListener("resize",()=>{ if($("#v3Dlg").open) draw3d(); });
 
 /* ================= 其他按鍵 ================= */
