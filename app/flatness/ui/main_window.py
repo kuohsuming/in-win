@@ -56,6 +56,7 @@ class PointResult:
     raw: str = ""
     error: str | None = None
     zero_offset: float | None = None  # 量測當時的歸零基準（CAL-09）
+    best_offset: float | None = None  # 量測當時整片的最佳點讀值（JDG-07）；非判定點為 None
     pos_row: int | None = None        # 量測當時的位置（POS-08）；未定為 None
     pos_point: int | None = None
     row_name: str | None = None
@@ -1512,6 +1513,17 @@ class MainWindow(QMainWindow):
         std = self.backend.standards()
         points, outs, errs, n_err = [], [], [], 0
         mac = {d["key"]: d.get("mac", "") for d in self.devices}
+        # JDG-07：先在整片所有有效量測點（有讀值、有允收標準、未被拒）中找最佳點，供逐點修正判定
+        cand = []
+        for d in self.devices:
+            if self._refusal(d) is not None:
+                continue
+            sd = std.get(d["key"]) or {}
+            for p in d["probes"]:
+                r = by.get((d["key"], p["id"]))
+                if r is not None and r.value is not None and not r.error and sd.get(p["id"]) is not None:
+                    cand.append(r.value)
+        best = measure.best_offset(cand)
         for d in self.devices:
             missing = 0
             probes = {p["id"]: p for p in d["probes"]}
@@ -1548,16 +1560,18 @@ class MainWindow(QMainWindow):
                     missing += 1
                     n_err += 1
                 else:
-                    state = measure.judge(r.value, s)
-                    note = (f"超出上限 {f3(r.value - s.upper)}" if state == HI else
-                            f"低於下限 {f3(s.lower - r.value)}" if state == LO else "")
-                    tile.set_result(state, r.value, note)
+                    corrected = measure.correct(r.value, best)  # JDG-07：相對最佳點修正後再判定
+                    state = measure.judge(corrected, s)
+                    note = (f"超出上限 {f3(corrected - s.upper)}" if state == HI else
+                            f"低於下限 {f3(s.lower - corrected)}" if state == LO else "")
+                    tile.set_result(state, r.value, note)  # 方案 A：方塊仍顯示原始讀值
                     if state != OK:
                         outs.append(f"{who}{WORD[state]}")
                 where = self.point_pos.get((d["key"], pid))
                 points.append(PointResult(d["key"], pid, d["name"], desc, mac.get(d["key"], ""), state,
                                           r.value, s, r.raw, r.error or ("未設定允收標準" if s is None else None),
-                                          r.offset, where[0] if where else None, where[1] if where else None,
+                                          r.offset, best if state in (OK, HI, LO) else None,
+                                          where[0] if where else None, where[1] if where else None,
                                           self.names.row(where[0]) if where else None))
             if missing:
                 errs.append(f"{self._dev_name(d)} 有 {missing} 個探頭未設定允收標準")

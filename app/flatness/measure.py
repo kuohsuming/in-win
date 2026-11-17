@@ -72,6 +72,22 @@ def judge(value: float | None, std) -> str:
     return OK
 
 
+def best_offset(values) -> float | None:
+    """JDG-07：整片有效讀值中，絕對值最靠近 0 的讀值（含正負號）即最佳點，回傳其讀值；
+    並列（絕對值相同）時取較小（較負）者，使結果可重現。無有效讀值時回傳 None。"""
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None
+    return min(vals, key=lambda v: (abs(v), v))
+
+
+def correct(value: float | None, best: float | None) -> float | None:
+    """JDG-07：修正值 = 讀值 − 最佳點讀值；無讀值回傳 None，無最佳點（best 為 None）時不修正。"""
+    if value is None:
+        return None
+    return value - (best if best is not None else 0.0)
+
+
 def overall(states) -> str:
     """JDG-02、JDG-04：任一點異常 → 設備異常；任一點偏高或偏低 → 不合格；全部合格 → 合格。"""
     states = list(states)
@@ -167,6 +183,16 @@ class DemoStation:
                 k = max(-0.9, min(0.9, k))  # 只有那一處不合格
             v = nominal + k * half
             out.append(ProbeReading(key, pid, round(v, 4), f"{round(v * 10000):+010d}"))
+        if mode == "fail":  # JDG-07：判定改為相對最佳點，缺陷點須相對其餘點的最佳點明確超出上下限
+            cstd = (self.standards.get(center[0]) or {}).get(center[1])
+            clo, chi = (cstd.lower, cstd.upper) if cstd else (-0.05, 0.05)
+            others = [r.value for r in out if r.value is not None and (r.key, r.probe_id) != center]
+            base = best_offset(others)
+            if base is not None:
+                margin = max((chi - clo) / 4, 0.02)
+                target = round(base + (chi + margin if depth > 0 else clo - margin), 4)
+                out = [ProbeReading(center[0], center[1], target, f"{round(target * 10000):+010d}")
+                       if (r.key, r.probe_id) == center else r for r in out]
         log.info("示範量測（%s）：%s-%s 一帶%s（讀值%+.0f%% 允許誤差），傾斜 左→右 %+.0f%%、前→後 %+.0f%%%s",
                  mode, *center, "凹陷" if depth > 0 else "凸起", depth * 100, tilt[0] * 200, tilt[1] * 200,
                  f"，{dead[0]}-{dead[1]} 無回應" if dead else "")

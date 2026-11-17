@@ -1105,6 +1105,25 @@ class MainWindowTest(UiBase):
         p = next(p for p in w.result.points if p.key == "row-3" and p.probe_id == 2)
         self.assertEqual((p.pos_row, p.pos_point, p.row_name), (3, 2, "後排"))   # POS-08：保存當時的位置
 
+    def test_best_point_correction_judges_relative(self):  # JDG-07：相對最佳點修正後判定
+        from flatness import measure
+        self.positioned()
+        w = self.win
+        w.detect()
+        self.wait_state("idle")
+        pts = [(d["key"], p["id"]) for d in w.devices for p in d["probes"]]
+        defect = pts[5]
+        # 整片同墊高 +5.00，一處 +5.30；最佳點 +5.00，缺陷點修正後 +0.30 偏高、其餘修正為 0 合格
+        readings = [measure.ProbeReading(k, pid, 5.30 if (k, pid) == defect else 5.00, "")
+                    for k, pid in pts]
+        w.show_result(readings)
+        res = {(p.key, p.probe_id): p for p in w.result.points}
+        self.assertEqual(w.result.judgment, "FAIL")
+        self.assertEqual(res[defect].state, "hi")
+        self.assertEqual(res[defect].value, 5.30)                 # 方塊仍顯示原始讀值（方案 A）
+        self.assertEqual(res[defect].best_offset, 5.00)          # 量測當時的最佳點
+        self.assertTrue(all(p.state == "ok" for k, p in res.items() if k != defect))
+
     def test_tile_sub_uses_device_number(self):  # POS-06：方塊小字「第 N 台 名稱」，與設定頁一致
         from flatness.ui.main_window import ProbeTile
         from flatness import positions

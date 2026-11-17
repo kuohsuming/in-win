@@ -39,6 +39,9 @@ def to_record(result, station_id: str) -> dict:
             "judgment": POINT_JUDGMENT[p.state], "raw_response": (p.raw or None) and p.raw[:64],
             "error_text": p.error[:255] if p.error else None, "device_mac": p.device_mac or None,
             "zero_offset": p.zero_offset,
+            # 量測當時整片的最佳點讀值（JDG-07）；判定以修正值 = measured_value − best_offset 計。
+            # DB 不另存欄位（可由各點 measured_value 推回），僅存於本機暫存 JSON 供回溯
+            "best_offset": getattr(p, "best_offset", None),
             # 量測當時的位置與排名稱（POS-08）；未定為 None
             "pos_row": getattr(p, "pos_row", None), "pos_point": getattr(p, "pos_point", None),
             "row_name": (getattr(p, "row_name", None) or None) and p.row_name[:10],
