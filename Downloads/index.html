@@ -1,10 +1,11 @@
-<!DOCTYPE  html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>表面平整檢查 作業員畫面</title>
-<!-- UI 原型：依 App 2026-10-13 版的實際畫面與操作更新（主畫面、取出測試數據、設備設定、探頭校準、允許誤差、板子尺寸、3D 繪圖） -->
+<!-- UI 原型：依 App 2026-11-18 版的實際畫面與操作更新（主畫面依探頭位置排列、取出測試數據、設備設定〔第幾台、探頭第幾排／第幾點、排與點名稱〕、探頭校準、允許誤差、板子尺寸）。
+     2026-11-18 PO：(1) 探頭方塊判定改為 JDG-07「最佳點修正」（整片 |讀值| 最小者為最佳點，逐點以讀值 − 最佳點修正後再比上下限；大字仍顯示原始讀值）；(2) 3D 繪圖改為俯視 jet 熱力圖「變形曲面示意圖」（5.11） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -107,10 +108,26 @@ button,select{font:inherit}
 .row.ipbad{border:4px solid var(--warn)} .row.ipbad h2 .unit.tagged{background:var(--warn)}
 .row.maint h2{color:var(--ink-2)} .row.maint h2 .unit.tagged{background:var(--warn-soft);color:var(--warn)}
 .maintbox{border:2px dashed var(--line);background:var(--panel-2);border-radius:6px;display:grid;place-items:center;font-size:22px;font-weight:700;color:var(--ink-2);min-height:150px}
-.probes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.probes{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:10px}
+.slot{border:2px dashed var(--line);border-radius:6px;min-height:120px} .slot.none{border:0}
+.names{margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:6px;background:var(--panel)}
+.cntrow{display:flex;align-items:center;gap:8px} .enc{display:flex;align-items:center;gap:4px;font-size:14px} .bad-t{color:var(--ng)}
+.names .gridrow{display:flex;align-items:center;gap:8px;font-size:14px} .names .gridrow select{width:64px}
+.btn.pen.on{background:var(--line)}
+.names .nmrow{display:grid;grid-template-columns:56px repeat(5,minmax(0,1fr)) auto;gap:6px;align-items:center;font-size:14px}
+.names input{min-width:0;font:inherit;padding:4px 6px;border:2px solid var(--line);border-radius:4px;background:var(--panel-2);color:var(--ink)}
+.names input.bad{border-color:var(--ng);background:var(--ng-soft)}
+.ptbl select{width:100%;font-size:14px}
+.row.unassigned h2{background:var(--warn-soft);color:var(--warn);font-size:17px}
+.probe .sub{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:400;color:var(--ink-2)}
+.probe .iptag{display:none;background:var(--warn);color:#fff;border-radius:3px;padding:0 6px;font-size:12px}
+.probe.ipbad{border-color:var(--warn)!important;border-width:5px} .probe.ipbad .iptag{display:inline}
+.probe.maint .badge{color:var(--warn);visibility:visible} .probe.maint .badge svg{display:none}
+.probe.maint .m{color:var(--ink-2);font-family:var(--txt);font-size:26px;font-weight:900} .probe.maint .gauge{visibility:hidden}
+.flag.gray{background:var(--panel-2);color:var(--ink-2)}
 .probe{border:3px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:8px;background:var(--panel-2);min-width:0}
 .probe .top{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:36px}
-.probe .pos{font-size:20px;font-weight:700}
+.probe .pos{font-size:20px;font-weight:700;display:grid}
 .badge{display:inline-flex;align-items:center;gap:6px;font-size:22px;font-weight:900}
 .badge svg{width:36px;height:36px}
 /* 數值區：左為測量值（跨兩列），右為標準值與允收 */
@@ -122,11 +139,26 @@ button,select{font:inherit}
 .vals .kr{text-align:right}
 .vals .s{font-family:var(--num);font-size:22px;font-variant-numeric:tabular-nums}
 .vals .rg{font-family:var(--num);font-size:18px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
-.gauge{position:relative;height:34px}
-.gauge .track{position:absolute;left:0;right:0;top:14px;height:6px;background:var(--line);border-radius:3px}
-.gauge .ok{position:absolute;left:20%;right:20%;top:10px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
-.gauge .nom{position:absolute;left:50%;top:7px;height:20px;width:2px;background:var(--ink-2)}
-.gauge .mk{position:absolute;top:0;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:13px solid var(--ink);margin-left:-9px}
+/* 每排固定 5 格（POS-04）時方塊較窄：測量值一列，標準值與允收移到下一列 */
+.probe{container-type:inline-size}
+@container (max-width:440px){
+  .vals{grid-template-columns:auto auto auto minmax(0,1fr)}
+  .vals .k.ml{grid-row:auto} .vals .m{grid-row:auto;grid-column:2/5}
+  .vals .kr{text-align:left} .vals .s{font-size:18px} .vals .rg{font-size:16px}
+}
+@container (max-width:260px){   /* 手機寬度：標籤不斷行，允收換到下一列 */
+  .vals{grid-template-columns:auto minmax(0,1fr)} .vals .k{white-space:nowrap}
+  .vals .m{grid-column:2} .vals .rg{white-space:normal;font-size:14px} .vals .m{font-size:28px}
+}
+/* 刻度條（5.6、JDG-07）：三角指標依修正值定位、上標修正值、綠色區間左右下標該點下限／上限 */
+.gauge{position:relative;height:50px}
+.gauge .track{position:absolute;left:0;right:0;top:27px;height:6px;background:var(--line);border-radius:3px}
+.gauge .ok{position:absolute;left:20%;right:20%;top:23px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
+.gauge .nom{position:absolute;left:50%;top:20px;height:20px;width:2px;background:var(--ink-2)}
+.gauge .mk{position:absolute;top:16px;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:10px solid var(--ink);margin-left:-9px}
+.gauge .cv{position:absolute;top:0;height:14px;line-height:14px;transform:translateX(-50%);font-family:var(--num);font-size:12px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge .lo,.gauge .hi{position:absolute;top:37px;height:13px;line-height:13px;transform:translateX(-50%);font-family:var(--num);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge .lo{left:20%} .gauge .hi{left:80%}
 .devst{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:6px;min-height:31px}
 .devst .note{margin-left:auto;font-size:18px;font-weight:700;color:var(--ng);text-align:right}
 .probe.blank .badge{visibility:hidden} .probe.blank .mk{display:none}
@@ -134,6 +166,10 @@ button,select{font:inherit}
 .probe.hi,.probe.lo{border-color:var(--ng);border-width:5px;background:var(--ng-soft)}
 .probe.hi .badge,.probe.lo .badge,.probe.hi .m,.probe.lo .m{color:var(--ng)}
 .probe.hi .mk,.probe.lo .mk{border-top-color:var(--ng)}
+.probe.hi .cv,.probe.lo .cv{color:var(--ng)}
+/* 最佳點（JDG-07）：整片判定基準的那一點，藍色標籤 */
+.probe .besttag{display:none;background:var(--focus);color:#fff;border-radius:3px;padding:0 6px;font-size:12px;font-weight:700;white-space:nowrap}
+.probe.best .besttag{display:inline}
 .probe.err{border-color:var(--ng);border-width:5px;background:var(--ng-soft);opacity:1!important}
 .probe.err .badge{color:var(--ng)} .probe.err .m{color:var(--ng);font-family:var(--txt);font-size:26px;font-weight:900}
 .probe.err .gauge{visibility:hidden} .probe.err .devst{color:var(--ng);font-weight:700}
@@ -288,14 +324,14 @@ dialog.v3{width:min(1280px,96vw);max-width:96vw;height:min(94vh,max(640px,calc(m
 .v3-card .k{font-size:14px;color:var(--ink-2)} .v3-card .s{font-size:12px;color:var(--ink-2)} .v3-card .n{font-family:var(--num)}
 .v3-card .big{font-family:var(--num);font-size:44px;font-weight:700;line-height:1.1} .v3-card .big small{font-size:18px;color:var(--ink-2);font-weight:400}
 .v3-card .ng{color:var(--ng);font-size:14px}
-.v3-leg .bar{height:14px;border:1px solid var(--line);background:linear-gradient(90deg,rgb(140,140,140),rgb(228,228,228))}
-.v3-leg .tk{display:flex;justify-content:space-between;font-family:var(--num);font-size:13px;color:var(--ink-2)}
+.v3-leg .bar{height:16px;border:1px solid var(--line)}   /* jet 漸層由 JS 填入（與熱力圖同一配色） */
+.v3-leg .tk{display:flex;justify-content:space-between;font-family:var(--num);font-size:10px;color:var(--ink-2)}
+.v3-list{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:3px;font-size:14px}
+.v3-list li{font-family:var(--num);font-variant-numeric:tabular-nums}
+.v3-list li.hi{color:var(--ng)} .v3-list li.lo{color:var(--focus)} .v3-list li.miss{color:var(--ink-2)}
 .v3-note{margin:0;padding-left:16px;font-size:13px;color:var(--ink-2);line-height:1.5}
 .v3-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .v3-ctl button{font-size:16px;padding:8px 16px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer;min-width:96px}
-.v3-ctl .v3m{min-width:0}
-.v3-ctl .v3m[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:700}
-.v3-ctl .gap{width:16px}
 .v3-ang{font-family:var(--num);font-size:18px}
 .v3-ctl .primary{margin-left:auto;width:132px;background:var(--ink);color:var(--panel);border-color:var(--ink)}
 @media (max-width:937px){
@@ -346,7 +382,9 @@ dialog.pl{width:min(480px,92vw)}
     <button type="button" data-flag="bootp" aria-pressed="false">BOOTP 服務停止</button>
     <button type="button" data-flag="db" aria-pressed="false">資料庫無法連線</button>
     <button type="button" data-flag="ip" aria-pressed="false">IP 不符</button>
+    <button type="button" data-flag="nip" aria-pressed="false">拿不到 IP</button>
     <button type="button" data-flag="sim" aria-pressed="false">模擬模式</button>
+    <button type="button" id="unplacedBtn" aria-pressed="false">部分探頭未設定位置</button>
     <span class="hint">規格溝通用，正式版不顯示</span>
   </div>
 
@@ -406,17 +444,14 @@ dialog.pl{width:min(480px,92vw)}
   </div>
 </dialog>
 
-<!-- 3D 繪圖（P3D-01～P3D-09）：嵌入主畫面中央，不另開系統視窗 -->
+<!-- 變形曲面示意圖（P3D；5.11，2026-11-18 PO 改為俯視 jet 熱力圖）：嵌入主畫面中央，不另開系統視窗 -->
 <dialog id="v3Dlg" class="v3" aria-labelledby="v3Title">
   <div class="v3">
-    <div class="v3-head"><h3 id="v3Title">3D 繪圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
+    <div class="v3-head"><h3 id="v3Title">變形曲面示意圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
       <button class="x" type="button" id="v3x" aria-label="關閉">✕</button></div>
-    <div class="v3-body"><canvas id="v3cv" aria-label="板子立體圖"></canvas><div class="v3-side" id="v3side"></div></div>
+    <div class="v3-body"><canvas id="v3cv" aria-label="變形曲面示意圖（俯視熱力圖）"></canvas><div class="v3-side" id="v3side"></div></div>
     <div class="v3-ctl">
-      <button class="v3m" type="button" data-mode="standard">相對標準件</button>
-      <button class="v3m" type="button" data-mode="detrended">扣除傾斜</button>
-      <span class="gap"></span>
-      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3play"></button><button type="button" id="v3next">30° ▶</button>
+      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3next">30° ▶</button>
       <span class="v3-ang" id="v3ang"></span>
       <button class="primary" type="button" id="v3done" autofocus>關閉</button>
     </div>
@@ -427,7 +462,7 @@ dialog.pl{width:min(480px,92vw)}
 <dialog id="plDlg" class="pl" aria-labelledby="plTitle">
   <div class="dlg">
     <h3 id="plTitle">板子尺寸</h3>
-    <div class="pl-note">只影響 3D 繪圖，不影響判定。探頭在板子下方，依設備設定的第幾排與探頭 ID 平均分佈。</div>
+    <div class="pl-note" id="plNote">只影響 3D 繪圖，不影響判定。</div>
     <div class="pl-grid" id="plGrid"></div>
     <div class="pl-err" id="plErr"></div>
     <div class="btns"><button type="button" id="plCancel">取消</button><button type="button" class="primary" id="plSave">儲存</button></div>
@@ -443,18 +478,35 @@ dialog.pl{width:min(480px,92vw)}
 const CFG={countdown:0.5, redetect:10, samples:20, verify:5};   // countdown_seconds 預設 0.5 秒（MEA-07）
 const PC_IP="192.168.10.1", NET="192.168.10.";
 const RANGE={dl:[11,99], other:[100,199]};                     // 預設 IP 範圍（DSC-08）
-const ROWS=10;                                                   // 位置：第 1～10 排（EDT-05）
-const TOLS=[0.1,0.2,0.5,1,2,5,10,20,50], DEF_TOL=0.5;            // 允許誤差（JDG-06）：預設 0.5 mm
+const ROWS=10;                                                   // DL-EN1 第 1～10 台（EDT-05、POS-06）
+const PSIZE=5;                                                   // 探頭位置：第 1～5 排、第 1～5 點（POS-01）
+const MAGS=[0.1,0.2,0.5,1,2,5,10,20,50], LIMS=[...MAGS,0,...MAGS.map(v=>-v)].sort((a,b)=>b-a);  // 上限／下限選項（JDG-06）
+const DEF_UP=0.2, DEF_LO=-0.2;                                   // 預設上限 +0.2、下限 −0.2
+const LIM_MIN=-50, LIM_MAX=50;                                  // JDG-06 rev2：自由輸入範圍
+let freeLimits=false;                                           // 上下限輸入模式（整台共用，預設下拉）
 const rowNo=k=>{const m=/^row-(\d+)$/.exec(k||""); return m?+m[1]:null;};
-const rowLabel=k=>rowNo(k)?`第 ${rowNo(k)} 排`:"—";
+const rowLabel=k=>rowNo(k)?`第 ${rowNo(k)} 台`:"—";
+const devTag=c=>`${rowLabel(c.key)} ${c.name||""}`.trim();                       // 「第 N 台 名稱」
+const devCall=(c,p)=>`${devTag(c)} ${p.description}`;                             // 設備稱呼（設定頁）
+const posOf=p=>p.row&&p.point?[p.row,p.point]:null;
+/* 排與點名稱（POS-03、POS-09）：全機共用一組，預設 排1～排5、點1～點5 */
+const DEF_NAMES={rows:["排1","排2","排3","排4","排5"],points:["點1","點2","點3","點4","點5"]};
+let NAMES={rows:["前排","中排","後排","排4","排5"],points:[...DEF_NAMES.points],grid:{rows:5,points:5}};   // grid：板子版面（POS-10）
+const gridText=g=>`${g.rows} 排 × ${g.points} 點`;
+const outGrid=(p,g)=>posOf(p)&&(p.row>g.rows||p.point>g.points);   // 位置超出版面（POS-11）
+let namesOpen=false;
+const SCAN={};                                                   // 最近一次探頭偵測的狀態：MAC → {ID: 狀態}（PDT-01）
+const SHOW_REPLACE=false;                                        // 「替換…」區塊暫時隱藏（2026-10-15 PO）                                             // 設定頁「板子版面與排、點名稱」區塊：預設隱藏，按筆圖示開啟
+const dispName=(c,p)=>posOf(p)?`${NAMES.rows[p.row-1]} ${p.description}`:devCall(c,p);   // 顯示名稱（給作業員）
 
 /* ================= 設備資料（模擬資料表 lan_device；DL-EN1 設定的主檔） ================= */
-const P4=(z)=>["左","左中","右中","右"].map((s,i)=>({id:i+1,description:s,zero:z,zeroed_at:z==null?null:"2026-10-08T08:30",tolerance:0.2}));
+const P4=(z,row)=>["左","左中","右中","右"].map((s,i)=>({id:i+1,description:s,zero:z,zeroed_at:z==null?null:"2026-10-08T08:30",tolerance:0.2,
+  ...(row?{row,point:i+1}:{})}));
 let DB=[
   {mac:"00:01:FC:12:39:A0",status:"unknown",ipv4:"",cfg:null,sort:0,first:"2026-10-06 14:32",last:"2026-10-06 14:40",count:3,req:"BOOTP",host:"",hidden:false},
-  {mac:"00:01:FC:DE:3A:75",status:"active",ipv4:"192.168.10.11",cfg:{key:"row-1",name:"前排",probes:P4(-0.3219)},sort:1,first:"2026-10-06 14:00",last:"2026-10-08 07:35",count:12,req:"BOOTP",host:"",hidden:false},
-  {mac:"00:01:FC:DE:3A:76",status:"active",ipv4:"192.168.10.12",cfg:{key:"row-2",name:"中排",probes:P4(-0.2874)},sort:2,first:"2026-10-06 14:02",last:"2026-10-08 07:35",count:11,req:"BOOTP",host:"",hidden:false},
-  {mac:"00:01:FC:DE:3A:77",status:"active",ipv4:"192.168.10.13",cfg:{key:"row-3",name:"後排",probes:P4(-0.3502)},sort:3,first:"2026-10-06 14:03",last:"2026-10-08 07:35",count:12,req:"BOOTP",host:"",hidden:false},
+  {mac:"00:01:FC:DE:3A:75",status:"active",ipv4:"192.168.10.11",cfg:{key:"row-1",name:"前排",probes:P4(-0.3219,1)},sort:1,first:"2026-10-06 14:00",last:"2026-10-08 07:35",count:12,req:"BOOTP",host:"",hidden:false},
+  {mac:"00:01:FC:DE:3A:76",status:"active",ipv4:"192.168.10.12",cfg:{key:"row-2",name:"中排",probes:P4(-0.2874,2)},sort:2,first:"2026-10-06 14:02",last:"2026-10-08 07:35",count:11,req:"BOOTP",host:"",hidden:false},
+  {mac:"00:01:FC:DE:3A:77",status:"active",ipv4:"192.168.10.13",cfg:{key:"row-3",name:"後排",probes:P4(-0.3502,3)},sort:3,first:"2026-10-06 14:03",last:"2026-10-08 07:35",count:12,req:"BOOTP",host:"",hidden:false},
   {mac:"00:01:FC:DE:3A:70",status:"retired",ipv4:"192.168.10.14",cfg:{key:"row-4",name:"舊機",probes:P4(null)},sort:4,first:"2026-10-01 09:00",last:"2026-10-06 14:09",count:3,req:"BOOTP",host:"",hidden:false},
   {mac:"3C:52:82:11:22:33",status:"other",ipv4:"192.168.10.100",cfg:null,sort:5,first:"2026-10-03 09:15",last:"2026-10-06 14:30",count:57,req:"DHCP",host:"eng-laptop",hidden:false}
 ];
@@ -464,35 +516,48 @@ const ARP={"192.168.10.50":"3C:52:82:44:55:66"};
 let LATER=[{mac:"00:01:FC:12:3B:11",req:"BOOTP",host:""}];
 
 /* 主畫面：DL-EN1 使用中與維修中，依位置第 1～10 排由上而下（EDT-05、DSC-15） */
-const shown=()=>DB.filter(d=>d.status==="active"||d.status==="maint").sort((a,b)=>rowNo(a.cfg.key)-rowNo(b.cfg.key));
+const _view=new WeakMap();   // 主畫面只看啟用的探頭（PDT-04）：每台一個固定的檢視物件
+const viewOf=d=>{ if(!_view.has(d)) _view.set(d,{...d,cfg:{...d.cfg,probes:d.cfg.probes.filter(p=>p.enabled!==false)}}); return _view.get(d); };
+const shown=()=>DB.filter(d=>d.status==="active"||d.status==="maint").map(viewOf).sort((a,b)=>rowNo(a.cfg.key)-rowNo(b.cfg.key));
 const live=()=>shown().filter(d=>d.status==="active");
 const nProbes=()=>live().reduce((n,d)=>n+d.cfg.probes.length,0);
-const tolOf=p=>p.tolerance??DEF_TOL;
-const stdOf=p=>({nom:0,lo:-tolOf(p),hi:tolOf(p)});   // 標準值 0、上下限 ±允許誤差（JDG-06）
+const upOf=p=>p.upper??(p.tolerance!=null?p.tolerance:DEF_UP);   // 向下相容舊的對稱 tolerance
+const loOf=p=>p.lower??(p.tolerance!=null?-p.tolerance:DEF_LO);
+const magOf=p=>Math.max(Math.abs(upOf(p)),Math.abs(loOf(p)));
+const stdOf=p=>({nom:0,lo:loOf(p),hi:upOf(p)});      // 標準值 0、下限、上限（JDG-06）
+const limTxt=v=>v===0?'0 mm':(v>0?'+':'')+v+' mm';
+const clampLim=v=>Math.round(Math.max(LIM_MIN,Math.min(LIM_MAX,v||0))*10)/10;   // 夾範圍、四捨五入到 0.1
+const limCell=(k,pi,v)=>freeLimits   // JDG-06 rev2：勾選後改輸入框（−50～50、步進 0.1）
+  ?`<input type="number" data-${k}="${pi}" value="${v}" min="${LIM_MIN}" max="${LIM_MAX}" step="0.1" style="width:86px">`
+  :`<select data-${k}="${pi}">${(LIMS.includes(v)?LIMS:[...LIMS,v].sort((a,b)=>b-a)).map(t=>`<option value="${t}" ${v===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select>`;
 
 const f=v=>v.toFixed(3), f4=v=>(v>=0?"+":"")+v.toFixed(4), $=s=>document.querySelector(s);
+const slim=v=>v===0?"0":(v>0?"+":"")+(+v.toFixed(4));      // 刻度條下限／上限標字（精簡）
 const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const judge=(s,m)=>m>s.hi?"hi":m<s.lo?"lo":"ok";
+/* JDG-07 最佳點：整片有效讀值中絕對值最小者，並列取較小（較負）者；無有效讀值回傳 null */
+const bestOffset=vals=>{ const v=vals.filter(x=>x!=null); if(!v.length) return null;
+  return v.reduce((a,c)=>(Math.abs(c)<Math.abs(a)||(Math.abs(c)===Math.abs(a)&&c<a))?c:a); };
 const WORD={ok:"合格",hi:"偏高",lo:"偏低",err:"異常"};
 const ERRTXT={ErH:"感測頭錯誤（ErH）",FFFF:"超出檢測範圍（FFFF）"};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 /* ================= 樣本情境 ================= */
 const OFFS=[.15,-.10,.6,-.45,-.2,.45,.75,-.5,-.1,-.25,.45,.2];
-function baseVals(){ let k=0; return live().map(d=>d.cfg.probes.map(p=>+(OFFS[k++%OFFS.length]*tolOf(p)).toFixed(3))); }
+function baseVals(){ let k=0; return live().map(d=>d.cfg.probes.map(p=>+(OFFS[k++%OFFS.length]*magOf(p)).toFixed(3))); }
 const at=(v,ri,i)=>v[ri]&&i<v[ri].length;
 const SC={
   pass:   ()=>({vals:baseVals(),err:{}}),
-  fail:   ()=>{const v=baseVals(),L=live(); const t=(ri,i)=>tolOf(L[ri].cfg.probes[i]);
-    if(at(v,1,3)) v[1][3]=+(-t(1,3)-0.001).toFixed(3); else v[0][0]=+(t(0,0)+0.017).toFixed(3);
-    if(at(v,2,0)) v[2][0]=+(-t(2,0)-0.1).toFixed(3);
+  fail:   ()=>{const v=baseVals(),L=live(); const up=(ri,i)=>upOf(L[ri].cfg.probes[i]), lo=(ri,i)=>loOf(L[ri].cfg.probes[i]);
+    if(at(v,1,3)) v[1][3]=+(lo(1,3)-0.001).toFixed(3); else v[0][0]=+(up(0,0)+0.017).toFixed(3);
+    if(at(v,2,0)) v[2][0]=+(lo(2,0)-0.1).toFixed(3);
     return {vals:v,err:{}};},
   nodl:   ()=>{const v=baseVals(), ri=live().length>1?1:0, err={}; v[ri]=v[ri].map(()=>null);
     v[ri].forEach((_,i)=>err[`${ri}-${i}`]="down"); return {vals:v,err,down:[ri]};},
   noprobe:()=>{const v=baseVals(), ri=v.length-1, i=v[ri].length-1; v[ri][i]=null; return {vals:v,err:{[`${ri}-${i}`]:"ErH"}};},
   uncal:  ()=>{const v=baseVals(); if(at(v,0,1)){ v[0][1]=null; return {vals:v,err:{"0-1":"uncal"}}; } return {vals:v,err:{}};},
   mix:    ()=>{const v=baseVals(),err={},L=live();
-    if(at(v,1,2)) v[1][2]=+(tolOf(L[1].cfg.probes[2])+0.017).toFixed(3);
+    if(at(v,1,2)) v[1][2]=+(upOf(L[1].cfg.probes[2])+0.017).toFixed(3);
     if(at(v,0,1)){ v[0][1]=null; err["0-1"]="FFFF"; } return {vals:v,err};},
   only1:  ()=>{const v=baseVals(),err={},down=[]; v.forEach((r,ri)=>{ if(!ri) return; down.push(ri); v[ri]=r.map(()=>null); r.forEach((_,i)=>err[`${ri}-${i}`]="down"); });
     return {vals:v,err,down};}
@@ -506,46 +571,58 @@ function makeSerial(d=new Date()){const p=(n,w=2)=>String(n).padStart(w,"0");
   return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${p(d.getMilliseconds(),3)}`;}
 
 /* ================= 主畫面 ================= */
-function buildRows(){
-  let li=-1;
-  $("#rows").innerHTML=shown().map(d=>{
-    const tag=rowLabel(d.cfg.key);
-    if(d.status==="maint") return `<section class="row maint"><h2>${esc(d.name??d.cfg.name)}<span class="unit tagged">${tag}<br>維修中</span></h2>
-      <div class="maintbox">維修中：不連線、不量測（${d.cfg.probes.length} 個探頭）</div></section>`;
-    li++; const ri=li, P=d.cfg.probes, cols=Math.min(Math.max(P.length,4),6);
-    return `<section class="row" id="row${ri}"><h2>${esc(d.cfg.name)}<span class="unit" id="u${ri}"><i class="dot"></i>${tag}</span></h2>
-    <div class="probes" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${P.map((p,i)=>{const s=stdOf(p); return `
-    <div class="probe blank" id="p${ri}-${i}">
-      <div class="top"><span class="pos">${esc(p.description)}</span><span class="badge"><svg><use href="#i-ok"/></svg><span class="bw"></span></span></div>
+/* 主畫面依探頭位置排列（POS-04）：第 1～5 排、每排固定 5 格，沒有探頭的格為淡色空框；位置未定的在最下方「未設定位置」區 */
+function tileHtml(d,p,id){ const s=stdOf(p), maint=d.status==="maint";
+  return `<div class="probe ${maint?"maint":"blank"}"${id?` id="${id}"`:""} data-dev="${d.cfg.key}">
+      <div class="top"><span class="pos">${esc(p.description)}<small class="sub">${esc(devTag(d.cfg))}<b class="iptag">IP 不符</b><b class="besttag">最佳點</b></small></span>
+        <span class="badge"><svg><use href="#i-ok"/></svg><span class="bw">${maint?"維修中":""}</span></span></div>
       <div class="vals">
-        <span class="k ml">測量值</span><span class="m">—</span>
-        <span class="k kr">標準值</span><span class="s">${f(s.nom)}</span>
-        <span class="k kr">允收</span><span class="rg">${f(s.lo)} ～ ${f(s.hi)}</span>
+        <span class="k ml">測量值</span><span class="m">${maint?"維修中":"—"}</span>
+        <span class="k kr">標準值</span><span class="s">${maint?"—":f(s.nom)}</span>
+        <span class="k kr">允收</span><span class="rg">${maint?"—":`${f(s.lo)} ～ ${f(s.hi)}`}</span>
       </div>
-      <div class="gauge" aria-hidden="true"><div class="track"></div><div class="ok"></div><div class="nom"></div><div class="mk"></div></div>
-      <div class="devst"><i class="dot"></i><span class="dt"></span><span class="note"></span></div>
-    </div>`;}).join("")}</div></section>`;}).join("");
+      <div class="gauge" aria-hidden="true"><span class="cv"></span><div class="track"></div><div class="ok"></div><div class="nom"></div><div class="mk"></div><span class="lo">${maint?"":slim(s.lo)}</span><span class="hi">${maint?"":slim(s.hi)}</span></div>
+      <div class="devst"><i class="dot${maint?" stale":""}"></i><span class="dt">${maint?"不連線、不量測":""}</span><span class="note"></span></div>
+    </div>`; }
+function buildRows(){
+  const placed={}, un=[], L=live();
+  shown().forEach(d=>{ const ri=L.indexOf(d);
+    [...d.cfg.probes].sort((a,b)=>a.id-b.id).forEach(p=>{ const i=d.cfg.probes.indexOf(p), h=tileHtml(d,p,ri>=0?`p${ri}-${i}`:""), w=posOf(p);
+      if(w&&!outGrid(p,NAMES.grid)&&!placed[w]) placed[w]=h; else un.push(h); }); });
+  let html="";   // POS-12：只畫有探頭的排與點；這一排沒有探頭的點為透明空位，各排同欄對齊
+  const keys=Object.keys(placed).map(w=>w.split(",").map(Number));
+  const rowsU=[...new Set(keys.map(w=>w[0]))].sort((a,b)=>a-b), cols=[...new Set(keys.map(w=>w[1]))].sort((a,b)=>a-b);
+  const per=cols.length||PSIZE;
+  rowsU.forEach(r=>{ const cells=cols.map(k=>placed[[r,k]]||`<div class="slot none"></div>`);
+    html+=`<section class="row"><h2>${esc(NAMES.rows[r-1])}<span class="unit">第 ${r} 排</span></h2><div class="probes" style="--cols:${per}">${cells.join("")}</div></section>`; });
+  for(let i=0;i<un.length;i+=per){ const ch=un.slice(i,i+per); while(ch.length<per) ch.push(`<div class="slot none"></div>`);
+    html+=`<section class="row unassigned"><h2>${i?"":"未設定位置"}<span class="unit">${i?"":"請在設備設定<br>設定探頭位置"}</span></h2><div class="probes" style="--cols:${per}">${ch.join("")}</div></section>`; }
+  $("#rows").innerHTML=html;
   paintIp();
 }
-function unitHtml(ri,state){ const tag=rowLabel(live()[ri].cfg.key);
-  if(state==="down") return [`unit tagged`,`${tag}<br>偵測不到`];
-  if(state==="ip") return [`unit tagged`,`${tag}<br>IP 不符`];
-  return [`unit`,`<i class="dot ${state}"></i>${tag}`]; }
-function setUnit(ri,state){ const u=$(`#u${ri}`); if(!u) return;
-  if(state!=="down"&&FLAGS.ip&&ri===1) state="ip";
-  const [c,h]=unitHtml(ri,state); u.className=c; u.innerHTML=h;
-  $(`#row${ri}`).classList.toggle("down",state==="down"); $(`#row${ri}`).classList.toggle("ipbad",state==="ip"); }
+/* 整台 DL-EN1 的狀態標在該台每一個探頭方塊上（POS-05），頂端提示列出是哪一台 */
+const DOWN=new Set();
+const tilesOf=key=>document.querySelectorAll(`.probe[data-dev="${key}"]`);
+function setUnit(ri,state){ const d=live()[ri]; if(!d) return;
+  if(state==="down") DOWN.add(d.cfg.key); else DOWN.delete(d.cfg.key);
+  tilesOf(d.cfg.key).forEach(el=>el.classList.toggle("devdown",state==="down"));
+  paintIp(); renderFlagsOnly(); }
 function setDev(el,dot,text){ el.querySelector(".devst .dot").className="dot "+dot; el.querySelector(".devst .dt").textContent=text; }
 function clearRows(dot,text){
-  document.querySelectorAll(".probe").forEach(el=>{el.className="probe blank";el.querySelector(".m").textContent="—";el.querySelector(".note").textContent=""; if(dot) setDev(el,dot,text);});
+  document.querySelectorAll(".probe:not(.maint)").forEach(el=>{el.className="probe blank";el.querySelector(".m").textContent="—";el.querySelector(".note").textContent=""; if(dot) setDev(el,dot,text);});
   $("#screen").classList.remove("is-fail");
+  paintIp();
 }
 function paint(data){
   const out=[], errs=[];
+  /* JDG-07：先在整片所有有效讀值中找最佳點（|讀值| 最小、並列取較小），逐點修正後再判定（方案 A：大字仍顯示原始讀值） */
+  const cand=[]; live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{
+    if(!data.err[`${ri}-${i}`]&&data.vals[ri][i]!=null) cand.push({ri,i,m:data.vals[ri][i]}); }));
+  const bestPt=cand.length?cand.reduce((a,c)=>(Math.abs(c.m)<Math.abs(a.m)||(Math.abs(c.m)===Math.abs(a.m)&&c.m<a.m))?c:a):null;
+  const best=bestPt?bestPt.m:null;
   live().forEach((d,ri)=>{
     const down=(data.down||[]).includes(ri), P=d.cfg.probes; let uncal=0;
-    setUnit(ri,down?"down":"ok");
-    if(down) errs.push(`${esc(d.cfg.name)} DL-EN1 偵測不到`);
+    if(down) errs.push(`${esc(devTag(d.cfg))} DL-EN1 偵測不到`);
     P.forEach((p,i)=>{
       const el=$(`#p${ri}-${i}`), e=data.err[`${ri}-${i}`], m=data.vals[ri][i], s=stdOf(p);
       if(e){
@@ -556,21 +633,25 @@ function paint(data){
         el.querySelector(".note").textContent=e==="down"?"":e==="uncal"?"請在設備設定校準":ERRTXT[e];
         setDev(el,"err",e==="down"?"DL-EN1 偵測不到":e==="uncal"?"未校準":"探頭無回應");
         if(e==="uncal") uncal++;
-        else if(e!=="down") errs.push(`${esc(d.cfg.name)} ${esc(p.description)}探頭無回應（${ERRTXT[e]}）`);
+        else if(e!=="down") errs.push(`${esc(dispName(d.cfg,p))}探頭無回應（${ERRTXT[e]}）`);
         return;
       }
-      const st=judge(s,m);
-      if(st!=="ok") out.push(`${esc(d.cfg.name)} ${esc(p.description)}${WORD[st]}`);
+      const cv=best==null?m:m-best;          // JDG-07 修正值 = 讀值 − 最佳點讀值
+      const st=judge(s,cv);                   // 判定改用修正值
+      if(st!=="ok") out.push(`${esc(dispName(d.cfg,p))}${WORD[st]}`);
       el.className="probe "+st;
+      if(bestPt&&bestPt.ri===ri&&bestPt.i===i) el.classList.add("best");   // 最佳點標籤
       el.querySelector(".badge use").setAttribute("href","#i-"+st);
       el.querySelector(".bw").textContent=WORD[st];
-      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;
-      const span=(s.hi-s.lo)/0.6, min=s.lo-span*0.2;
-      el.querySelector(".mk").style.left=Math.max(2,Math.min(98,(m-min)/span*100))+"%";
-      el.querySelector(".note").textContent=st==="hi"?`超出上限 ${f(m-s.hi)}`:st==="lo"?`低於下限 ${f(s.lo-m)}`:"";
+      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;          // 方案 A：大字仍為原始讀值
+      const span=(s.hi-s.lo)/0.6, start=s.lo-span*0.2, pct=Math.max(2,Math.min(98,(cv-start)/span*100));
+      el.querySelector(".mk").style.left=pct+"%";                          // 三角依修正值定位
+      const cvEl=el.querySelector(".cv"); cvEl.textContent=slim(+cv.toFixed(3)); cvEl.style.left=pct+"%";
+      el.querySelector(".note").textContent=st==="hi"?`超出上限 ${f(cv-s.hi)}`:st==="lo"?`低於下限 ${f(s.lo-cv)}`:"";
       setDev(el,"ok","設備正常");
     });
-    if(uncal) errs.push(`${esc(d.cfg.name)} 有 ${uncal} 個探頭未校準，請在設備設定以標準件校準`);
+    if(uncal) errs.push(`${esc(devTag(d.cfg))} 有 ${uncal} 個探頭未校準，請在設備設定以標準件校準`);
+    setUnit(ri,down?"down":"ok");
   });
   const nErr=Object.keys(data.err).length;
   summary(nErr?"error":"ok",nErr);
@@ -651,20 +732,38 @@ function show(){
 }
 
 /* ================= 系統狀態提示（示範切換；DSC-06、DSC-07、DSC-20） ================= */
-const FLAGS={bootp:false,db:false,ip:false,sim:false};
-function paintIp(){ live().forEach((d,ri)=>{ const u=$(`#u${ri}`); if(!u||u.classList.contains("tagged")&&u.textContent.includes("偵測不到")) return;
-  setUnit(ri,(u.querySelector(".dot")?.className.replace("dot","").trim())||"ok"); }); }
-function renderFlags(){
-  const L=live(), d=L[1]||L[0];
+const FLAGS={bootp:false,db:false,ip:false,sim:false,nip:false};
+const nipKey=()=>FLAGS.nip?live()[0]?.cfg.key:null;                  // 示範：第 1 台 BOOTP 拒絕配發（DSC-23）
+const ipKey=()=>{ const k=FLAGS.ip?(live()[1]||live()[0])?.cfg.key:null; return k===nipKey()?null:k; };  // 被拒期間暫停 IP 不符
+/* IP 不符：該台每個方塊加警示外框與「IP 不符」標籤，內容照常；偵測不到時以偵測不到優先（DSC-20、POS-05） */
+function paintIp(){ const k=ipKey(); document.querySelectorAll(".probe").forEach(el=>el.classList.toggle("ipbad",el.dataset.dev===k&&!el.classList.contains("devdown")));
+  /* DSC-23：拿不到 IP 取代偵測不到；連得上也以設備異常計，不顯示讀值 */
+  const n=nipKey(); if(n) document.querySelectorAll(`.probe[data-dev="${n}"]`).forEach(el=>setDev(el,"err","拿不到 IP")); }
+const brief=a=>a.slice(0,2).join("、")+(a.length>2?` 等 ${a.length} 台`:"");
+function renderFlagsOnly(){
+  const d=live().find(x=>x.cfg.key===ipKey()), nd=live().find(x=>x.cfg.key===nipKey()),
+        downs=live().filter(x=>DOWN.has(x.cfg.key)&&x.cfg.key!==nipKey()).map(x=>devTag(x.cfg)),
+        maints=shown().filter(x=>x.status==="maint").map(x=>devTag(x.cfg));
   $("#sysflags").innerHTML=
     (FLAGS.sim?`<span class="flag sim">模擬模式</span>`:"")+
     (FLAGS.bootp?`<span class="flag ng"><i class="dot err"></i>BOOTP 服務停止，自動重新啟動中</span>`:"")+
     (FLAGS.db?`<span class="flag warn"><i class="dot warn"></i>無法讀取資料庫，使用上次的設定</span>`:"")+
-    (FLAGS.ip&&d?`<span class="flag ipw">IP 不符：${esc(d.cfg.name)}（${rowLabel(d.cfg.key)}）實際 IP 192.168.10.57，設定為 ${esc(d.ipv4)}。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，使其重新取得設定的 IP</span>`:"");
-  paintIp();
+    (nd?`<span class="flag ng"><i class="dot err"></i>${esc(devTag(nd.cfg))} 拿不到 IP：${esc(nd.ipv4)} 被其他設備佔用（BOOTP 拒絕配發），請洽維護人員</span>`:"")+
+    (downs.length?`<span class="flag ng"><i class="dot err"></i>${esc(brief(downs))} 偵測不到</span>`:"")+
+    (maints.length?`<span class="flag gray"><i class="dot stale"></i>${esc(brief(maints))} 維修中</span>`:"")+
+    (FLAGS.ip&&d?`<span class="flag ipw">IP 不符：${esc(devTag(d.cfg))} 實際 IP 192.168.10.57，設定為 ${esc(d.ipv4)}。請按住該台 DL-EN1 上的 RST 鍵 3 秒重設，使其重新取得設定的 IP</span>`:"");
 }
+function renderFlags(){ renderFlagsOnly(); paintIp(); }
+/* 示範：中排右中、右兩個探頭位置未定 → 主畫面「未設定位置」區、3D 拒絕（POS-04、POS-07） */
+let UNPLACED_SAVED=null;
+$("#unplacedBtn").addEventListener("click",e=>{ if(busy||detecting) return;
+  const d=DB.find(x=>x.cfg?.key==="row-2"); if(!d) return; const P=d.cfg.probes.slice(2);
+  if(UNPLACED_SAVED){ P.forEach((p,i)=>Object.assign(p,UNPLACED_SAVED[i])); UNPLACED_SAVED=null; }
+  else { UNPLACED_SAVED=P.map(p=>({row:p.row,point:p.point})); P.forEach(p=>{ delete p.row; delete p.point; }); }
+  e.currentTarget.setAttribute("aria-pressed",!!UNPLACED_SAVED); rebuildMain(); });
 document.querySelectorAll("[data-flag]").forEach(b=>b.addEventListener("click",()=>{
-  const k=b.dataset.flag; FLAGS[k]=!FLAGS[k]; b.setAttribute("aria-pressed",FLAGS[k]); renderFlags(); }));
+  const k=b.dataset.flag; FLAGS[k]=!FLAGS[k]; b.setAttribute("aria-pressed",FLAGS[k]);
+  if(k==="nip"&&!FLAGS[k]&&!busy&&!detecting) rebuildMain(); else renderFlags(); }));
 
 /* ================= 訊息框 ================= */
 const ICON={info:"i-ok",warn:"i-warn",ask:"i-err",danger:"i-warn"};
@@ -681,6 +780,7 @@ function showMsg(title,text,buttons=["關閉"],kind="info",primary=buttons.lengt
 let msgOpen=null;
 
 /* ================= 設備設定（需求規格書 3.10 DSC、3.8 UPL、3.11 CAL） ================= */
+let draftNames=null;   // 排與點名稱（編輯中）
 let draft=null, edStep="pw", selMac=null, selP=-1, dirty=false, showHidden=false, ipCheck={}, replMode=false, replaced=[], laterT=null;
 const clone=o=>JSON.parse(JSON.stringify(o));
 const STATUS={
@@ -699,7 +799,19 @@ const listName=d=>isDL(d)&&d.cfg?.key?`${rowLabel(d.cfg.key)}・${d.cfg.name||"�
 const devLabel=d=>nameOf(d)||d.mac;
 const who=d=>`${STATUS[d.status].label} ${d.mac}${nameOf(d)?`（${nameOf(d)}）`:""}`;
 const nowT=()=>{const d=new Date(),p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;};
-const FLD={key:"位置",name:"排名稱",ipv4:"IPv4",probes:"已安裝的探頭"};
+const FLD={key:"第幾台",name:"DL-EN1 名稱",ipv4:"IPv4",probes:"已安裝的探頭","probe-pos":"已安裝的探頭",names:"排與點名稱"};
+/* 探頭位置（POS-01、POS-02）：佔用者包含整個設定頁尚未儲存的編輯，使用中與維修中 */
+function occupied(skipDev,skipIdx){ const m={};
+  draft.filter(isDL).forEach(x=>x.cfg.probes.forEach((p,i)=>{ if(posOf(p)&&!(x===skipDev&&i===skipIdx)) m[posOf(p)]??=devCall(x.cfg,p); })); return m; }
+const autoDesc=(desc,oldPt,newPt)=>{ if(newPt==null) return desc; const t=(desc||"").trim();   // POS-09
+  let auto=!t||/^探頭 ?\d+$/.test(t);
+  if(!auto&&oldPt) auto=[draftNames.points[oldPt-1],NAMES.points[oldPt-1],DEF_NAMES.points[oldPt-1]].includes(t);
+  return auto?draftNames.points[newPt-1]:desc; };
+function nameErrs(){ const E=[];
+  ["rows","points"].forEach(k=>{ const seen={}; draftNames[k].forEach((v,i)=>{ const lab=`第 ${i+1} ${k==="rows"?"排":"點"}名稱`;
+    if(!v.trim()) E.push({mac:null,f:"names",k,i,msg:`${lab}不可空白`}); else if(v.length>10) E.push({mac:null,f:"names",k,i,msg:`${lab}最多 10 字`});
+    else if(v in seen) E.push({mac:null,f:"names",k,i,msg:`${lab}與第 ${seen[v]+1} 個重複`}); else seen[v]=i; }); });
+  return E; }
 function ipErr(ip){
   const m=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip||""); if(!m||m.slice(1).some(x=>+x>255)) return "格式錯誤，例：192.168.10.11";
   if(!ip.startsWith(NET)) return `IP 不在設備網段 ${NET}0/24`;
@@ -724,15 +836,28 @@ function validate(list){
     }
     if(!isDL(d)) return;
     const c=d.cfg;
-    if(!rowNo(c.key)) add("key",`請選擇第 1～${ROWS} 排其中一排`);
+    if(!rowNo(c.key)) add("key",`請選擇第 1～${ROWS} 台其中一台`);
     else if(keyOwner[c.key]) add("key",`${rowLabel(c.key)}已由 ${who(keyOwner[c.key])} 使用`); else keyOwner[c.key]=d;
     if(!c.name||c.name.length>10) add("name","長度須為 1～10 字");
     else if(nameOwner[c.name]) add("name",`已由 ${who(nameOwner[c.name])} 使用`); else nameOwner[c.name]=d;
     if(!c.probes.length) add("probes","至少需安裝 1 個探頭");
     else if(c.probes.length>15) add("probes","探頭數量須為 1～15");
-    c.probes.forEach((p,pi)=>{ if(!p.description||p.description.length>10) add("probe-desc",`探頭 ${p.id} 位置名稱長度須為 1～10 字`,pi); });
+    c.probes.forEach((p,pi)=>{ if(!p.description||p.description.length>10) add("probe-desc",`探頭 ${p.id} 位置名稱長度須為 1～10 字`,pi);
+      if(!!p.row!==!!p.point) add("probe-pos",`第 ${pi+1} 列（ID ${p.id}）位置須同時設定排與點，或都設為未定`,pi); });
   });
-  return E;
+  const own={};   // 同一位置只能有一個探頭（POS-02）
+  list.filter(isDL).forEach(d=>d.cfg.probes.forEach((p,pi)=>{ const w=posOf(p); if(w) (own[w]??=[]).push({d,p,pi}); }));
+  Object.values(own).filter(a=>a.length>1).forEach(a=>a.forEach(x=>{ const o=a.find(y=>y!==x);
+    E.push({mac:x.d.mac,f:"probe-pos",pi:x.pi,msg:`第 ${x.pi+1} 列（ID ${x.p.id}）${draftNames.rows[x.p.row-1]} ${draftNames.points[x.p.point-1]} 已由 ${devCall(o.d.cfg,o.p)} 使用`}); }));
+  const G=draftNames.grid;   // POS-11：因版面改小而改為未定的探頭（與資料庫中的位置比較）；1 排或 1 點時 3D 無法使用
+  list.filter(d=>d.cfg).forEach(d=>{ const o=DB.find(x=>x.mac===d.mac); (o?.cfg?.probes||[]).forEach(q=>{
+    const p=d.cfg.probes.find(x=>x.id===q.id);
+    if(p&&outGrid(q,G)&&!posOf(p)) E.push({mac:d.mac,f:"probe-pos",warn:true,msg:`${devCall(d.cfg,p)}（原第 ${q.row} 排第 ${q.point} 點）超出版面 ${gridText(G)}，改為未定（仍可儲存）`}); }); });
+  list.filter(d=>isDL(d)).forEach(d=>{ const o=DB.find(x=>x.mac===d.mac), now=new Set(d.cfg.probes.map(p=>p.id));   // PDT-03、PDT-06
+    (o?.cfg?.probes||[]).forEach(q=>{ if(!now.has(q.id)) E.push({mac:d.mac,f:"probes",warn:true,msg:`將移除：${rowLabel(d.cfg.key)} ID ${q.id} ${q.description}${posOf(q)?`（原第 ${q.row} 排第 ${q.point} 點）`:""}。若拔掉的是中間的放大器，後面探頭的 ID 會往前補，請確認位置並重新校準（仍可儲存）`}); });
+    if(d.cfg.probes.length&&!d.cfg.probes.some(p=>p.enabled!==false)) E.push({mac:d.mac,f:"probes",warn:true,msg:"沒有啟用的探頭，主畫面不會顯示這一台的探頭（仍可儲存）"}); });
+  if(G.rows===1||G.points===1) E.push({mac:null,f:"names",warn:true,msg:`版面只有 ${G.rows===1?"1 排":"每排 1 點"}，探頭都在同一直線上，3D 繪圖將無法使用（仍可儲存）`});
+  return E.concat(nameErrs());
 }
 const errorsOnly=E=>E.filter(e=>!e.warn);
 /* 預設 IP：依設備類型範圍取最小未佔用位址（DSC-08） */
@@ -771,7 +896,7 @@ function renderIpNote(){
 function visible(){ return draft.filter(d=>showHidden||!d.hidden).sort((a,b)=>(a.sort??-1)-(b.sort??-1)); }
 function setStatus(d,st){
   d.status=st; replMode=false;
-  if(isDL(d)&&!d.cfg) d.cfg={key:"",name:"",probes:P4(null).map(p=>({...p,tolerance:DEF_TOL}))};
+  if(isDL(d)&&!d.cfg) d.cfg={key:"",name:"",probes:[1,2,3,4].map(i=>({id:i,description:`探頭 ${i}`,zero:null,zeroed_at:null}))};  // 位置未定（POS-09）
   if(isDL(d)&&!rowNo(d.cfg.key)) d.cfg.key=freeRow(d);
   if((isDL(d)||st==="other")&&!d.ipv4) d.ipv4=nextFreeIp(isDL(d)?"dl":"other",d);
   if(isDL(d)) d.hidden=false;          // 使用中、維修中不可隱藏（DSC-13）
@@ -793,7 +918,7 @@ function detectNew(){                  // 探索執行緒寫入資料庫後，�
   toast(n?`偵測到 ${n} 台新設備，已以「不明設備」加入清單`:"沒有新的設備");
 }
 function openEditor(){ if(busy||detecting) return;
-  draft=clone(DB); replaced=[]; ipCheck={}; replMode=false; selP=-1; dirty=false; edStep="pw";
+  draft=clone(DB); draftNames=clone(NAMES); namesOpen=false; replaced=[]; ipCheck={}; replMode=false; selP=-1; dirty=false; edStep="pw";
   const V=visible(); selMac=((V.find(d=>d.status==="active"))||V[0]||{}).mac||null;
   renderEd(); $("#edDlg").showModal(); }
 async function closeEditor(){
@@ -890,41 +1015,59 @@ function renderDetail(){
   if(dl){
     const owner={}; draft.forEach(x=>{ if(x!==d&&isDL(x)) owner[x.cfg.key]=x.cfg.name||x.mac; });
     h+=`
-      <label for="fKey">位置</label><select id="fKey" class="${bf("key").trim()}" data-f="key"><option value="">請選擇</option>${Array.from({length:ROWS},(_,i)=>{const k=`row-${i+1}`;
-        return `<option value="${k}" ${c.key===k?"selected":""} ${owner[k]?"disabled":""}>第 ${i+1} 排${owner[k]?`（已由 ${esc(owner[k])} 使用）`:""}</option>`;}).join("")}</select>
-      <label for="fName">排名稱 name</label><input id="fName" class="${bf("name").trim()}" data-f="name" value="${esc(c.name)}" placeholder="畫面顯示的排名稱，例：前排">`;
+      <label for="fKey">第幾台</label><select id="fKey" class="${bf("key").trim()}" data-f="key"><option value="">請選擇</option>${Array.from({length:ROWS},(_,i)=>{const k=`row-${i+1}`;
+        return `<option value="${k}" ${c.key===k?"selected":""} ${owner[k]?"disabled":""}>第 ${i+1} 台${owner[k]?`（已由 ${esc(owner[k])} 使用）`:""}</option>`;}).join("")}</select>
+      <label for="fName">DL-EN1 名稱</label><input id="fName" class="${bf("name").trim()}" data-f="name" value="${esc(c.name)}" placeholder="例：前排">`;
   }
   if(dl||d.status==="other") h+=`
       <label for="fIp">IPv4</label><input id="fIp" class="mono${bf("ipv4")}" data-f="ipv4" value="${esc(d.ipv4)}" placeholder="${dl?"例：192.168.10.11":"留空表示不配發"}"><span class="ipnote" id="ipNote"></span>`;
   if(dl) h+=`
-      <label for="fCnt">探頭數量</label><input id="fCnt" type="number" min="1" max="15" class="mono short${bf("probes")}" value="${c.probes.length}">`;
+      <label for="fCnt">探頭數量</label><div class="cntrow"><input id="fCnt" type="number" min="1" max="15" class="mono short${bf("probes")}" value="${c.probes.length}">
+        <span class="stdesc">（啟用 ${c.probes.filter(p=>p.enabled!==false).length}）</span>
+        <button class="btn sm" type="button" data-ed="scan" ${d.status==="active"&&d.ipv4?"":"disabled"} title="讀取這台 DL-EN1 實際連接的放大器數量與各探頭狀態（只讀取，儲存後生效）">探頭偵測</button></div>`;
   h+=`</div>`;
   if(dl){
     const blk=calBlock(d);
-    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N）</span></h4>
-      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:80px">探頭 ID</th><th>位置名稱</th><th style="width:200px">校準</th><th style="width:80px"></th><th style="width:120px">允許誤差</th></tr></thead><tbody id="pBody">
-      ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi);return `<tr data-prow="${pi}" class="${pi===selP?"on":""}">
+    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span><label class="enc" style="float:right;font-weight:400"><input type="checkbox" id="freeLim" ${freeLimits?"checked":""}> 自己輸入上下限</label></h4>
+      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:92px">上限</th><th style="width:92px">下限</th></tr></thead><tbody id="pBody">
+      ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
+        const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
+        const full=r=>PN.every(k=>used[[r,k]]);
+        const rowSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="row" data-p="${pi}" ${p.enabled===false?"disabled":""}><option value="">未定</option>${RN.map(r=>`<option value="${r}" ${p.row===r?"selected":""}>${r}（${esc(draftNames.rows[r-1])}${full(r)?"，已滿":""}）</option>`).join("")}</select>`;
+        const ptSel=`<select class="${pe.some(e=>e.f==="probe-pos")?"bad":""}" data-pos="point" data-p="${pi}" ${p.enabled===false?"disabled":""}><option value="">未定</option>${PN.map(k=>{const w=p.row?used[[p.row,k]]:null;
+          return `<option value="${k}" ${p.point===k?"selected":""} ${w&&p.point!==k?"disabled":""}>${k}${w?`（已由 ${esc(w)} 使用）`:`（${esc(draftNames.points[k-1])}）`}</option>`;}).join("")}</select>`;
+        const on=p.enabled!==false, st=(SCAN[d.mac]||{})[p.id]||"";
+        return `<tr data-prow="${pi}" class="${pi===selP?"on":""}">
         <td class="mono">${p.id}</td>
-        <td><input class="cell${pe.length?" bad":""}" data-pf="description" data-p="${pi}" value="${esc(p.description)}"></td>
+        <td><label class="enc"><input type="checkbox" data-en="${pi}" ${on?"checked":""}> <span class="${st&&st!=="正常"?"bad-t":""}" title="${st?`探頭偵測：${esc(st)}`:""}">${esc(st.split("（")[0])}</span></label></td>
+        <td><input class="cell${pe.some(e=>e.f==="probe-desc")?" bad":""}" data-pf="description" data-p="${pi}" value="${esc(p.description)}"></td>
+        <td>${rowSel}</td><td>${ptSel}</td>
         <td class="cal${p.zero==null?" uncal":""}">${calText(p)}</td>
-        <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk?"disabled":""} title="${esc(blk||"以標準件校準此探頭（歸零）")}">校準</button></td>
-        <td><select data-tol="${pi}">${TOLS.map(t=>`<option value="${t}" ${tolOf(p)===t?"selected":""}>${t} mm</option>`).join("")}</select></td></tr>`;}).join("")}
+        <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk||!on?"disabled":""} title="${esc(blk||(on?"以標準件校準此探頭（歸零）":"未啟用的探頭不能校準"))}">校準</button></td>
+        <td>${limCell("up",pi,upOf(p))}</td>
+        <td>${limCell("lo",pi,loOf(p))}</td></tr>`;}).join("")}
       </tbody></table></div>
-      <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP<0?"disabled":""}>刪除探頭</button>
-        ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}</div>`;
-    if(d.status==="active"){
+      <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP!==c.probes.length-1||selP<1?"disabled":""} title="${selP>=0&&selP<c.probes.length-1?"中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）":"只能刪除最後一支探頭"}">刪除探頭</button>
+        ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
+        <button class="btn sm pen${namesOpen?" on":""}" type="button" data-ed="nmtoggle" title="編輯板子版面與排、點名稱" aria-pressed="${namesOpen}" style="margin-left:auto">版面設定 ✏️</button></div>
+      ${namesOpen?`<div class="names"><b>板子版面與排、點名稱</b><span class="stdesc">（全機共用；探頭位置選項、主畫面、3D、匯出檔使用）</span>
+        <div class="gridrow">排數 <select data-grid="rows">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.rows===v?"selected":""}>${v}</option>`).join("")}</select>
+          每排點數 <select data-grid="points">${[1,2,3,4,5].map(v=>`<option value="${v}" ${draftNames.grid.points===v?"selected":""}>${v}</option>`).join("")}</select>
+          <span class="stdesc">改小時，超出版面的探頭改為未定</span></div>
+        ${["rows","points"].map(k=>`<div class="nmrow"><span>${k==="rows"?"排名稱":"點名稱"}</span>${draftNames[k].map((v,i)=>i<draftNames.grid[k]?`<input class="${nameErrs().some(e=>e.k===k&&e.i===i)?"bad":""}" data-nm="${k}" data-i="${i}" maxlength="10" value="${esc(v)}">`:`<span></span>`).join("")}<button class="btn sm" type="button" data-ed="nmdef" data-k="${k}">恢復預設</button></div>`).join("")}</div>`:""}`;
+    if(d.status==="active"&&SHOW_REPLACE){   // 「替換…」暫時隱藏（2026-10-15 PO）
       const cands=draft.filter(x=>x!==d&&["unknown","other","retired"].includes(x.status))
         .sort((a,b)=>isKeyence(b.mac)-isKeyence(a.mac)||String(b.last).localeCompare(String(a.last)));
-      h+=replMode?`<div class="repl"><b>替換 ${esc(c.name)}（${rowLabel(c.key)}）</b>
+      h+=replMode?`<div class="repl"><b>替換 ${esc(devTag(c))}</b>
           <span class="stdesc">新機（只列出偵測到的設備；KEYENCE 優先、最近出現的在前）</span>
           <select id="replSel">${cands.map(x=>`<option value="${esc(x.mac)}">${esc(x.mac)}　${STATUS[x.status].tag}　最後出現 ${esc(x.last)}${isKeyence(x.mac)?"　KEYENCE":""}</option>`).join("")}</select>
-          <span class="stdesc">新機取得此台全部設定（位置、名稱、IP、探頭、順序）並設為使用中；此台改為「DL-EN1 已停用」並保留原設定。新機須先上電讓系統偵測到。</span>
+          <span class="stdesc">新機取得此台全部設定（第幾台、名稱、IP、探頭與探頭位置、順序）並設為使用中；此台改為「DL-EN1 已停用」並保留原設定。新機須先上電讓系統偵測到。</span>
           <div class="btnrow"><button class="btn sm primary" type="button" data-ed="replok" ${cands.length?"":"disabled"}>確認替換</button><button class="btn sm" type="button" data-ed="replno">取消</button></div></div>`
         :`<div class="btnrow"><button class="btn sm" type="button" data-ed="repl">替換…</button><span class="stdesc">DL-EN1 故障換新機時使用</span></div>`;
     }
   } else if(d.status==="retired"){
-    h+=`<div class="infobox">最後的設定：位置 <b>${rowLabel(c.key)}</b>、排名稱 <b>${esc(c.name||"—")}</b>、IP ${esc(d.ipv4||"—")}、探頭 ${(c.probes||[]).length} 個。<br>
-      已停用的設備不佔用位置、名稱與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，並重新檢查是否與現有設備重複。</div>`;
+    h+=`<div class="infobox">最後的設定：<b>${rowLabel(c.key)}</b>、DL-EN1 名稱 <b>${esc(c.name||"—")}</b>、IP ${esc(d.ipv4||"—")}、探頭 ${(c.probes||[]).length} 個。<br>
+      已停用的設備不佔用第幾台、名稱、探頭位置與 IP。改回「DL-EN1 使用中」或「維修中」會帶回這些設定，並重新檢查是否與現有設備重複。</div>`;
   } else if(d.status==="other"){
     h+=`<div class="infobox">只能設定 IP。若它其實是 DL-EN1，請將「設備」改為「DL-EN1 使用中」。</div>`;
   } else {
@@ -936,7 +1079,7 @@ function renderMsgs(){
   const E=validate(draft), errs=errorsOnly(E), box=$("#msgs"), cnt=s=>draft.filter(d=>d.status===s).length, act=draft.filter(d=>d.status==="active");
   box.className="msgs "+(errs.length?"has":"ok");
   const line=e=>{const d=draft.find(x=>x.mac===e.mac);
-    const where=d?`${esc(devLabel(d))} › ${e.f==="probe-desc"?"已安裝的探頭":FLD[e.f]}：`:"";
+    const where=d?`${esc(devLabel(d))} › ${FLD[e.f]||"已安裝的探頭"}：`:(e.f==="names"?"板子版面與排、點名稱：":"");
     return `<li class="${e.warn?"w":""}" data-goto="${esc(e.mac||"")}">${e.warn?"⚠":"✘"} ${where}${esc(e.msg)}</li>`;};
   box.innerHTML=(E.length?`<ul>${E.map(line).join("")}</ul>`:"")+(errs.length?"":`<div class="okline">✔ 檢查通過：DL-EN1 使用中 ${act.length} 台（${act.reduce((n,d)=>n+d.cfg.probes.length,0)} 個探頭）、維修中 ${cnt("maint")} 台、已停用 ${cnt("retired")} 台、其他設備 ${cnt("other")} 台、不明設備 ${cnt("unknown")} 台，可以儲存。</div>`);
   $("#bApply").disabled=!dirty;   // 有尚未儲存的變更即可按（EDT-04）；有錯時按下列出錯誤
@@ -954,7 +1097,7 @@ function diff(oldL,newL){
   const items=[],rst=[],power=[],removed=[], O=Object.fromEntries(oldL.map(d=>[d.mac,d]));
   const nm=d=>esc(devLabel(d)), pmap=c=>Object.fromEntries((c?.probes||[]).map(p=>[p.id,p]));
   const inRepl=new Set(replaced.flatMap(r=>[r.old,r.nw]));
-  replaced.forEach(r=>{ items.push(`<b class="k-mod">替換</b>　${esc(r.name)}（${rowLabel(r.key)}）：MAC <span class="hl">${r.old} → ${r.nw}</span>；IP、探頭、順序沿用；舊機改為「DL-EN1 已停用」並保留原設定`);
+  replaced.forEach(r=>{ items.push(`<b class="k-mod">替換</b>　${esc(rowLabel(r.key))} ${esc(r.name)}：MAC <span class="hl">${r.old} → ${r.nw}</span>；IP、探頭、順序沿用；舊機改為「DL-EN1 已停用」並保留原設定`);
     rst.push(`${esc(r.name)}（新機 ${r.nw}）`); });
   newL.forEach(n=>{ const o=O[n.mac]; if(!o||inRepl.has(n.mac)) return; const ch=[];
     if(o.status!==n.status){ ch.push(`<span class="hl">${STATUS[o.status].label} → ${STATUS[n.status].label}</span>`);
@@ -962,22 +1105,30 @@ function diff(oldL,newL){
     const oi=holdsIp(o)?o.ipv4:"", ni=holdsIp(n)?n.ipv4:"";
     if(oi!==ni){ ch.push(ni?`IP <span class="hl">${esc(oi||"不配發")} → ${esc(ni)}</span>`:`IP ${esc(oi)} → 不配發`); if(ni) (isDL(n)?rst:power).push(nm(n)); }
     if(isDL(o)&&isDL(n)){ const a=o.cfg,b=n.cfg;
-      if(a.key!==b.key) ch.push(`位置 ${rowLabel(a.key)} → ${rowLabel(b.key)}`);
-      if(a.name!==b.name) ch.push(`排名稱 ${esc(a.name)} → ${esc(b.name)}`);
+      if(a.key!==b.key) ch.push(`第幾台 ${rowLabel(a.key)} → ${rowLabel(b.key)}`);
+      if(a.name!==b.name) ch.push(`DL-EN1 名稱 ${esc(a.name)} → ${esc(b.name)}`);
       if(a.probes.length!==b.probes.length) ch.push(`探頭數量 ${a.probes.length} → ${b.probes.length}`);
       const op=pmap(a), np=pmap(b);
       Object.keys(np).forEach(id=>{ const x=np[id], y=op[id];
         if(!y){ ch.push(`新增探頭 ${id}「${esc(x.description)}」`); return; }
         if(y.description!==x.description) ch.push(`探頭 ${id} 位置名稱「${esc(y.description)}」→「${esc(x.description)}」`);
-        if(tolOf(y)!==tolOf(x)) ch.push(`探頭 ID ${id}「${esc(x.description)}」允許誤差：${tolOf(y)} mm → ${tolOf(x)} mm`); });
+        if(upOf(y)!==upOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）上限：${limTxt(upOf(y))} → ${limTxt(upOf(x))}`);
+        if(loOf(y)!==loOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）下限：${limTxt(loOf(y))} → ${limTxt(loOf(x))}`);
+        if((y.enabled!==false)!==(x.enabled!==false)) ch.push(`${esc(devCall(b,x))}（ID ${id}）啟用：${y.enabled!==false?"是":"否"} → ${x.enabled!==false?"是":"否"}`);   // PDT-03
+        const pt=q=>posOf(q)?`${draftNames.rows[q.row-1]} ${draftNames.points[q.point-1]}`:"未定";   // POS-01
+        if(pt(y)!==pt(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）位置：${esc(pt(y))} → ${esc(pt(x))}`); });
       Object.keys(op).forEach(id=>{ if(!(id in np)){ ch.push(`移除探頭 ${id}「${esc(op[id].description)}」`); if(n.status==="active") removed.push(`${esc(a.name)} ${esc(op[id].description)}`);} }); }
     if(ch.length) items.push(`<b class="k-mod">變更</b>　${nm(n)}　${n.mac}：${ch.join("；")}`);
   });
+  const nl=[];   // 排與點名稱（POS-03）、板子版面（POS-10）
+  if(gridText(NAMES.grid)!==gridText(draftNames.grid)) nl.push(`板子版面：${gridText(NAMES.grid)} → ${gridText(draftNames.grid)}`);
+  ["rows","points"].forEach(k=>NAMES[k].forEach((v,i)=>{ if(v!==draftNames[k][i]) nl.push(`第 ${i+1} ${k==="rows"?"排":"點"}名稱：${esc(v)} → ${esc(draftNames[k][i])}`); }));
+  if(nl.length) items.push(`<b class="k-mod">變更</b>　板子版面與排點名稱：${nl.join("；")}`);
   return {items,rst,power,removed};
 }
 function applyDraft(){                  // 先寫入畫面上未寫入的結果（UPL-02），再寫資料庫 → 產生檔案 → 重啟 dnsmasq
   const {rst,power}=diff(DB,draft), wrote=serial;
-  DB=clone(draft); replaced=[]; dirty=false; clearTimeout(laterT); $("#edDlg").close();
+  DB=clone(draft); NAMES=clone(draftNames); replaced=[]; dirty=false; clearTimeout(laterT); $("#edDlg").close();
   rebuildMain();
   toast(`${wrote?`編號 ${wrote} 已寫入資料庫；`:""}已儲存設定並更新 BOOTP 對應${rst.length?`；請按住 ${rst.join("、")} 上的 RST 鍵 3 秒重設，才會取得新 IP`:""}${power.length?`；請將 ${power.join("、")} 重新連線或重新上電`:""}`);
 }
@@ -1015,14 +1166,32 @@ edBody.addEventListener("input",e=>{
   if(t.dataset.f==="ipv4"){ d.ipv4=t.value.trim(); delete ipCheck[d.mac]; renderIpNote(); touch(); refreshBad(); return; }
   if(t.dataset.f==="name"){ d.cfg.name=t.value; touch(); refreshBad(); return; }
   if(t.dataset.pf){ d.cfg.probes[+t.dataset.p].description=t.value; touch(); refreshBad(); }
+  if(t.dataset.nm){ draftNames[t.dataset.nm][+t.dataset.i]=t.value.trim(); touch();
+    document.querySelectorAll("[data-nm]").forEach(el=>el.classList.toggle("bad",nameErrs().some(e=>e.k===el.dataset.nm&&e.i===+el.dataset.i))); }
 });
 edBody.addEventListener("change",e=>{
   const t=e.target, d=cur();
   if(t.dataset.st&&d){ setStatus(d,t.value); return; }
+  if(t.id==="freeLim"){ freeLimits=t.checked; renderDetail(); return; }   // JDG-06 rev2：切換上下限輸入模式
   if(t.id==="showHid"){ showHidden=t.checked; renderEd(); return; }
   if(t.dataset.f==="ipv4"&&d){ probeIp(d); return; }
   if(t.dataset.f==="key"&&d){ d.cfg.key=t.value; touch(); renderDetail(); return; }
-  if(t.dataset.tol!=null&&d){ const p=d.cfg.probes[+t.dataset.tol], v=+t.value; if(v===DEF_TOL) delete p.tolerance; else p.tolerance=v; touch(); renderDetail(); return; }
+  if(t.dataset.grid){   // POS-10、POS-11：改版面；超出的探頭（各台）立即改為未定
+    draftNames.grid[t.dataset.grid]=+t.value; let n=0;
+    draft.forEach(x=>(x.cfg?.probes||[]).forEach(p=>{ if(outGrid(p,draftNames.grid)){ delete p.row; delete p.point; n++; } }));
+    if(n) toast(`版面改為 ${gridText(draftNames.grid)}：${n} 個探頭超出版面，已改為未定`);
+    touch(); renderDetail(); return; }
+  if(t.dataset.en!=null&&d){   // PDT-03：取消啟用 → 位置改為未定
+    const p=d.cfg.probes[+t.dataset.en]; if(t.checked) delete p.enabled; else { p.enabled=false; delete p.row; delete p.point; }
+    touch(); renderDetail(); return; }
+  if(t.dataset.pos&&d){   // POS-01、POS-02、POS-09
+    const p=d.cfg.probes[+t.dataset.p], v=t.value?+t.value:null, oldPt=p.point||null;
+    if(t.dataset.pos==="row"){ if(v) p.row=v; else delete p.row;
+      if(p.row&&p.point&&occupied(d,+t.dataset.p)[[p.row,p.point]]){ toast(`第 ${+t.dataset.p+1} 列（ID ${p.id}）${draftNames.rows[p.row-1]} ${draftNames.points[p.point-1]} 已被使用，請重新選擇點`); delete p.point; } }
+    else { if(v) p.point=v; else delete p.point; p.description=autoDesc(p.description,oldPt,v); }
+    touch(); renderDetail(); return; }
+  if(t.dataset.up!=null&&d){ const p=d.cfg.probes[+t.dataset.up]; delete p.tolerance; const v=clampLim(+t.value); if(v===DEF_UP) delete p.upper; else p.upper=v; touch(); renderDetail(); return; }
+  if(t.dataset.lo!=null&&d){ const p=d.cfg.probes[+t.dataset.lo]; delete p.tolerance; const v=clampLim(+t.value); if(v===DEF_LO) delete p.lower; else p.lower=v; touch(); renderDetail(); return; }
   if(t.id==="fCnt"&&d){ const n=Math.max(1,Math.min(15,Math.round(+t.value)||1)), P=d.cfg.probes;   // 數量即清單筆數（EDT-06）
     while(P.length<n) P.push({id:P.length+1,description:`探頭 ${P.length+1}`,zero:null,zeroed_at:null});
     P.length=n; selP=-1; touch(); renderDetail(); }
@@ -1052,7 +1221,7 @@ $("#edDlg").addEventListener("click",async e=>{
   if(a==="del"&&d){
     const last=d.status==="active"&&DB.filter(x=>x.status==="active").length===1;
     const txt=[`將從設備清單與資料庫刪除 ${devLabel(d)}（${d.mac}，${STATUS[d.status].label}）。`];
-    if(isDL(d)) txt.push("其設定（位置、排名稱、探頭）一併刪除。");
+    if(isDL(d)) txt.push("其設定（第幾台、名稱、探頭與探頭位置）一併刪除。");
     if(last) txt.push("⚠ 這是最後一台「DL-EN1 使用中」：刪除後主畫面沒有可量測的設備，無法量測。");
     txt.push("刪除後無法還原；之後若該設備再送出請求，會以「不明設備」重新出現。\n\n確定要刪除嗎？");
     if(await showMsg("刪除設備",txt.join("\n"),["取消","刪除"],"danger",0,1)!==1) return;
@@ -1061,10 +1230,20 @@ $("#edDlg").addEventListener("click",async e=>{
     selMac=(visible()[0]||{}).mac||null; renderEd(); toast(`已刪除 ${devLabel(d)}（${d.mac}）`); if(was) rebuildMain(); return; }
   if(a==="addp"&&d){ const P=d.cfg.probes; if(P.length>=15) return; P.push({id:P.length+1,description:`探頭 ${P.length+1}`,zero:null,zeroed_at:null});
     selP=P.length-1; touch(); renderDetail(); document.querySelector(`[data-pf="description"][data-p="${selP}"]`)?.focus(); return; }
-  if(a==="rmp"&&d&&selP>=0){   // 刪除後面的探頭 ID 往前遞補，遞補者變為未校準
-    const P=d.cfg.probes; P.splice(selP,1); P.forEach((p,i)=>{ if(p.id!==i+1){ p.id=i+1; p.zero=null; p.zeroed_at=null; } });
-    selP=-1; touch(); renderDetail(); return; }
+  if(a==="rmp"&&d&&selP===d.cfg.probes.length-1&&selP>=1){   // PDT-05：只能刪最後一支
+    d.cfg.probes.pop(); selP=-1; touch(); renderDetail(); return; }
+  if(a==="scan"&&d){   // PDT-01：示範——前排實際多接 1 台放大器但感測頭未接；其他台與設定相同
+    const P=d.cfg.probes, n=P.length+(d.cfg.key==="row-1"?1:0), st={};
+    for(let i=1;i<=n;i++) st[i]=(d.cfg.key==="row-1"&&i===n)?"感測頭錯誤（未接或故障）":"正常";
+    SCAN[d.mac]=st; const before=P.length;
+    while(P.length<n){ const id=P.length+1; const q={id,description:`探頭 ${id}`,zero:null,zeroed_at:null}; if(st[id]!=="正常") q.enabled=false; P.push(q); }
+    P.splice(Math.max(n,1));
+    const bad=Object.values(st).filter(v=>v!=="正常").length;
+    toast(`偵測到 ${n} 支探頭${bad?`（${bad} 支異常）`:""}${n===before?"，清單未變更":`，清單 ${before} → ${n} 支（儲存後生效）`}`);
+    if(n!==before) touch(); renderDetail(); return; }
   if(a==="cal"&&d){ calibrate(+b.dataset.p); return; }
+  if(a==="nmtoggle"){ namesOpen=!namesOpen; renderDetail(); return; }
+  if(a==="nmdef"){ draftNames[b.dataset.k]=[...DEF_NAMES[b.dataset.k]]; touch(); renderDetail(); return; }
   if(a==="repl"){ replMode=true; renderDetail(); return; }
   if(a==="replno"){ replMode=false; renderDetail(); return; }
   if(a==="replok"&&d){ const nw=draft.find(x=>x.mac===$("#replSel").value); if(nw) doReplace(d,nw); return; }
@@ -1147,6 +1326,7 @@ function plUpdate(){ const errs=[];
   Object.keys(PL_DEF).forEach(k=>{ const e=$(`#pl_${k}`), [,err]=plCheck(k,e.value); e.classList.toggle("bad",!!err); if(err) errs.push(err); });
   $("#plErr").textContent=errs.join("、"); $("#plSave").disabled=errs.length>0; return errs; }
 function openPlate(){ if(busy||detecting) return;
+  $("#plNote").textContent=`只影響 3D 繪圖，不影響判定。探頭在板子下方，位置為設備設定中每個探頭的第幾排、第幾點；板子版面目前為 ${gridText(NAMES.grid)}（在設備設定修改）。`;
   $("#plGrid").innerHTML=Object.keys(PL_DEF).map(k=>{ const [lo,hi]=PL_LIM[k];
     return `<label for="pl_${k}">${PL_LABEL[k]}</label><input id="pl_${k}" inputmode="decimal" autocomplete="off" value="${fmm(PLATE[k])}" placeholder="${fmm(lo)}～${fmm(hi)}">
       <span class="u">mm（${fmm(lo)}～${fmm(hi)}，${PL_HINT[k]}）</span>`; }).join("");
@@ -1159,26 +1339,29 @@ $("#plSave").addEventListener("click",()=>{ if(plUpdate().length) return;
   plSave(p); plRefreshBtn(); $("#plDlg").close(); toast(`已設定${plateText(p)}`); });
 $("#plDlg").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("#plSave").click(); } });
 
-/* ================= 3D 繪圖（P3D-01～P3D-09；與 App 的 flatness/plate3d 同一套計算與常數） ================= */
+/* ================= 變形曲面示意圖（P3D；5.11，2026-11-18 PO 改為俯視 jet 熱力圖；與 App 的 flatness/plate3d 同一套計算與配色） ================= */
 let lastData=null, lastJudg="";
-const STANDARD="standard", DETRENDED="detrended", MODE_NAME={standard:"相對標準件",detrended:"扣除傾斜"};
-const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9;
-const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如只有 1 排），至少需要 2 排探頭。";
-const EL3=15, AZ0=-45, STEP_DEG=30, STEP_MS=700, SHADE3={lo:140,hi:228,relief:6,light:[-0.55,0.75,0.6]}, FADE_GRAY=184, FADE_KEEP=0.4;
+const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9, STEP_DEG=30;
+const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。";
 
-/* P3D-05：前後依第 n 排（R 為使用中與維修中最大的排號），左右依探頭 ID：x = 長 ×(序 − 0.5)/N，y = 寬 ×(n − 0.5)/R */
-function probeXY(){ const S=shown(), R=Math.max(0,...S.map(d=>rowNo(d.cfg.key)||0)), out={};
-  S.forEach(d=>{ if(d.status!=="active"||!R) return; const n=rowNo(d.cfg.key), ids=d.cfg.probes.map(p=>p.id).sort((a,b)=>a-b);
-    ids.forEach((id,i)=>out[`${d.cfg.key}#${id}`]=[PLATE.length*(i+.5)/ids.length, PLATE.width*(n-.5)/R]); });
+/* POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點、首尾落板緣：x = 長 ×（點 − 1）／（P − 1）、y = 寬 ×（排 − 1）／（R − 1）（P 或 R 為 1 時取 0.5） */
+function probeXY(){ const out={}, R=NAMES.grid.rows, P=NAMES.grid.points;
+  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[
+    P>1?PLATE.length*(p.point-1)/(P-1):PLATE.length*0.5, R>1?PLATE.width*(p.row-1)/(R-1):PLATE.width*0.5]; }));   // POS-13
   return out; }
-/* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據 */
-function snapshot3d(){ const xy=probeXY(), pts=[];
-  live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const pos=xy[`${d.cfg.key}#${p.id}`]; if(!pos) return;
-    const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i], s=stdOf(p), v=e||m==null?null:m;
-    pts.push({key:`${rowNo(d.cfg.key)}-${p.id}`,name:`${d.cfg.name} ${p.description}`,x:pos[0],y:pos[1],v,tol:s.hi,st:v==null?"err":judge(s,v)}); }));
-  return pts; }
+/* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據；位置未定的探頭另列（POS-07） */
+function snapshot3d(){ const xy=probeXY(), pts=[], unplaced=[];
+  const cand=[]; live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i];
+    if(!e&&m!=null) cand.push(m); }));
+  const b=bestOffset(cand);    // JDG-07：與主畫面同一組最佳點，使判定一致
+  live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const pos=xy[`${d.cfg.key}#${p.id}`];
+    if(!pos){ unplaced.push(dispName(d.cfg,p)); return; }
+    const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i], s=stdOf(p), v=e||m==null?null:m, cv=v==null?null:(b==null?v:v-b);
+    pts.push({key:`${rowNo(d.cfg.key)}-${p.id}`,name:dispName(d.cfg,p),x:pos[0],y:pos[1],v,tol:s.hi,st:v==null?"err":judge(s,cv)}); }));
+  pts.unplaced=unplaced; return pts; }
 /* P3D-02、P3D-03：有效點不足或同一直線 → 回傳警告文字 */
 function check3d(pts){ const ok=pts.filter(p=>p.v!=null);
+  if(pts.unplaced?.length) return `無法繪製 3D：有 ${pts.unplaced.length} 個探頭未設定位置（第幾排、第幾點）。\n${pts.unplaced.join("、")}\n請工程人員在設備設定設定探頭位置`;
   if(ok.length<MIN3) return `無法繪製 3D：本次只有 ${ok.length} 個有效量測點，至少需要 ${MIN3} 個。\n`+
     (pts.length<MIN3?`（目前設定只有 ${pts.length} 個探頭）`:`（設定 ${pts.length} 個探頭；無數據：${pts.filter(p=>p.v==null).map(p=>p.name).join("、")}）`);
   return spreadMinor(ok.map(p=>[p.x,p.y]))<LINE_MM?LINE_MSG:null; }
@@ -1197,136 +1380,109 @@ function hull(P){ const pts=[...new Map(P.map(p=>[p.join(","),p])).values()].sor
   return lo.slice(0,-1).concat(up.slice(0,-1)); }
 function inHull(H,p,tol){ if(H.length<3) return false;
   for(let i=0;i<H.length;i++){ const a=H[i], b=H[(i+1)%H.length]; if((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])<-tol) return false; } return true; }
-/* 最小平方平面 h = a + b·X + c·Y（X、Y 為公尺） */
-function fitPlane(P){ const s=[[0,0,0],[0,0,0],[0,0,0]], t=[0,0,0];
-  P.forEach(([x,y,h])=>{ const r=[1,x/1000,y/1000]; for(let i=0;i<3;i++){ t[i]+=r[i]*h; for(let j=0;j<3;j++) s[i][j]+=r[i]*r[j]; } }); return solve(s,t); }
 /* 薄板樣條：只用來畫點與點之間的形狀，不得用於判定 */
 function tps(P){ const n=P.length, N=n+3, A=Array.from({length:N},()=>new Array(N).fill(0)), b=new Array(N).fill(0), U=r=>r<1e-12?0:r*r*Math.log(r);
   P.forEach((p,i)=>{ P.forEach((q,j)=>A[i][j]=U(Math.hypot(p[0]-q[0],p[1]-q[1]))); A[i][n]=A[n][i]=1; A[i][n+1]=A[n+1][i]=p[0]; A[i][n+2]=A[n+2][i]=p[1]; b[i]=p[2]; });
   const w=solve(A,b); if(!w) return null;
   return (x,y)=>{ let z=w[n]+w[n+1]*x+w[n+2]*y; P.forEach((p,i)=>z+=w[i]*U(Math.hypot(x-p[0],y-p[1]))); return z; }; }
 const gridSize=(L,W)=>L>=W?[GRID_LONG,Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*W/L)+1)]:[Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*L/W)+1),GRID_LONG];
-/* P3D-05～P3D-07：探頭在下方，高度 h = −讀值；相對標準件 z = h，扣除傾斜 z = h − 平面 */
-function build3d(pts,mode){
-  const ok=pts.filter(p=>p.v!=null), L=PLATE.length, W=PLATE.width, h={}; ok.forEach(p=>h[p.key]=-p.v);
-  let z=h;
-  if(mode===DETRENDED){ const c=fitPlane(ok.map(p=>[p.x,p.y,h[p.key]])); if(!c) throw LINE_MSG;
-    z={}; ok.forEach(p=>z[p.key]=h[p.key]-(c[0]+c[1]*p.x/1000+c[2]*p.y/1000)); }
+/* 相對高度曲面：探頭在下方，高度 z = −讀值；以薄板樣條內插成網格，供俯視熱力圖連續上色（只畫形狀，不用於判定） */
+function build3d(pts){
+  const ok=pts.filter(p=>p.v!=null), L=PLATE.length, W=PLATE.width, z={}; ok.forEach(p=>z[p.key]=-p.v);
   const unit=Math.max(L,W), f=tps(ok.map(p=>[p.x/unit,p.y/unit,z[p.key]])); if(!f) throw LINE_MSG;
   const [nx,ny]=gridSize(L,W), H=hull(ok.map(p=>[p.x,p.y])), tol=1e-9*unit*unit, g=[], ins=[];
   for(let j=0;j<ny;j++){ const y=W*j/(ny-1), gr=[], ir=[];
     for(let i=0;i<nx;i++){ const x=L*i/(nx-1); gr.push(f(x/unit,y/unit)); ir.push(inHull(H,[x,y],tol)); } g.push(gr); ins.push(ir); }
   const keys=Object.keys(z), hiK=keys.reduce((a,k)=>z[k]>z[a]?k:a), loK=keys.reduce((a,k)=>z[k]<z[a]?k:a);
-  const lim=Math.max(...ok.map(p=>p.tol),...g.flat().map(Math.abs),...keys.map(k=>Math.abs(z[k]))), tv=0.05*unit;
-  return {pts,mode,L,W,T:PLATE.height,z,g,ins,nx,ny,hi:[hiK,z[hiK]],lo:[loK,z[loK]],spread:z[hiK]-z[loK],lim,tv,ex:0.4*tv/lim,
+  return {pts,L,W,T:PLATE.height,z,g,ins,nx,ny,hi:[hiK,z[hiK]],lo:[loK,z[loK]],spread:z[hiK]-z[loK],
           by:Object.fromEntries(pts.map(p=>[p.key,p])),ok}; }
-/* 標籤數值：相對標準件為讀值（與主畫面相同），扣除傾斜為殘差（表面向上為正） */
-const labelValue=(m,k)=>{ const p=m.by[k]; return p.v==null?null:m.mode===STANDARD?p.v:m.z[k]; };
-const sgn3=v=>`${v>=0?"+":""}${v.toFixed(3)}`;
+/* jet 配色（與 App flatness/plate3d/renderer._jet 相同）：0→藍、0.5→綠、1→紅 */
+function jet(t){ t=Math.max(0,Math.min(1,t));
+  const r=Math.max(0,Math.min(1,1.5-Math.abs(4*t-3))), g=Math.max(0,Math.min(1,1.5-Math.abs(4*t-2))), b=Math.max(0,Math.min(1,1.5-Math.abs(4*t-1)));
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
+const jetCss=()=>{ const s=[]; for(let i=0;i<=10;i++){ const [r,g,b]=jet(i/10); s.push(`rgb(${r},${g},${b}) ${i*10}%`); } return `linear-gradient(90deg,${s.join(",")})`; };
 
-/* 繪製：正交投影、畫家演算法；越高越白、光從左上方；量測點範圍外（凸包外）往中間灰拉近（推估） */
+/* 俯視 jet 熱力圖（P3D-06～P3D-08）：板子依長寬比例、平面內傾斜（旋轉）、*0.98 填滿；相對高度（最低=0）連續漸層，探點連號貼邊、標最高／最低與尺寸 */
 function draw3d(){
-  const cv=$("#v3cv"), m=V3.models?.[V3.mode]; if(!cv||!m) return;
+  const cv=$("#v3cv"), m=V3.model; if(!cv||!m) return;
   const dpr=window.devicePixelRatio||1, w=cv.clientWidth, hh=cv.clientHeight; if(!w||!hh) return;
   cv.width=Math.round(w*dpr); cv.height=Math.round(hh*dpr);
   const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,hh);
-  const css=getComputedStyle(document.documentElement), C3=k=>css.getPropertyValue(k).trim(), TXT=C3("--txt"), NUM=C3("--num");
-  const {L,W,tv,ex,g,nx,ny}=m, hmax=0.4*tv, az=(AZ0+V3.rot)*Math.PI/180, el=EL3*Math.PI/180;
-  const v=[Math.cos(el)*Math.cos(az),Math.cos(el)*Math.sin(az),Math.sin(el)], rt=[-Math.sin(az),Math.cos(az)];
-  const up=[-Math.sin(el)*Math.cos(az),-Math.sin(el)*Math.sin(az),Math.cos(el)], lv=SHADE3.light;
-  let lw=[lv[0]*rt[0]+lv[1]*up[0]+lv[2]*v[0], lv[0]*rt[1]+lv[1]*up[1]+lv[2]*v[1], lv[1]*up[2]+lv[2]*v[2]]; const nl=Math.hypot(...lw); lw=lw.map(c=>c/nl);
-  const diag=Math.hypot(L,W), sc=Math.min(w*0.92/diag, hh*0.84/(diag*Math.sin(el)+(tv+2*hmax)*Math.cos(el))), cx=w/2, cy=hh/2;
-  const pr=(x,y,zz)=>{ const X=x-L/2,Y=y-W/2,Z=zz+tv/2; return [cx+sc*(X*rt[0]+Y*rt[1]), cy-sc*(X*up[0]+Y*up[1]+Z*up[2]), X*v[0]+Y*v[1]+Z*v[2]]; };
-  const gx=i=>L*i/(nx-1), gy=j=>W*j/(ny-1), Z=(i,j)=>g[j][i]*ex, top=[];
-  for(let j=0;j<ny;j++){ top.push([]); for(let i=0;i<nx;i++) top[j].push(pr(gx(i),gy(j),Z(i,j))); }
-  const dx=L/(nx-1), dy=W/(ny-1), polys=[];
-  for(let j=0;j<ny-1;j++) for(let i=0;i<nx-1;i++){
-    const q=[top[j][i],top[j][i+1],top[j+1][i+1],top[j+1][i]], r=(g[j][i]+g[j][i+1]+g[j+1][i+1]+g[j+1][i])/4;
-    const base=SHADE3.lo+(SHADE3.hi-SHADE3.lo)*Math.max(0,Math.min(1,(r/m.lim+1)/2));
-    const dzx=(Z(i+1,j)+Z(i+1,j+1)-Z(i,j)-Z(i,j+1))/2*SHADE3.relief, dzy=(Z(i,j+1)+Z(i+1,j+1)-Z(i,j)-Z(i+1,j))/2*SHADE3.relief;
-    const n=[-dzx*dy,-dzy*dx,dx*dy], lit=(n[0]*lw[0]+n[1]*lw[1]+n[2]*lw[2])/Math.hypot(...n), k=Math.max(0.5,Math.min(1.14,1+1.8*(lit-lw[2])));
-    let gray=Math.min(255,base*k); const I=m.ins;
-    if(!(I[j][i]||I[j][i+1]||I[j+1][i+1]||I[j+1][i])) gray=FADE_GRAY+FADE_KEEP*(gray-FADE_GRAY);
-    const gv=Math.round(gray); polys.push([(q[0][2]+q[2][2])/2,`rgb(${gv},${gv},${gv})`,q]); }
-  const seq=n=>[...Array(n).keys()];
-  const faces=[[[0,-1],seq(nx).map(i=>[i,0])],[[0,1],seq(nx).map(i=>[i,ny-1])],[[-1,0],seq(ny).map(j=>[0,j])],[[1,0],seq(ny).map(j=>[nx-1,j])]];
-  const vis=faces.filter(([fn])=>fn[0]*v[0]+fn[1]*v[1]>1e-6);
-  vis.forEach(([fn,edge])=>{ const s=0.45+0.35*Math.min(1,(fn[0]*v[0]+fn[1]*v[1])/Math.cos(el));
-    const col=`rgb(${[0.5*s+.12,0.5*s+.12,0.5*s+.14].map(c=>Math.round(Math.min(1,c)*255))})`;
-    for(let t=0;t<edge.length-1;t++){ const [i1,j1]=edge[t],[i2,j2]=edge[t+1];
-      const q=[top[j1][i1],top[j2][i2],pr(gx(i2),gy(j2),Z(i2,j2)-tv),pr(gx(i1),gy(j1),Z(i1,j1)-tv)]; polys.push([(q[0][2]+q[2][2])/2-1e-3,col,q]); } });
-  polys.sort((a,b)=>a[0]-b[0]);
-  ctx.lineJoin="round"; ctx.lineWidth=0.7;
-  for(const [,col,q] of polys){ ctx.beginPath(); q.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); ctx.fillStyle=col; ctx.strokeStyle=col; ctx.fill(); ctx.stroke(); }
-  ctx.strokeStyle="rgba(0,0,0,.75)"; ctx.lineWidth=1.1;
-  const line=(edge,dz)=>{ ctx.beginPath(); edge.forEach(([i,j],k)=>{ const [x,y]=pr(gx(i),gy(j),Z(i,j)+dz); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
-  faces.forEach(([,e])=>line(e,0));
-  vis.forEach(([,e])=>{ line(e,-tv); [e[0],e[e.length-1]].forEach(([i,j])=>{ const a=top[j][i], b=pr(gx(i),gy(j),Z(i,j)-tv);
-    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); }); });
-  /* 尺寸文字（板子尺寸設定） */
-  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink"); ctx.textAlign="center"; ctx.textBaseline="middle";
-  vis.forEach(([fn,e])=>{ const [i,j]=e[Math.floor(e.length/2)], [x,y]=pr(gx(i)+fn[0]*W*.12,gy(j)+fn[1]*W*.12,-tv);
-    ctx.fillText(fn[1]?`長 ${fmm(L)} mm`:`寬 ${fmm(W)} mm`,x,y+8); });
-  /* 量測點與標籤：依深度由近到遠放置（避讓），再由遠到近畫 */
-  const nameF=`700 13px ${TXT}`, valF=`700 13px ${NUM}`, labs=m.pts.map(p=>{ const zz=m.z[p.key], [x,y,d]=pr(p.x,p.y,zz==null?0:zz*ex), lv2=labelValue(m,p.key);
-    return {p,x,y,d,t1:p.name,t2:lv2==null?"無數據":sgn3(lv2),bad:p.st==="hi"||p.st==="lo",miss:zz==null}; });
-  const placed=[], hit=r=>placed.some(o=>r.x-2<o.x+o.w&&r.x+r.w+2>o.x&&r.y-2<o.y+o.h&&r.y+r.h+2>o.y);
-  [...labs].sort((a,b)=>b.d-a.d).forEach(o=>{ ctx.font=nameF; const w1=ctx.measureText(o.t1).width; ctx.font=valF;
-    const bw=Math.max(w1,ctx.measureText(o.t2).width)+10, bh=34, cand=[[-bw/2,-bh-10],[-bw/2,10],[-bw-10,-bh/2],[10,-bh/2],[-bw/2,-2*bh-14],[-bw/2,bh+14]];
-    let box=null; for(const [ox,oy] of cand){ const r={x:o.x+ox,y:o.y+oy,w:bw,h:bh}; if(!hit(r)){ box=r; break; } }
-    o.box=box||{x:o.x+cand[0][0],y:o.y+cand[0][1],w:bw,h:bh}; placed.push(o.box); });
-  labs.sort((a,b)=>a.d-b.d).forEach(({x,y,box:b,t1,t2,bad,miss})=>{
-    ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,y);
-    ctx.lineTo(Math.max(b.x,Math.min(x,b.x+b.w)),Math.max(b.y,Math.min(y,b.y+b.h))); ctx.stroke();
-    if(miss){ ctx.strokeStyle=C3("--ng"); ctx.lineWidth=3; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(x-6,y-6); ctx.lineTo(x+6,y+6); ctx.moveTo(x+6,y-6); ctx.lineTo(x-6,y+6); ctx.stroke(); ctx.lineCap="butt"; }
-    else { ctx.beginPath(); ctx.arc(x,y,4.5,0,2*Math.PI); ctx.fillStyle="#FF7A00"; ctx.fill(); ctx.lineWidth=1.2; ctx.strokeStyle="#111"; ctx.stroke(); }
-    const red=bad||miss; ctx.fillStyle=red?"rgba(200,50,43,.94)":"rgba(255,255,255,.9)"; ctx.beginPath();
-    ctx.roundRect?ctx.roundRect(b.x,b.y,b.w,b.h,4):ctx.rect(b.x,b.y,b.w,b.h); ctx.fill();
-    ctx.fillStyle=red?"#FFFFFF":"#1C2326"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.font=nameF; ctx.fillText(t1,b.x+b.w/2,b.y+9.5); ctx.font=valF; ctx.fillText(t2,b.x+b.w/2,b.y+24.5); });
-  /* 左下角：板厚（示意）與放大倍數 */
-  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink-2"); ctx.textAlign="left"; ctx.textBaseline="middle";
-  ctx.fillText(`板厚 ${fmm(m.T)} mm（示意，不按比例）　高度放大約 ×${Math.round(ex).toLocaleString()} 倍　標籤：${m.mode===STANDARD?"讀值（相對標準件）":"殘差（扣除傾斜）"} mm`,10,hh-16);
+  const css=getComputedStyle(document.documentElement), C3=k=>css.getPropertyValue(k).trim();
+  const TXT=C3("--txt"), ink=C3("--ink"), ng=C3("--ng"), focus=C3("--focus");
+  const {L,W,g,ins,nx,ny,pts}=m, zmin=m.lo[1], spread=m.spread||1e-9, rel=z=>z-zmin;
+  const numof=new Map(pts.map((p,i)=>[p.key,i+1])), hiK=m.hi[0], loK=m.lo[0];
+  /* 抬頭（三列：尺寸與垂直放大、最低、最高） */
+  const headH=3*20+14;
+  ctx.fillStyle=ink; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font=`500 14px ${TXT}`;
+  [`寬 ${fmm(W)} × 長 ${fmm(L)} × 厚 ${fmm(m.T)} mm　垂直放大 5 倍`,
+   `最低：${m.by[loK].name} = ${rel(m.lo[1]).toFixed(4)} mm`,
+   `最高：${m.by[hiK].name} = ${rel(m.hi[1]).toFixed(4)} mm`].forEach((t,i)=>ctx.fillText(t,24,18+i*20));
+  /* 板面投影（平面內旋轉；仿射，無透視） */
+  const ang=V3.rot*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang);
+  const rotp=(x,y)=>{ const X=x-L/2, Y=y-W/2; return [X*ca-Y*sa, X*sa+Y*ca]; };
+  const corners=[rotp(0,0),rotp(L,0),rotp(L,W),rotp(0,W)], xs=corners.map(c=>c[0]), ys=corners.map(c=>c[1]);
+  const bw=(Math.max(...xs)-Math.min(...xs))||1, bh=(Math.max(...ys)-Math.min(...ys))||1;
+  const areaX=8, areaY=headH, areaW=w-16, areaH=Math.max(1,hh-headH-12), sc=Math.min(areaW/bw,areaH/bh)*0.98;
+  const ccx=areaX+areaW/2, ccy=areaY+areaH/2, scr=(x,y)=>{ const [rx,ry]=rotp(x,y); return [ccx+sc*rx, ccy+sc*ry]; };
+  /* 網格各點上色到離屏小圖，再雙線性平滑放大貼到板面（連續漸層、不馬賽克）；推估範圍外往白拉近 */
+  const off=document.createElement("canvas"); off.width=nx; off.height=ny;
+  const octx=off.getContext("2d"), img=octx.createImageData(nx,ny);
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ let [r,gg,b]=jet(rel(g[j][i])/spread);
+    if(!ins[j][i]){ r=(r+235)>>1; gg=(gg+235)>>1; b=(b+235)>>1; }
+    const o=(j*nx+i)*4; img.data[o]=r; img.data[o+1]=gg; img.data[o+2]=b; img.data[o+3]=255; }
+  octx.putImageData(img,0,0);
+  /* 像素中心 (0.5,0.5)…(nx-0.5,ny-0.5) 對應板面四角的仿射轉換 */
+  const s0=scr(0,0), a=sc*ca*L/(nx-1), b2=sc*sa*L/(nx-1), c2=-sc*sa*W/(ny-1), d2=sc*ca*W/(ny-1);
+  const e2=s0[0]-0.5*(a+c2), f2=s0[1]-0.5*(b2+d2), quad=[scr(0,0),scr(L,0),scr(L,W),scr(0,W)];
+  ctx.save(); ctx.beginPath(); quad.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.clip();
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high"; ctx.transform(a,b2,c2,d2,e2,f2); ctx.drawImage(off,0,0); ctx.restore();
+  /* 板框 */
+  ctx.strokeStyle="rgba(0,0,0,.47)"; ctx.lineWidth=1.2; ctx.beginPath();
+  quad.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
+  /* 尺寸文字（長、寬） */
+  ctx.fillStyle=ink; ctx.font=`500 13px ${TXT}`; ctx.textAlign="center"; ctx.textBaseline="middle";
+  const mb=scr(L/2,W); ctx.fillText(`寬 ${fmm(W)} mm`,mb[0],mb[1]+13);
+  const mr=scr(L,W/2); ctx.textAlign="left"; ctx.fillText(`長 ${fmm(L)} mm`,mr[0]+8,mr[1]);
+  /* 探點（連號 1～N）＋白底編號；最高點白圈標「最高」、最低點標「最低」；無數據為紅 ✕ */
+  pts.forEach(p=>{ const [sx,sy]=scr(p.x,p.y), num=String(numof.get(p.key)), boxY=sy-21;
+    if(p.v==null){ ctx.strokeStyle=ng; ctx.lineWidth=3; ctx.lineCap="round"; ctx.beginPath();
+      ctx.moveTo(sx-5,sy-5); ctx.lineTo(sx+5,sy+5); ctx.moveTo(sx+5,sy-5); ctx.lineTo(sx-5,sy+5); ctx.stroke(); ctx.lineCap="butt"; }
+    else { ctx.fillStyle="rgb(25,25,25)"; ctx.beginPath(); ctx.arc(sx,sy,3.5,0,2*Math.PI); ctx.fill(); }
+    ctx.fillStyle="rgba(255,255,255,.84)"; ctx.beginPath();
+    ctx.roundRect?ctx.roundRect(sx-11,boxY,22,15,3):ctx.rect(sx-11,boxY,22,15); ctx.fill();
+    ctx.fillStyle=ink; ctx.font=`700 12px ${TXT}`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(num,sx,boxY+8);
+    if(p.key===hiK){ ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx,sy,7,0,2*Math.PI); ctx.stroke();
+      ctx.fillStyle=ng; ctx.font=`700 12px ${TXT}`; ctx.fillText("最高",sx,sy+14); }
+    if(p.key===loK){ ctx.fillStyle=focus; ctx.font=`700 12px ${TXT}`; ctx.fillText("最低",sx,sy+14); } });
   $("#v3ang").textContent=`旋轉 ${V3.rot}°`;
 }
-function side3d(){ const m=V3.models[V3.mode], std=m.mode===STANDARD;
-  const hl=([k])=>`<div>${k===m.hi[0]?"最高點":"最低點"}　<b>${esc(m.by[k].name)}</b>　<span class="n">${sgn3(labelValue(m,k))}</span></div>`;
-  const sideW={hi:"偏高（表面較低）",lo:"偏低（表面較高）"};
-  const out=m.pts.filter(p=>sideW[p.st]&&p.v!=null).map(p=>`${p.name} ${sideW[p.st]}`), miss=m.pts.filter(p=>p.v==null).map(p=>p.name);
-  const notes=[`使用 ${m.ok.length}/${m.pts.length} 點。`,`高度放大約 ×${Math.round(m.ex).toLocaleString()} 倍，厚度為示意。`,
-    "點與點之間的形狀是推估；淡色區為量測點範圍外的推估，判定以實測點為準。","探頭在板子下方，已換算成由上往下看的高度。"];
-  if(!std) notes.splice(1,0,"已扣除整片傾斜與高低。");
-  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">${std?"讀值差（最高 − 最低）":"平面度（最小平方）"}</span>
-      <span class="big">${m.spread.toFixed(3)}<small> mm</small></span>${std?"":`<span class="s">允許值：未定（TBD-07）；只供檢視，不用於判定</span>`}</div>
-    <div class="v3-card">${hl(m.hi)}${hl(m.lo)}<span class="s">${std?"單位 mm；數值為讀值，以標準件為 0（探頭在下方，讀值越小表面越高）":"單位 mm；相對於擬合平面，表面向上為正"}</span></div>
-    <div class="v3-card v3-leg"><span class="s">越高越白、越低越灰；光從左上方照射</span><div class="bar"></div>
-      <div class="tk"><span>${(-m.lim).toFixed(3)}</span><span>0</span><span>+${m.lim.toFixed(3)}</span></div></div>
-    ${out.length||miss.length?`<div class="v3-card red">${out.length?`<span class="ng"><b>超出允收：</b>${esc(out.join("、"))}</span>`:""}
-      ${miss.length?`<span class="ng"><b>無數據（不參與繪圖）：</b>${esc(miss.join("、"))}</span>`:""}
-      <span class="s">探頭在下方：讀值偏高＝表面較低，讀值偏低＝表面較高</span></div>`:""}
-    <ul class="v3-note">${notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`; }
-const V3={models:null,mode:STANDARD,rot:0,timer:null};
-function v3Mode(mode){ V3.mode=mode; document.querySelectorAll(".v3m").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===mode)); side3d(); draw3d(); }
-function v3Play(on){ clearInterval(V3.timer); V3.timer=on?setInterval(()=>{ V3.rot=(V3.rot+STEP_DEG)%360; draw3d(); },STEP_MS):null;
-  $("#v3play").textContent=on?"❚❚ 暫停":"▶ 播放"; }
-function v3Turn(d){ v3Play(false); V3.rot=(V3.rot+d+360)%360; draw3d(); }
+/* 側欄：點位相對高度逐點清單（偏高紅／偏低藍／合格）＋ jet 色條（相對高度 mm，0..最大） */
+function side3d(){ const m=V3.model, zmin=m.lo[1], rel=z=>z-zmin, spread=m.spread||1e-9;
+  const numof=new Map(m.pts.map((p,i)=>[p.key,i+1])), word={hi:"偏高",lo:"偏低",ok:"合格"};
+  const rows=m.pts.map(p=>{ const n=numof.get(p.key);
+    if(p.v==null) return `<li class="miss">${n}：無數據</li>`;
+    const cls=p.st==="hi"?"hi":p.st==="lo"?"lo":"";
+    return `<li class="${cls}">${n}：${rel(m.z[p.key]).toFixed(4)} ${word[p.st]||""}</li>`; }).join("");
+  const ticks=[0,1,2,3,4,5].map(i=>`<span>${(i/5*spread).toFixed(4)}</span>`).join("");
+  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">點位相對高度 (mm)</span><ul class="v3-list">${rows}</ul></div>
+    <div class="v3-card v3-leg"><span class="s">相對高度 (mm)</span><div class="bar" style="background:${jetCss()}"></div>
+      <div class="tk">${ticks}</div></div>`; }
+const V3={model:null,rot:20};   // 預設平面內傾斜 20°，讓橫向板子填滿直式畫面、探點散開（5.11 行為）
+function v3Turn(d){ V3.rot=(V3.rot+d+360)%360; draw3d(); }
 function upd3d(){ const b=$("#v3dBtn"), on=!!lastData&&!busy&&!detecting; b.disabled=!on;
-  b.title=on?"以立體圖檢視這一片的表面高低":"量測完成後可檢視這一片的 3D 圖"; }
+  b.title=on?"以熱力圖檢視這一片的表面高低":"量測完成後可檢視這一片的變形曲面示意圖"; }
 async function open3d(){ if(!lastData||busy||detecting) return;
   const pts=snapshot3d(), why=check3d(pts);
-  let models=null; if(!why){ try{ models={[STANDARD]:build3d(pts,STANDARD),[DETRENDED]:build3d(pts,DETRENDED)}; }catch(e){ return showMsg("3D 繪圖",String(e),["關閉"],"warn"); } }
+  let model=null; if(!why){ try{ model=build3d(pts); }catch(e){ return showMsg("3D 繪圖",String(e),["關閉"],"warn"); } }
   if(why) return showMsg("3D 繪圖",why,["關閉"],"warn");
-  V3.models=models; V3.rot=0;
+  V3.model=model; V3.rot=20;
   $("#v3sn").textContent=serial||""; const rs=$("#v3rs"); rs.className="v3-rs "+lastJudg; rs.textContent={PASS:"合格",FAIL:"不合格",ERROR:"設備異常"}[lastJudg];
-  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ v3Mode(STANDARD); v3Play(true); }); }
+  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ side3d(); draw3d(); }); }
 $("#v3dBtn").addEventListener("click",open3d);
-document.querySelectorAll(".v3m").forEach(b=>b.addEventListener("click",()=>v3Mode(b.dataset.mode)));
 $("#v3prev").addEventListener("click",()=>v3Turn(-STEP_DEG)); $("#v3next").addEventListener("click",()=>v3Turn(STEP_DEG));
-$("#v3play").addEventListener("click",()=>v3Play(!V3.timer));
 [$("#v3x"),$("#v3done")].forEach(b=>b.addEventListener("click",()=>$("#v3Dlg").close()));
-$("#v3Dlg").addEventListener("close",()=>v3Play(false));
-$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG);
-  else if(e.key===" "){ e.preventDefault(); v3Play(!V3.timer); } else if(e.key==="m"||e.key==="M") v3Mode(V3.mode===STANDARD?DETRENDED:STANDARD); });
+$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG); });
 window.addEventListener("resize",()=>{ if($("#v3Dlg").open) draw3d(); });
 
 /* ================= 其他按鍵 ================= */
