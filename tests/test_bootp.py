@@ -51,15 +51,16 @@ class ValidateTest(unittest.TestCase):
             with self.assertRaises(bootp.DefinitionError, msg=bad):
                 bootp.validate(defn(bad), NET)
 
-    def test_limit_fields(self):  # JDG-06：上限／下限
+    def test_limit_fields(self):  # JDG-06 rev2：上限／下限，範圍 −50～50、0.1 倍數
         def defn(**kw):
             return {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
                 {"id": 1, "description": "左", **kw}])]}
-        for ok in (dict(upper=0.5, lower=-0.1), dict(upper=0.3 and 0.2), dict(lower=-2),
-                   dict(upper=0.3 and 0.5, lower=0.1), dict(upper=0.0, lower=0.0)):
+        for ok in (dict(upper=0.5, lower=-0.1), dict(upper=0.3), dict(lower=-2), dict(upper=0.3, lower=0.1),
+                   dict(upper=0.0, lower=0.0), dict(upper=50, lower=-50), dict(upper=12.7)):  # 0.3、12.7 等 0.1 倍數皆可
             self.assertEqual(len(bootp.validate(defn(**ok), NET)), 1, ok)
-        for bad in (dict(upper=0.3), dict(lower=0.3), dict(upper="5"), dict(upper=True),
-                    dict(upper=0.2, lower=0.5), dict(upper=0.5, tolerance=0.5)):  # 0.3 非選項、下限>上限、併用 tolerance
+        for bad in (dict(upper=51), dict(lower=-50.1), dict(upper=0.15), dict(lower=0.25),  # 超範圍、比 0.1 細
+                    dict(upper="5"), dict(upper=True), dict(upper=0.2, lower=0.5),          # 型別、下限>上限
+                    dict(upper=0.5, tolerance=0.5)):                                        # 併用 tolerance
             with self.assertRaises(bootp.DefinitionError, msg=bad):
                 bootp.validate(defn(**bad), NET)
 

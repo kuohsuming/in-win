@@ -514,6 +514,7 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
 ZERO_FIELDS = ("zero_offset", "zeroed_at")
 TOLERANCES = bootp.TOLERANCES          # 舊版對稱允許誤差（mm）的選項（JDG-06，向下相容）
 LIMIT_OPTIONS = bootp.LIMIT_OPTIONS    # 上限／下限（mm）的選項（JDG-06）
+LIMIT_MIN, LIMIT_MAX = bootp.LIMIT_MIN, bootp.LIMIT_MAX  # 上下限自由輸入的範圍（JDG-06 rev2）
 DEFAULT_UPPER = 0.2                     # 未設定時的上限（mm，2026-11-17 PO）；等於預設值時設定中不寫此欄
 DEFAULT_LOWER = -0.2                    # 未設定時的下限（mm，2026-11-17 PO）
 

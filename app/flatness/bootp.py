@@ -42,6 +42,7 @@ class DefinitionError(ValueError):
 TOLERANCES = (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50)  # 舊版對稱允許誤差（mm）的選項（JDG-06，向下相容）
 LIMIT_OPTIONS = (0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
                  -0.1, -0.2, -0.5, -1.0, -2.0, -5.0, -10.0, -20.0, -50.0)  # 上限／下限（mm）的選項（JDG-06）
+LIMIT_MIN, LIMIT_MAX = -50.0, 50.0     # 上限／下限自由輸入的範圍（mm，JDG-06 rev2），最細 0.1 mm
 
 
 def _is_int(value) -> bool:
@@ -210,12 +211,16 @@ def _check_limits(errors, pat, probe):
             errors.append((f"{pat}.tolerance", "不可與 upper／lower 併用"))
         elif isinstance(tol, bool) or not isinstance(tol, (int, float)) or tol not in TOLERANCES:
             errors.append((f"{pat}.tolerance", "須為 " + "、".join(f"{v:g}" for v in TOLERANCES) + "（mm）"))
-    opts = "、".join(f"{v:g}" for v in sorted(LIMIT_OPTIONS))
+    # JDG-06 rev2：上下限可自由輸入，有效範圍 −50～50 mm 的 0.1 倍數（下拉選項為子集）
     for f in ("upper", "lower"):
         if f in probe:
             v = probe[f]
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or v not in LIMIT_OPTIONS:
-                errors.append((f"{pat}.{f}", f"須為 {opts}（mm）"))
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                errors.append((f"{pat}.{f}", "須為數值（mm）"))
+            elif not (LIMIT_MIN <= v <= LIMIT_MAX):
+                errors.append((f"{pat}.{f}", f"須在 {LIMIT_MIN:g}～{LIMIT_MAX:g} mm 之間"))
+            elif round(v, 1) != round(v, 6):
+                errors.append((f"{pat}.{f}", "最細為 0.1 mm"))
     if has_new:
         lower = probe["lower"] if isinstance(probe.get("lower"), (int, float)) and not isinstance(probe.get("lower"), bool) else -0.2
         upper = probe["upper"] if isinstance(probe.get("upper"), (int, float)) and not isinstance(probe.get("upper"), bool) else 0.2

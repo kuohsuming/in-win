@@ -476,6 +476,8 @@ const ROWS=10;                                                   // DL-EN1 第 1
 const PSIZE=5;                                                   // 探頭位置：第 1～5 排、第 1～5 點（POS-01）
 const MAGS=[0.1,0.2,0.5,1,2,5,10,20,50], LIMS=[...MAGS,0,...MAGS.map(v=>-v)].sort((a,b)=>b-a);  // 上限／下限選項（JDG-06）
 const DEF_UP=0.2, DEF_LO=-0.2;                                   // 預設上限 +0.2、下限 −0.2
+const LIM_MIN=-50, LIM_MAX=50;                                  // JDG-06 rev2：自由輸入範圍
+let freeLimits=false;                                           // 上下限輸入模式（整台共用，預設下拉）
 const rowNo=k=>{const m=/^row-(\d+)$/.exec(k||""); return m?+m[1]:null;};
 const rowLabel=k=>rowNo(k)?`第 ${rowNo(k)} 台`:"—";
 const devTag=c=>`${rowLabel(c.key)} ${c.name||""}`.trim();                       // 「第 N 台 名稱」
@@ -518,6 +520,10 @@ const loOf=p=>p.lower??(p.tolerance!=null?-p.tolerance:DEF_LO);
 const magOf=p=>Math.max(Math.abs(upOf(p)),Math.abs(loOf(p)));
 const stdOf=p=>({nom:0,lo:loOf(p),hi:upOf(p)});      // 標準值 0、下限、上限（JDG-06）
 const limTxt=v=>v===0?'0 mm':(v>0?'+':'')+v+' mm';
+const clampLim=v=>Math.round(Math.max(LIM_MIN,Math.min(LIM_MAX,v||0))*10)/10;   // 夾範圍、四捨五入到 0.1
+const limCell=(k,pi,v)=>freeLimits   // JDG-06 rev2：勾選後改輸入框（−50～50、步進 0.1）
+  ?`<input type="number" data-${k}="${pi}" value="${v}" min="${LIM_MIN}" max="${LIM_MAX}" step="0.1" style="width:86px">`
+  :`<select data-${k}="${pi}">${(LIMS.includes(v)?LIMS:[...LIMS,v].sort((a,b)=>b-a)).map(t=>`<option value="${t}" ${v===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select>`;
 
 const f=v=>v.toFixed(3), f4=v=>(v>=0?"+":"")+v.toFixed(4), $=s=>document.querySelector(s);
 const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1004,7 +1010,7 @@ function renderDetail(){
   h+=`</div>`;
   if(dl){
     const blk=calBlock(d);
-    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span></h4>
+    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span><label class="enc" style="float:right;font-weight:400"><input type="checkbox" id="freeLim" ${freeLimits?"checked":""}> 自己輸入上下限</label></h4>
       <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:92px">上限</th><th style="width:92px">下限</th></tr></thead><tbody id="pBody">
       ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
         const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
@@ -1020,8 +1026,8 @@ function renderDetail(){
         <td>${rowSel}</td><td>${ptSel}</td>
         <td class="cal${p.zero==null?" uncal":""}">${calText(p)}</td>
         <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk||!on?"disabled":""} title="${esc(blk||(on?"以標準件校準此探頭（歸零）":"未啟用的探頭不能校準"))}">校準</button></td>
-        <td><select data-up="${pi}">${LIMS.map(t=>`<option value="${t}" ${upOf(p)===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select></td>
-        <td><select data-lo="${pi}">${LIMS.map(t=>`<option value="${t}" ${loOf(p)===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select></td></tr>`;}).join("")}
+        <td>${limCell("up",pi,upOf(p))}</td>
+        <td>${limCell("lo",pi,loOf(p))}</td></tr>`;}).join("")}
       </tbody></table></div>
       <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP!==c.probes.length-1||selP<1?"disabled":""} title="${selP>=0&&selP<c.probes.length-1?"中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）":"只能刪除最後一支探頭"}">刪除探頭</button>
         ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
@@ -1148,6 +1154,7 @@ edBody.addEventListener("input",e=>{
 edBody.addEventListener("change",e=>{
   const t=e.target, d=cur();
   if(t.dataset.st&&d){ setStatus(d,t.value); return; }
+  if(t.id==="freeLim"){ freeLimits=t.checked; renderDetail(); return; }   // JDG-06 rev2：切換上下限輸入模式
   if(t.id==="showHid"){ showHidden=t.checked; renderEd(); return; }
   if(t.dataset.f==="ipv4"&&d){ probeIp(d); return; }
   if(t.dataset.f==="key"&&d){ d.cfg.key=t.value; touch(); renderDetail(); return; }
@@ -1165,8 +1172,8 @@ edBody.addEventListener("change",e=>{
       if(p.row&&p.point&&occupied(d,+t.dataset.p)[[p.row,p.point]]){ toast(`第 ${+t.dataset.p+1} 列（ID ${p.id}）${draftNames.rows[p.row-1]} ${draftNames.points[p.point-1]} 已被使用，請重新選擇點`); delete p.point; } }
     else { if(v) p.point=v; else delete p.point; p.description=autoDesc(p.description,oldPt,v); }
     touch(); renderDetail(); return; }
-  if(t.dataset.up!=null&&d){ const p=d.cfg.probes[+t.dataset.up]; delete p.tolerance; const v=+t.value; if(v===DEF_UP) delete p.upper; else p.upper=v; touch(); renderDetail(); return; }
-  if(t.dataset.lo!=null&&d){ const p=d.cfg.probes[+t.dataset.lo]; delete p.tolerance; const v=+t.value; if(v===DEF_LO) delete p.lower; else p.lower=v; touch(); renderDetail(); return; }
+  if(t.dataset.up!=null&&d){ const p=d.cfg.probes[+t.dataset.up]; delete p.tolerance; const v=clampLim(+t.value); if(v===DEF_UP) delete p.upper; else p.upper=v; touch(); renderDetail(); return; }
+  if(t.dataset.lo!=null&&d){ const p=d.cfg.probes[+t.dataset.lo]; delete p.tolerance; const v=clampLim(+t.value); if(v===DEF_LO) delete p.lower; else p.lower=v; touch(); renderDetail(); return; }
   if(t.id==="fCnt"&&d){ const n=Math.max(1,Math.min(15,Math.round(+t.value)||1)), P=d.cfg.probes;   // 數量即清單筆數（EDT-06）
     while(P.length<n) P.push({id:P.length+1,description:`探頭 ${P.length+1}`,zero:null,zeroed_at:null});
     P.length=n; selP=-1; touch(); renderDetail(); }

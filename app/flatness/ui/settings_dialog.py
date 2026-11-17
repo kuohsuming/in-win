@@ -20,7 +20,7 @@ from PySide6.QtGui import QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QAbstractSpinBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
+    QAbstractSpinBox, QDoubleSpinBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyle, QStyledItemDelegate,
     QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -143,6 +143,7 @@ class SettingsDialog(QDialog):
         self.remembered: dict[str, dict] = {}
         self.replaced_from: dict[str, str] = {}   # 新機 MAC → 舊機 MAC（DSC-14 探測時辨識舊機）
         self.ip_checks: dict[str, tuple[str, str, str]] = {}  # mac → (ip, 狀態, 文字)
+        self.free_limits = False                             # JDG-06 rev2：上下限自己輸入（整台共用，預設下拉）
         self.ip_check_macs: dict[str, str | None] = {}       # mac → ARP 回應者的 MAC（DSC-22 與 DSC-10 合併用）
         self.selected: str | None = None
         self.read_only = False
@@ -475,8 +476,15 @@ class SettingsDialog(QDialog):
         pb = QVBoxLayout(self.probe_box)
         pb.setContentsMargins(0, 0, 0, 0)
         pb.setSpacing(6)
-        pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
-                            "label", True))
+        hdr = QHBoxLayout()
+        hdr.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
+                             "label", True))
+        hdr.addStretch()
+        self.chk_free_limits = QCheckBox("自己輸入上下限")  # JDG-06 rev2：整台共用，預設不勾（下拉選單）
+        self.chk_free_limits.setToolTip("打勾後上限、下限改為輸入框，可填 −50～50 mm（最細 0.1 mm）")
+        self.chk_free_limits.toggled.connect(self._on_limit_mode)
+        hdr.addWidget(self.chk_free_limits)
+        pb.addLayout(hdr)
         pt = self.probe_table = QTableWidget(0, 9)
         pt.setHorizontalHeaderLabels(("探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "上限", "下限"))
         pt.verticalHeader().hide()
@@ -840,6 +848,7 @@ class SettingsDialog(QDialog):
         self._render_info()
         self.status_box.setCurrentIndex(STATUS_ORDER.index(d.status))
         self.status_box.setEnabled(not self.read_only)
+        self.chk_free_limits.setEnabled(not self.read_only)  # JDG-06 rev2
         self.status_help.setText(STATUS_HELP[d.status])
         dl = d.is_dl_en1
         cfg = d.config or {}
@@ -946,23 +955,56 @@ class SettingsDialog(QDialog):
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda _=False, b=btn: self._calibrate(self._button_row(b)))
         self.probe_table.setCellWidget(r, P_BTN, btn)
-        # JDG-06：上限、下限兩個選單，判定為 下限 ≤ 讀值 ≤ 上限
-        self.probe_table.setCellWidget(r, P_UP, self._limit_combo(upper, "允收上限：讀值 ≤ 此值為合格"))
-        self.probe_table.setCellWidget(r, P_LO, self._limit_combo(lower, "允收下限：讀值 ≥ 此值為合格"))
+        # JDG-06：上限、下限，判定為 下限 ≤ 讀值 ≤ 上限；依勾選框用下拉或輸入框
+        self.probe_table.setCellWidget(r, P_UP, self._limit_widget(upper, "允收上限：讀值 ≤ 此值為合格"))
+        self.probe_table.setCellWidget(r, P_LO, self._limit_widget(lower, "允收下限：讀值 ≥ 此值為合格"))
+
+    def _limit_widget(self, value, tip):
+        return self._limit_spin(value, tip) if getattr(self, "free_limits", False) else self._limit_combo(value, tip)
 
     def _limit_combo(self, value, tip):
-        """JDG-06：上限／下限選單（選項 +50…0…−50 mm）。"""
+        """JDG-06：上限／下限選單（選項 +50…0…−50 mm）；非選項值（自由輸入過）照原值保留。"""
         box = QComboBox()
-        for v in sorted(lan.LIMIT_OPTIONS, reverse=True):
+        opts = sorted(lan.LIMIT_OPTIONS, reverse=True)
+        if value not in opts:  # AC-12：非選項值插入並選取，值不變
+            opts = sorted(opts + [value], reverse=True)
+        for v in opts:
             box.addItem(lan.limit_text(v), v)
-        box.setCurrentIndex(max(0, next((i for i, v in enumerate(sorted(lan.LIMIT_OPTIONS, reverse=True))
-                                         if v == value), 0)))
+        box.setCurrentIndex(max(0, next((i for i, v in enumerate(opts) if v == value), 0)))
         box.setEnabled(not self.read_only)
         box.setToolTip(tip)
         box.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
         box.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)  # 不超出列高
         box.currentIndexChanged.connect(lambda _i: self._on_field_edited())
         return box
+
+    def _limit_spin(self, value, tip):
+        """JDG-06 rev2：上限／下限輸入框，範圍 −50～50 mm、步進 0.1、小數 1 位。"""
+        sp = QDoubleSpinBox()
+        sp.setRange(lan.LIMIT_MIN, lan.LIMIT_MAX)
+        sp.setDecimals(1)
+        sp.setSingleStep(0.1)
+        sp.setSuffix(" mm")
+        sp.setValue(round(value, 1))
+        sp.setEnabled(not self.read_only)
+        sp.setToolTip(tip)
+        sp.setStyleSheet("QDoubleSpinBox { padding: 0 4px; font-size: 15px; border-width: 1px; }")
+        sp.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)
+        sp.valueChanged.connect(lambda _v: self._on_field_edited())
+        return sp
+
+    @staticmethod
+    def _limit_value(w):
+        """不分下拉或輸入框讀出上限／下限的值。"""
+        return w.value() if isinstance(w, QDoubleSpinBox) else (w.currentData() if w is not None else None)
+
+    def _on_limit_mode(self, checked):
+        """JDG-06 rev2：切換上下限的輸入模式；保留目前的值，不算變更。"""
+        self.free_limits = checked
+        for r in range(self.probe_table.rowCount()):
+            for col, tip in ((P_UP, "允收上限：讀值 ≤ 此值為合格"), (P_LO, "允收下限：讀值 ≥ 此值為合格")):
+                v = self._limit_value(self.probe_table.cellWidget(r, col))
+                self.probe_table.setCellWidget(r, col, self._limit_widget(v if v is not None else 0.0, tip))
 
     def _button_row(self, btn) -> int:
         for r in range(self.probe_table.rowCount()):
@@ -1520,12 +1562,12 @@ class SettingsDialog(QDialog):
                 desc = self._desc(r)
                 zero = self.probe_table.item(r, P_ID).data(Qt.UserRole) if self.probe_table.item(r, P_ID) else None
                 probe = {"id": r + 1, "description": desc, **(zero or {})}
-                up = self.probe_table.cellWidget(r, P_UP)
-                lo = self.probe_table.cellWidget(r, P_LO)
-                if up is not None and up.currentData() != lan.DEFAULT_UPPER:  # 預設值（+0.2 mm）不寫入
-                    probe["upper"] = up.currentData()
-                if lo is not None and lo.currentData() != lan.DEFAULT_LOWER:  # 預設值（−0.2 mm）不寫入
-                    probe["lower"] = lo.currentData()
+                up = self._limit_value(self.probe_table.cellWidget(r, P_UP))
+                lo = self._limit_value(self.probe_table.cellWidget(r, P_LO))
+                if up is not None and up != lan.DEFAULT_UPPER:  # 預設值（+0.2 mm）不寫入
+                    probe["upper"] = round(up, 1)
+                if lo is not None and lo != lan.DEFAULT_LOWER:  # 預設值（−0.2 mm）不寫入
+                    probe["lower"] = round(lo, 1)
                 row, pt = self._row_pos(r)  # POS-01：未定時不寫入；只設其一照實寫入，由檢查擋下
                 if not self._row_enabled(r):  # PDT-03：未啟用的探頭沒有位置
                     probe["enabled"] = False
