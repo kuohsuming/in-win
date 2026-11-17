@@ -84,30 +84,21 @@ class Plate3DDialog(QDialog):
         lay.setContentsMargins(22, 16, 22, 16)
         lay.setSpacing(12)
         lay.addLayout(self._title())
-        self.body = QBoxLayout(QBoxLayout.LeftToRight)
-        self.body.setSpacing(16)
         self.view = Plate3DView()
+        self.view.rot = 20          # 預設傾斜，讓橫向板子填滿直式畫面、探點散開
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.body.addWidget(self.view, 1)
-        self.side = QWidget()
-        self.side.setObjectName("side3d")
-        self.side.setFixedWidth(SIDE_W)
-        self.side_lay = QVBoxLayout(self.side)
-        self.side_lay.setContentsMargins(0, 0, 0, 0)
-        self.side_lay.setSpacing(10)
-        self.body.addWidget(self.side)
-        lay.addLayout(self.body, 1)
+        lay.addWidget(self.view, 1)
         lay.addLayout(self._controls())
         self.timer = QTimer(self, interval=STEP_MS, timeout=self._step)
         self.set_mode(STANDARD)
-        self.play(True)
+        self.play(False)
 
     # ---------------------------------------------------------------- 版面
 
     def _title(self):
         row = QHBoxLayout()
         row.setSpacing(14)
-        title = QLabel("3D 繪圖")
+        title = QLabel("變形曲面示意圖")
         title.setFont(text_font(20, 700))
         row.addWidget(title)
         serial = _label(self.snapshot.serial, px=20, color="ink-2", num=True, wrap=False)
@@ -130,20 +121,6 @@ class Plate3DDialog(QDialog):
     def _controls(self):
         row = QHBoxLayout()
         row.setSpacing(10)
-        self.mode_btns = QButtonGroup(self)
-        for mode in (STANDARD, DETRENDED):
-            b = QPushButton(MODE_NAME[mode])
-            b.setCheckable(True)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setProperty("mode", mode)
-            b.setStyleSheet(f"QPushButton {{ padding:8px 16px; border:2px solid {C['ink-2']}; background:{C['panel-2']};"
-                            f" color:{C['ink']}; font-size:16px; border-radius:6px; }}"
-                            f" QPushButton:checked {{ background:{C['ink']}; color:{C['panel']}; border-color:{C['ink']};"
-                            f" font-weight:700; }}")
-            self.mode_btns.addButton(b)
-            row.addWidget(b)
-        self.mode_btns.buttonClicked.connect(lambda b: self.set_mode(b.property("mode")))
-        row.addSpacing(16)
         self.btn_left = QPushButton(f"◀ {STEP_DEG}°")
         self.btn_play = QPushButton()
         self.btn_right = QPushButton(f"{STEP_DEG}° ▶")
@@ -164,84 +141,22 @@ class Plate3DDialog(QDialog):
         close.setCursor(Qt.PointingHandCursor)
         close.clicked.connect(self.reject)
         row.addWidget(close)
-        for b in self.mode_btns.buttons():
-            b.setFocusPolicy(Qt.NoFocus)
         return row
 
     def fit(self):
-        """寬為主畫面的 96%（最多 1280px），高最多 94%；寬度 ≤ 900px 時資訊欄移到繪圖區下方。"""
+        """直式圖：寬為主畫面的 62%（最多 820px），高最多 94%。"""
         host = self.parentWidget()
         if host is None:
             return
-        w = min(1280, round(host.width() * 0.96))
-        h = min(round(host.height() * 0.94), max(640, round(w * 0.62)))
-        self.body.setDirection(QBoxLayout.TopToBottom if w <= 900 else QBoxLayout.LeftToRight)
-        self.side.setFixedWidth(w - 44 if w <= 900 else SIDE_W)
-        self.view.setMinimumHeight(min(round(h * 0.6), 560) if w <= 900 else 320)
+        w = min(820, round(host.width() * 0.62))
+        h = min(round(host.height() * 0.94), round(w * 1.2))
         self.resize(w, h)
-
-    # ---------------------------------------------------------------- 資訊欄
-
-    def _fill_side(self):
-        while self.side_lay.count():
-            item = self.side_lay.takeAt(0)
-            if item.widget():
-                item.widget().hide()
-                item.widget().deleteLater()
-        m = self.models[self.mode]
-        std = self.mode == STANDARD
-        unit = "mm"
-        c1 = Card()
-        c1.lay.addWidget(_label("讀值差（最高 − 最低）" if std else "平面度（最小平方）", px=14, color="ink-2"))
-        c1.lay.addWidget(_label(f"<span style='font-size:44px;font-weight:700'>{m.spread_mm:.3f}</span>"
-                                f"<span style='font-size:18px;color:{C['ink-2']}'> {unit}</span>", px=44, num=True))
-        if not std:
-            c1.lay.addWidget(_label("允許值：未定（TBD-07）；只供檢視，不用於判定", px=13, color="ink-2"))
-        self.side_lay.addWidget(c1)
-        c2 = Card()
-        for word, (key, _) in (("最高點", m.highest), ("最低點", m.lowest)):
-            v = m.label_value(key)
-            c2.lay.addWidget(_label(f"{word}　<b>{html.escape(m.by_key[key].name)}</b>　"
-                                    f"<span style='font-family:\"Barlow Semi Condensed\"'>{v:+.3f}</span>", px=15))
-        c2.lay.addWidget(_label("單位 mm；數值為讀值，以標準件為 0（探頭在下方，讀值越小表面越高）" if std else
-                                "單位 mm；相對於擬合平面，表面向上為正", px=12, color="ink-2"))
-        self.side_lay.addWidget(c2)
-        c3 = Card()
-        c3.lay.addWidget(_label("越高越白、越低越灰；光從左上方照射", px=12, color="ink-2"))
-        self.legend = Legend()
-        self.legend.lim = m.lim_mm
-        c3.lay.addWidget(self.legend)
-        self.side_lay.addWidget(c3)
-        # 探頭在下方：讀值偏高＝該處表面較低，讀值偏低＝該處表面較高
-        side = {"hi": "偏高（表面較低）", "lo": "偏低（表面較高）"}
-        out = [f"{p.name} {side[p.state]}" for p in m.points if p.state in side and p.value_mm is not None]
-        miss = [p.name for p in m.points if p.value_mm is None]
-        if out or miss:
-            c4 = Card(red=True)
-            if out:
-                c4.lay.addWidget(_label(f"<b>超出允收：</b>{html.escape('、'.join(out))}", px=14, color="ng"))
-            if miss:
-                c4.lay.addWidget(_label(f"<b>無數據（不參與繪圖）：</b>{html.escape('、'.join(miss))}", px=14, color="ng"))
-            c4.lay.addWidget(_label("探頭在下方：讀值偏高＝表面較低，讀值偏低＝表面較高", px=12, color="ink-2"))
-            self.side_lay.addWidget(c4)
-        notes = [f"使用 {len(m.valid)}/{len(m.points)} 點。",
-                 f"高度放大約 ×{round(m.exaggeration):,} 倍，厚度為示意。",
-                 "點與點之間的形狀是推估；淡色區為量測點範圍外的推估，判定以實測點為準。",
-                 "探頭在板子下方，已換算成由上往下看的高度。"]
-        if not std:
-            notes.insert(1, "已扣除整片傾斜與高低。")
-        self.notes = _label("".join(f"• {html.escape(n)}<br>" for n in notes), px=13, color="ink-2")
-        self.side_lay.addWidget(self.notes)
-        self.side_lay.addStretch()
 
     # ---------------------------------------------------------------- 行為
 
     def set_mode(self, mode: str):
         self.mode = mode
-        for b in self.mode_btns.buttons():
-            b.setChecked(b.property("mode") == mode)
         self.view.set_model(self.models[mode])
-        self._fill_side()
         self._show_angle()
 
     def play(self, on: bool):
@@ -271,8 +186,6 @@ class Plate3DDialog(QDialog):
             self.turn(STEP_DEG)
         elif k == Qt.Key_Space:
             self.play(not self.timer.isActive())
-        elif k == Qt.Key_M:
-            self.set_mode(DETRENDED if self.mode == STANDARD else STANDARD)
         else:
             super().keyPressEvent(e)
 

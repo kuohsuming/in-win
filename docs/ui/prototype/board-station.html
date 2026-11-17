@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>表面平整檢查 作業員畫面</title>
-<!-- UI 原型：依 App 2026-10-15 版的實際畫面與操作更新（主畫面依探頭位置排列、取出測試數據、設備設定〔第幾台、探頭第幾排／第幾點、排與點名稱〕、探頭校準、允許誤差、板子尺寸、3D 繪圖） -->
+<!-- UI 原型：依 App 2026-11-18 版的實際畫面與操作更新（主畫面依探頭位置排列、取出測試數據、設備設定〔第幾台、探頭第幾排／第幾點、排與點名稱〕、探頭校準、允許誤差、板子尺寸）。
+     2026-11-18 PO：(1) 探頭方塊判定改為 JDG-07「最佳點修正」（整片 |讀值| 最小者為最佳點，逐點以讀值 − 最佳點修正後再比上下限；大字仍顯示原始讀值）；(2) 3D 繪圖改為俯視 jet 熱力圖「變形曲面示意圖」（5.11） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -149,11 +150,15 @@ button,select{font:inherit}
   .vals{grid-template-columns:auto minmax(0,1fr)} .vals .k{white-space:nowrap}
   .vals .m{grid-column:2} .vals .rg{white-space:normal;font-size:14px} .vals .m{font-size:28px}
 }
-.gauge{position:relative;height:34px}
-.gauge .track{position:absolute;left:0;right:0;top:14px;height:6px;background:var(--line);border-radius:3px}
-.gauge .ok{position:absolute;left:20%;right:20%;top:10px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
-.gauge .nom{position:absolute;left:50%;top:7px;height:20px;width:2px;background:var(--ink-2)}
-.gauge .mk{position:absolute;top:0;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:13px solid var(--ink);margin-left:-9px}
+/* 刻度條（5.6、JDG-07）：三角指標依修正值定位、上標修正值、綠色區間左右下標該點下限／上限 */
+.gauge{position:relative;height:50px}
+.gauge .track{position:absolute;left:0;right:0;top:27px;height:6px;background:var(--line);border-radius:3px}
+.gauge .ok{position:absolute;left:20%;right:20%;top:23px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
+.gauge .nom{position:absolute;left:50%;top:20px;height:20px;width:2px;background:var(--ink-2)}
+.gauge .mk{position:absolute;top:16px;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:10px solid var(--ink);margin-left:-9px}
+.gauge .cv{position:absolute;top:0;height:14px;line-height:14px;transform:translateX(-50%);font-family:var(--num);font-size:12px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge .lo,.gauge .hi{position:absolute;top:37px;height:13px;line-height:13px;transform:translateX(-50%);font-family:var(--num);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge .lo{left:20%} .gauge .hi{left:80%}
 .devst{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:6px;min-height:31px}
 .devst .note{margin-left:auto;font-size:18px;font-weight:700;color:var(--ng);text-align:right}
 .probe.blank .badge{visibility:hidden} .probe.blank .mk{display:none}
@@ -161,6 +166,10 @@ button,select{font:inherit}
 .probe.hi,.probe.lo{border-color:var(--ng);border-width:5px;background:var(--ng-soft)}
 .probe.hi .badge,.probe.lo .badge,.probe.hi .m,.probe.lo .m{color:var(--ng)}
 .probe.hi .mk,.probe.lo .mk{border-top-color:var(--ng)}
+.probe.hi .cv,.probe.lo .cv{color:var(--ng)}
+/* 最佳點（JDG-07）：整片判定基準的那一點，藍色標籤 */
+.probe .besttag{display:none;background:var(--focus);color:#fff;border-radius:3px;padding:0 6px;font-size:12px;font-weight:700;white-space:nowrap}
+.probe.best .besttag{display:inline}
 .probe.err{border-color:var(--ng);border-width:5px;background:var(--ng-soft);opacity:1!important}
 .probe.err .badge{color:var(--ng)} .probe.err .m{color:var(--ng);font-family:var(--txt);font-size:26px;font-weight:900}
 .probe.err .gauge{visibility:hidden} .probe.err .devst{color:var(--ng);font-weight:700}
@@ -315,14 +324,14 @@ dialog.v3{width:min(1280px,96vw);max-width:96vw;height:min(94vh,max(640px,calc(m
 .v3-card .k{font-size:14px;color:var(--ink-2)} .v3-card .s{font-size:12px;color:var(--ink-2)} .v3-card .n{font-family:var(--num)}
 .v3-card .big{font-family:var(--num);font-size:44px;font-weight:700;line-height:1.1} .v3-card .big small{font-size:18px;color:var(--ink-2);font-weight:400}
 .v3-card .ng{color:var(--ng);font-size:14px}
-.v3-leg .bar{height:14px;border:1px solid var(--line);background:linear-gradient(90deg,rgb(140,140,140),rgb(228,228,228))}
-.v3-leg .tk{display:flex;justify-content:space-between;font-family:var(--num);font-size:13px;color:var(--ink-2)}
+.v3-leg .bar{height:16px;border:1px solid var(--line)}   /* jet 漸層由 JS 填入（與熱力圖同一配色） */
+.v3-leg .tk{display:flex;justify-content:space-between;font-family:var(--num);font-size:10px;color:var(--ink-2)}
+.v3-list{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:3px;font-size:14px}
+.v3-list li{font-family:var(--num);font-variant-numeric:tabular-nums}
+.v3-list li.hi{color:var(--ng)} .v3-list li.lo{color:var(--focus)} .v3-list li.miss{color:var(--ink-2)}
 .v3-note{margin:0;padding-left:16px;font-size:13px;color:var(--ink-2);line-height:1.5}
 .v3-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .v3-ctl button{font-size:16px;padding:8px 16px;border-radius:6px;border:2px solid var(--ink-2);background:var(--panel-2);color:var(--ink);cursor:pointer;min-width:96px}
-.v3-ctl .v3m{min-width:0}
-.v3-ctl .v3m[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:700}
-.v3-ctl .gap{width:16px}
 .v3-ang{font-family:var(--num);font-size:18px}
 .v3-ctl .primary{margin-left:auto;width:132px;background:var(--ink);color:var(--panel);border-color:var(--ink)}
 @media (max-width:937px){
@@ -435,17 +444,14 @@ dialog.pl{width:min(480px,92vw)}
   </div>
 </dialog>
 
-<!-- 3D 繪圖（P3D-01～P3D-09）：嵌入主畫面中央，不另開系統視窗 -->
+<!-- 變形曲面示意圖（P3D；5.11，2026-11-18 PO 改為俯視 jet 熱力圖）：嵌入主畫面中央，不另開系統視窗 -->
 <dialog id="v3Dlg" class="v3" aria-labelledby="v3Title">
   <div class="v3">
-    <div class="v3-head"><h3 id="v3Title">3D 繪圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
+    <div class="v3-head"><h3 id="v3Title">變形曲面示意圖</h3><span class="v3-sn" id="v3sn"></span><span class="v3-rs" id="v3rs"></span>
       <button class="x" type="button" id="v3x" aria-label="關閉">✕</button></div>
-    <div class="v3-body"><canvas id="v3cv" aria-label="板子立體圖"></canvas><div class="v3-side" id="v3side"></div></div>
+    <div class="v3-body"><canvas id="v3cv" aria-label="變形曲面示意圖（俯視熱力圖）"></canvas><div class="v3-side" id="v3side"></div></div>
     <div class="v3-ctl">
-      <button class="v3m" type="button" data-mode="standard">相對標準件</button>
-      <button class="v3m" type="button" data-mode="detrended">扣除傾斜</button>
-      <span class="gap"></span>
-      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3play"></button><button type="button" id="v3next">30° ▶</button>
+      <button type="button" id="v3prev">◀ 30°</button><button type="button" id="v3next">30° ▶</button>
       <span class="v3-ang" id="v3ang"></span>
       <button class="primary" type="button" id="v3done" autofocus>關閉</button>
     </div>
@@ -526,8 +532,12 @@ const limCell=(k,pi,v)=>freeLimits   // JDG-06 rev2：勾選後改輸入框（�
   :`<select data-${k}="${pi}">${(LIMS.includes(v)?LIMS:[...LIMS,v].sort((a,b)=>b-a)).map(t=>`<option value="${t}" ${v===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select>`;
 
 const f=v=>v.toFixed(3), f4=v=>(v>=0?"+":"")+v.toFixed(4), $=s=>document.querySelector(s);
+const slim=v=>v===0?"0":(v>0?"+":"")+(+v.toFixed(4));      // 刻度條下限／上限標字（精簡）
 const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const judge=(s,m)=>m>s.hi?"hi":m<s.lo?"lo":"ok";
+/* JDG-07 最佳點：整片有效讀值中絕對值最小者，並列取較小（較負）者；無有效讀值回傳 null */
+const bestOffset=vals=>{ const v=vals.filter(x=>x!=null); if(!v.length) return null;
+  return v.reduce((a,c)=>(Math.abs(c)<Math.abs(a)||(Math.abs(c)===Math.abs(a)&&c<a))?c:a); };
 const WORD={ok:"合格",hi:"偏高",lo:"偏低",err:"異常"};
 const ERRTXT={ErH:"感測頭錯誤（ErH）",FFFF:"超出檢測範圍（FFFF）"};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -564,14 +574,14 @@ function makeSerial(d=new Date()){const p=(n,w=2)=>String(n).padStart(w,"0");
 /* 主畫面依探頭位置排列（POS-04）：第 1～5 排、每排固定 5 格，沒有探頭的格為淡色空框；位置未定的在最下方「未設定位置」區 */
 function tileHtml(d,p,id){ const s=stdOf(p), maint=d.status==="maint";
   return `<div class="probe ${maint?"maint":"blank"}"${id?` id="${id}"`:""} data-dev="${d.cfg.key}">
-      <div class="top"><span class="pos">${esc(p.description)}<small class="sub">${esc(devTag(d.cfg))}<b class="iptag">IP 不符</b></small></span>
+      <div class="top"><span class="pos">${esc(p.description)}<small class="sub">${esc(devTag(d.cfg))}<b class="iptag">IP 不符</b><b class="besttag">最佳點</b></small></span>
         <span class="badge"><svg><use href="#i-ok"/></svg><span class="bw">${maint?"維修中":""}</span></span></div>
       <div class="vals">
         <span class="k ml">測量值</span><span class="m">${maint?"維修中":"—"}</span>
         <span class="k kr">標準值</span><span class="s">${maint?"—":f(s.nom)}</span>
         <span class="k kr">允收</span><span class="rg">${maint?"—":`${f(s.lo)} ～ ${f(s.hi)}`}</span>
       </div>
-      <div class="gauge" aria-hidden="true"><div class="track"></div><div class="ok"></div><div class="nom"></div><div class="mk"></div></div>
+      <div class="gauge" aria-hidden="true"><span class="cv"></span><div class="track"></div><div class="ok"></div><div class="nom"></div><div class="mk"></div><span class="lo">${maint?"":slim(s.lo)}</span><span class="hi">${maint?"":slim(s.hi)}</span></div>
       <div class="devst"><i class="dot${maint?" stale":""}"></i><span class="dt">${maint?"不連線、不量測":""}</span><span class="note"></span></div>
     </div>`; }
 function buildRows(){
@@ -605,6 +615,11 @@ function clearRows(dot,text){
 }
 function paint(data){
   const out=[], errs=[];
+  /* JDG-07：先在整片所有有效讀值中找最佳點（|讀值| 最小、並列取較小），逐點修正後再判定（方案 A：大字仍顯示原始讀值） */
+  const cand=[]; live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{
+    if(!data.err[`${ri}-${i}`]&&data.vals[ri][i]!=null) cand.push({ri,i,m:data.vals[ri][i]}); }));
+  const bestPt=cand.length?cand.reduce((a,c)=>(Math.abs(c.m)<Math.abs(a.m)||(Math.abs(c.m)===Math.abs(a.m)&&c.m<a.m))?c:a):null;
+  const best=bestPt?bestPt.m:null;
   live().forEach((d,ri)=>{
     const down=(data.down||[]).includes(ri), P=d.cfg.probes; let uncal=0;
     if(down) errs.push(`${esc(devTag(d.cfg))} DL-EN1 偵測不到`);
@@ -621,15 +636,18 @@ function paint(data){
         else if(e!=="down") errs.push(`${esc(dispName(d.cfg,p))}探頭無回應（${ERRTXT[e]}）`);
         return;
       }
-      const st=judge(s,m);
+      const cv=best==null?m:m-best;          // JDG-07 修正值 = 讀值 − 最佳點讀值
+      const st=judge(s,cv);                   // 判定改用修正值
       if(st!=="ok") out.push(`${esc(dispName(d.cfg,p))}${WORD[st]}`);
       el.className="probe "+st;
+      if(bestPt&&bestPt.ri===ri&&bestPt.i===i) el.classList.add("best");   // 最佳點標籤
       el.querySelector(".badge use").setAttribute("href","#i-"+st);
       el.querySelector(".bw").textContent=WORD[st];
-      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;
-      const span=(s.hi-s.lo)/0.6, min=s.lo-span*0.2;
-      el.querySelector(".mk").style.left=Math.max(2,Math.min(98,(m-min)/span*100))+"%";
-      el.querySelector(".note").textContent=st==="hi"?`超出上限 ${f(m-s.hi)}`:st==="lo"?`低於下限 ${f(s.lo-m)}`:"";
+      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;          // 方案 A：大字仍為原始讀值
+      const span=(s.hi-s.lo)/0.6, start=s.lo-span*0.2, pct=Math.max(2,Math.min(98,(cv-start)/span*100));
+      el.querySelector(".mk").style.left=pct+"%";                          // 三角依修正值定位
+      const cvEl=el.querySelector(".cv"); cvEl.textContent=slim(+cv.toFixed(3)); cvEl.style.left=pct+"%";
+      el.querySelector(".note").textContent=st==="hi"?`超出上限 ${f(cv-s.hi)}`:st==="lo"?`低於下限 ${f(s.lo-cv)}`:"";
       setDev(el,"ok","設備正常");
     });
     if(uncal) errs.push(`${esc(devTag(d.cfg))} 有 ${uncal} 個探頭未校準，請在設備設定以標準件校準`);
@@ -1321,23 +1339,25 @@ $("#plSave").addEventListener("click",()=>{ if(plUpdate().length) return;
   plSave(p); plRefreshBtn(); $("#plDlg").close(); toast(`已設定${plateText(p)}`); });
 $("#plDlg").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("#plSave").click(); } });
 
-/* ================= 3D 繪圖（P3D-01～P3D-09；與 App 的 flatness/plate3d 同一套計算與常數） ================= */
+/* ================= 變形曲面示意圖（P3D；5.11，2026-11-18 PO 改為俯視 jet 熱力圖；與 App 的 flatness/plate3d 同一套計算與配色） ================= */
 let lastData=null, lastJudg="";
-const STANDARD="standard", DETRENDED="detrended", MODE_NAME={standard:"相對標準件",detrended:"扣除傾斜"};
-const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9;
+const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9, STEP_DEG=30;
 const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。";
-const EL3=15, AZ0=-45, STEP_DEG=30, STEP_MS=700, SHADE3={lo:140,hi:228,relief:6,light:[-0.55,0.75,0.6]}, FADE_GRAY=184, FADE_KEEP=0.4;
 
-/* POS-07、POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點：x = 長 ×（點 − 0.5）／P、y = 寬 ×（排 − 0.5）／R */
-function probeXY(){ const out={};
-  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[PLATE.length*(p.point-.5)/NAMES.grid.points, PLATE.width*(p.row-.5)/NAMES.grid.rows]; }));   // POS-13
+/* POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點、首尾落板緣：x = 長 ×（點 − 1）／（P − 1）、y = 寬 ×（排 − 1）／（R − 1）（P 或 R 為 1 時取 0.5） */
+function probeXY(){ const out={}, R=NAMES.grid.rows, P=NAMES.grid.points;
+  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[
+    P>1?PLATE.length*(p.point-1)/(P-1):PLATE.length*0.5, R>1?PLATE.width*(p.row-1)/(R-1):PLATE.width*0.5]; }));   // POS-13
   return out; }
 /* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據；位置未定的探頭另列（POS-07） */
 function snapshot3d(){ const xy=probeXY(), pts=[], unplaced=[];
+  const cand=[]; live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i];
+    if(!e&&m!=null) cand.push(m); }));
+  const b=bestOffset(cand);    // JDG-07：與主畫面同一組最佳點，使判定一致
   live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{ const pos=xy[`${d.cfg.key}#${p.id}`];
     if(!pos){ unplaced.push(dispName(d.cfg,p)); return; }
-    const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i], s=stdOf(p), v=e||m==null?null:m;
-    pts.push({key:`${rowNo(d.cfg.key)}-${p.id}`,name:dispName(d.cfg,p),x:pos[0],y:pos[1],v,tol:s.hi,st:v==null?"err":judge(s,v)}); }));
+    const e=lastData.err[`${ri}-${i}`], m=lastData.vals[ri]?.[i], s=stdOf(p), v=e||m==null?null:m, cv=v==null?null:(b==null?v:v-b);
+    pts.push({key:`${rowNo(d.cfg.key)}-${p.id}`,name:dispName(d.cfg,p),x:pos[0],y:pos[1],v,tol:s.hi,st:v==null?"err":judge(s,cv)}); }));
   pts.unplaced=unplaced; return pts; }
 /* P3D-02、P3D-03：有效點不足或同一直線 → 回傳警告文字 */
 function check3d(pts){ const ok=pts.filter(p=>p.v!=null);
@@ -1360,136 +1380,109 @@ function hull(P){ const pts=[...new Map(P.map(p=>[p.join(","),p])).values()].sor
   return lo.slice(0,-1).concat(up.slice(0,-1)); }
 function inHull(H,p,tol){ if(H.length<3) return false;
   for(let i=0;i<H.length;i++){ const a=H[i], b=H[(i+1)%H.length]; if((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])<-tol) return false; } return true; }
-/* 最小平方平面 h = a + b·X + c·Y（X、Y 為公尺） */
-function fitPlane(P){ const s=[[0,0,0],[0,0,0],[0,0,0]], t=[0,0,0];
-  P.forEach(([x,y,h])=>{ const r=[1,x/1000,y/1000]; for(let i=0;i<3;i++){ t[i]+=r[i]*h; for(let j=0;j<3;j++) s[i][j]+=r[i]*r[j]; } }); return solve(s,t); }
 /* 薄板樣條：只用來畫點與點之間的形狀，不得用於判定 */
 function tps(P){ const n=P.length, N=n+3, A=Array.from({length:N},()=>new Array(N).fill(0)), b=new Array(N).fill(0), U=r=>r<1e-12?0:r*r*Math.log(r);
   P.forEach((p,i)=>{ P.forEach((q,j)=>A[i][j]=U(Math.hypot(p[0]-q[0],p[1]-q[1]))); A[i][n]=A[n][i]=1; A[i][n+1]=A[n+1][i]=p[0]; A[i][n+2]=A[n+2][i]=p[1]; b[i]=p[2]; });
   const w=solve(A,b); if(!w) return null;
   return (x,y)=>{ let z=w[n]+w[n+1]*x+w[n+2]*y; P.forEach((p,i)=>z+=w[i]*U(Math.hypot(x-p[0],y-p[1]))); return z; }; }
 const gridSize=(L,W)=>L>=W?[GRID_LONG,Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*W/L)+1)]:[Math.max(GRID_SHORT_MIN,Math.round((GRID_LONG-1)*L/W)+1),GRID_LONG];
-/* P3D-05～P3D-07：探頭在下方，高度 h = −讀值；相對標準件 z = h，扣除傾斜 z = h − 平面 */
-function build3d(pts,mode){
-  const ok=pts.filter(p=>p.v!=null), L=PLATE.length, W=PLATE.width, h={}; ok.forEach(p=>h[p.key]=-p.v);
-  let z=h;
-  if(mode===DETRENDED){ const c=fitPlane(ok.map(p=>[p.x,p.y,h[p.key]])); if(!c) throw LINE_MSG;
-    z={}; ok.forEach(p=>z[p.key]=h[p.key]-(c[0]+c[1]*p.x/1000+c[2]*p.y/1000)); }
+/* 相對高度曲面：探頭在下方，高度 z = −讀值；以薄板樣條內插成網格，供俯視熱力圖連續上色（只畫形狀，不用於判定） */
+function build3d(pts){
+  const ok=pts.filter(p=>p.v!=null), L=PLATE.length, W=PLATE.width, z={}; ok.forEach(p=>z[p.key]=-p.v);
   const unit=Math.max(L,W), f=tps(ok.map(p=>[p.x/unit,p.y/unit,z[p.key]])); if(!f) throw LINE_MSG;
   const [nx,ny]=gridSize(L,W), H=hull(ok.map(p=>[p.x,p.y])), tol=1e-9*unit*unit, g=[], ins=[];
   for(let j=0;j<ny;j++){ const y=W*j/(ny-1), gr=[], ir=[];
     for(let i=0;i<nx;i++){ const x=L*i/(nx-1); gr.push(f(x/unit,y/unit)); ir.push(inHull(H,[x,y],tol)); } g.push(gr); ins.push(ir); }
   const keys=Object.keys(z), hiK=keys.reduce((a,k)=>z[k]>z[a]?k:a), loK=keys.reduce((a,k)=>z[k]<z[a]?k:a);
-  const lim=Math.max(...ok.map(p=>p.tol),...g.flat().map(Math.abs),...keys.map(k=>Math.abs(z[k]))), tv=0.05*unit;
-  return {pts,mode,L,W,T:PLATE.height,z,g,ins,nx,ny,hi:[hiK,z[hiK]],lo:[loK,z[loK]],spread:z[hiK]-z[loK],lim,tv,ex:0.4*tv/lim,
+  return {pts,L,W,T:PLATE.height,z,g,ins,nx,ny,hi:[hiK,z[hiK]],lo:[loK,z[loK]],spread:z[hiK]-z[loK],
           by:Object.fromEntries(pts.map(p=>[p.key,p])),ok}; }
-/* 標籤數值：相對標準件為讀值（與主畫面相同），扣除傾斜為殘差（表面向上為正） */
-const labelValue=(m,k)=>{ const p=m.by[k]; return p.v==null?null:m.mode===STANDARD?p.v:m.z[k]; };
-const sgn3=v=>`${v>=0?"+":""}${v.toFixed(3)}`;
+/* jet 配色（與 App flatness/plate3d/renderer._jet 相同）：0→藍、0.5→綠、1→紅 */
+function jet(t){ t=Math.max(0,Math.min(1,t));
+  const r=Math.max(0,Math.min(1,1.5-Math.abs(4*t-3))), g=Math.max(0,Math.min(1,1.5-Math.abs(4*t-2))), b=Math.max(0,Math.min(1,1.5-Math.abs(4*t-1)));
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
+const jetCss=()=>{ const s=[]; for(let i=0;i<=10;i++){ const [r,g,b]=jet(i/10); s.push(`rgb(${r},${g},${b}) ${i*10}%`); } return `linear-gradient(90deg,${s.join(",")})`; };
 
-/* 繪製：正交投影、畫家演算法；越高越白、光從左上方；量測點範圍外（凸包外）往中間灰拉近（推估） */
+/* 俯視 jet 熱力圖（P3D-06～P3D-08）：板子依長寬比例、平面內傾斜（旋轉）、*0.98 填滿；相對高度（最低=0）連續漸層，探點連號貼邊、標最高／最低與尺寸 */
 function draw3d(){
-  const cv=$("#v3cv"), m=V3.models?.[V3.mode]; if(!cv||!m) return;
+  const cv=$("#v3cv"), m=V3.model; if(!cv||!m) return;
   const dpr=window.devicePixelRatio||1, w=cv.clientWidth, hh=cv.clientHeight; if(!w||!hh) return;
   cv.width=Math.round(w*dpr); cv.height=Math.round(hh*dpr);
   const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,hh);
-  const css=getComputedStyle(document.documentElement), C3=k=>css.getPropertyValue(k).trim(), TXT=C3("--txt"), NUM=C3("--num");
-  const {L,W,tv,ex,g,nx,ny}=m, hmax=0.4*tv, az=(AZ0+V3.rot)*Math.PI/180, el=EL3*Math.PI/180;
-  const v=[Math.cos(el)*Math.cos(az),Math.cos(el)*Math.sin(az),Math.sin(el)], rt=[-Math.sin(az),Math.cos(az)];
-  const up=[-Math.sin(el)*Math.cos(az),-Math.sin(el)*Math.sin(az),Math.cos(el)], lv=SHADE3.light;
-  let lw=[lv[0]*rt[0]+lv[1]*up[0]+lv[2]*v[0], lv[0]*rt[1]+lv[1]*up[1]+lv[2]*v[1], lv[1]*up[2]+lv[2]*v[2]]; const nl=Math.hypot(...lw); lw=lw.map(c=>c/nl);
-  const diag=Math.hypot(L,W), sc=Math.min(w*0.92/diag, hh*0.84/(diag*Math.sin(el)+(tv+2*hmax)*Math.cos(el))), cx=w/2, cy=hh/2;
-  const pr=(x,y,zz)=>{ const X=x-L/2,Y=y-W/2,Z=zz+tv/2; return [cx+sc*(X*rt[0]+Y*rt[1]), cy-sc*(X*up[0]+Y*up[1]+Z*up[2]), X*v[0]+Y*v[1]+Z*v[2]]; };
-  const gx=i=>L*i/(nx-1), gy=j=>W*j/(ny-1), Z=(i,j)=>g[j][i]*ex, top=[];
-  for(let j=0;j<ny;j++){ top.push([]); for(let i=0;i<nx;i++) top[j].push(pr(gx(i),gy(j),Z(i,j))); }
-  const dx=L/(nx-1), dy=W/(ny-1), polys=[];
-  for(let j=0;j<ny-1;j++) for(let i=0;i<nx-1;i++){
-    const q=[top[j][i],top[j][i+1],top[j+1][i+1],top[j+1][i]], r=(g[j][i]+g[j][i+1]+g[j+1][i+1]+g[j+1][i])/4;
-    const base=SHADE3.lo+(SHADE3.hi-SHADE3.lo)*Math.max(0,Math.min(1,(r/m.lim+1)/2));
-    const dzx=(Z(i+1,j)+Z(i+1,j+1)-Z(i,j)-Z(i,j+1))/2*SHADE3.relief, dzy=(Z(i,j+1)+Z(i+1,j+1)-Z(i,j)-Z(i+1,j))/2*SHADE3.relief;
-    const n=[-dzx*dy,-dzy*dx,dx*dy], lit=(n[0]*lw[0]+n[1]*lw[1]+n[2]*lw[2])/Math.hypot(...n), k=Math.max(0.5,Math.min(1.14,1+1.8*(lit-lw[2])));
-    let gray=Math.min(255,base*k); const I=m.ins;
-    if(!(I[j][i]||I[j][i+1]||I[j+1][i+1]||I[j+1][i])) gray=FADE_GRAY+FADE_KEEP*(gray-FADE_GRAY);
-    const gv=Math.round(gray); polys.push([(q[0][2]+q[2][2])/2,`rgb(${gv},${gv},${gv})`,q]); }
-  const seq=n=>[...Array(n).keys()];
-  const faces=[[[0,-1],seq(nx).map(i=>[i,0])],[[0,1],seq(nx).map(i=>[i,ny-1])],[[-1,0],seq(ny).map(j=>[0,j])],[[1,0],seq(ny).map(j=>[nx-1,j])]];
-  const vis=faces.filter(([fn])=>fn[0]*v[0]+fn[1]*v[1]>1e-6);
-  vis.forEach(([fn,edge])=>{ const s=0.45+0.35*Math.min(1,(fn[0]*v[0]+fn[1]*v[1])/Math.cos(el));
-    const col=`rgb(${[0.5*s+.12,0.5*s+.12,0.5*s+.14].map(c=>Math.round(Math.min(1,c)*255))})`;
-    for(let t=0;t<edge.length-1;t++){ const [i1,j1]=edge[t],[i2,j2]=edge[t+1];
-      const q=[top[j1][i1],top[j2][i2],pr(gx(i2),gy(j2),Z(i2,j2)-tv),pr(gx(i1),gy(j1),Z(i1,j1)-tv)]; polys.push([(q[0][2]+q[2][2])/2-1e-3,col,q]); } });
-  polys.sort((a,b)=>a[0]-b[0]);
-  ctx.lineJoin="round"; ctx.lineWidth=0.7;
-  for(const [,col,q] of polys){ ctx.beginPath(); q.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); ctx.fillStyle=col; ctx.strokeStyle=col; ctx.fill(); ctx.stroke(); }
-  ctx.strokeStyle="rgba(0,0,0,.75)"; ctx.lineWidth=1.1;
-  const line=(edge,dz)=>{ ctx.beginPath(); edge.forEach(([i,j],k)=>{ const [x,y]=pr(gx(i),gy(j),Z(i,j)+dz); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
-  faces.forEach(([,e])=>line(e,0));
-  vis.forEach(([,e])=>{ line(e,-tv); [e[0],e[e.length-1]].forEach(([i,j])=>{ const a=top[j][i], b=pr(gx(i),gy(j),Z(i,j)-tv);
-    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); }); });
-  /* 尺寸文字（板子尺寸設定） */
-  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink"); ctx.textAlign="center"; ctx.textBaseline="middle";
-  vis.forEach(([fn,e])=>{ const [i,j]=e[Math.floor(e.length/2)], [x,y]=pr(gx(i)+fn[0]*W*.12,gy(j)+fn[1]*W*.12,-tv);
-    ctx.fillText(fn[1]?`長 ${fmm(L)} mm`:`寬 ${fmm(W)} mm`,x,y+8); });
-  /* 量測點與標籤：依深度由近到遠放置（避讓），再由遠到近畫 */
-  const nameF=`700 13px ${TXT}`, valF=`700 13px ${NUM}`, labs=m.pts.map(p=>{ const zz=m.z[p.key], [x,y,d]=pr(p.x,p.y,zz==null?0:zz*ex), lv2=labelValue(m,p.key);
-    return {p,x,y,d,t1:p.name,t2:lv2==null?"無數據":sgn3(lv2),bad:p.st==="hi"||p.st==="lo",miss:zz==null}; });
-  const placed=[], hit=r=>placed.some(o=>r.x-2<o.x+o.w&&r.x+r.w+2>o.x&&r.y-2<o.y+o.h&&r.y+r.h+2>o.y);
-  [...labs].sort((a,b)=>b.d-a.d).forEach(o=>{ ctx.font=nameF; const w1=ctx.measureText(o.t1).width; ctx.font=valF;
-    const bw=Math.max(w1,ctx.measureText(o.t2).width)+10, bh=34, cand=[[-bw/2,-bh-10],[-bw/2,10],[-bw-10,-bh/2],[10,-bh/2],[-bw/2,-2*bh-14],[-bw/2,bh+14]];
-    let box=null; for(const [ox,oy] of cand){ const r={x:o.x+ox,y:o.y+oy,w:bw,h:bh}; if(!hit(r)){ box=r; break; } }
-    o.box=box||{x:o.x+cand[0][0],y:o.y+cand[0][1],w:bw,h:bh}; placed.push(o.box); });
-  labs.sort((a,b)=>a.d-b.d).forEach(({x,y,box:b,t1,t2,bad,miss})=>{
-    ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,y);
-    ctx.lineTo(Math.max(b.x,Math.min(x,b.x+b.w)),Math.max(b.y,Math.min(y,b.y+b.h))); ctx.stroke();
-    if(miss){ ctx.strokeStyle=C3("--ng"); ctx.lineWidth=3; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(x-6,y-6); ctx.lineTo(x+6,y+6); ctx.moveTo(x+6,y-6); ctx.lineTo(x-6,y+6); ctx.stroke(); ctx.lineCap="butt"; }
-    else { ctx.beginPath(); ctx.arc(x,y,4.5,0,2*Math.PI); ctx.fillStyle="#FF7A00"; ctx.fill(); ctx.lineWidth=1.2; ctx.strokeStyle="#111"; ctx.stroke(); }
-    const red=bad||miss; ctx.fillStyle=red?"rgba(200,50,43,.94)":"rgba(255,255,255,.9)"; ctx.beginPath();
-    ctx.roundRect?ctx.roundRect(b.x,b.y,b.w,b.h,4):ctx.rect(b.x,b.y,b.w,b.h); ctx.fill();
-    ctx.fillStyle=red?"#FFFFFF":"#1C2326"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.font=nameF; ctx.fillText(t1,b.x+b.w/2,b.y+9.5); ctx.font=valF; ctx.fillText(t2,b.x+b.w/2,b.y+24.5); });
-  /* 左下角：板厚（示意）與放大倍數 */
-  ctx.font=`500 13px ${TXT}`; ctx.fillStyle=C3("--ink-2"); ctx.textAlign="left"; ctx.textBaseline="middle";
-  ctx.fillText(`板厚 ${fmm(m.T)} mm（示意，不按比例）　高度放大約 ×${Math.round(ex).toLocaleString()} 倍　標籤：${m.mode===STANDARD?"讀值（相對標準件）":"殘差（扣除傾斜）"} mm`,10,hh-16);
+  const css=getComputedStyle(document.documentElement), C3=k=>css.getPropertyValue(k).trim();
+  const TXT=C3("--txt"), ink=C3("--ink"), ng=C3("--ng"), focus=C3("--focus");
+  const {L,W,g,ins,nx,ny,pts}=m, zmin=m.lo[1], spread=m.spread||1e-9, rel=z=>z-zmin;
+  const numof=new Map(pts.map((p,i)=>[p.key,i+1])), hiK=m.hi[0], loK=m.lo[0];
+  /* 抬頭（三列：尺寸與垂直放大、最低、最高） */
+  const headH=3*20+14;
+  ctx.fillStyle=ink; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font=`500 14px ${TXT}`;
+  [`寬 ${fmm(W)} × 長 ${fmm(L)} × 厚 ${fmm(m.T)} mm　垂直放大 5 倍`,
+   `最低：${m.by[loK].name} = ${rel(m.lo[1]).toFixed(4)} mm`,
+   `最高：${m.by[hiK].name} = ${rel(m.hi[1]).toFixed(4)} mm`].forEach((t,i)=>ctx.fillText(t,24,18+i*20));
+  /* 板面投影（平面內旋轉；仿射，無透視） */
+  const ang=V3.rot*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang);
+  const rotp=(x,y)=>{ const X=x-L/2, Y=y-W/2; return [X*ca-Y*sa, X*sa+Y*ca]; };
+  const corners=[rotp(0,0),rotp(L,0),rotp(L,W),rotp(0,W)], xs=corners.map(c=>c[0]), ys=corners.map(c=>c[1]);
+  const bw=(Math.max(...xs)-Math.min(...xs))||1, bh=(Math.max(...ys)-Math.min(...ys))||1;
+  const areaX=8, areaY=headH, areaW=w-16, areaH=Math.max(1,hh-headH-12), sc=Math.min(areaW/bw,areaH/bh)*0.98;
+  const ccx=areaX+areaW/2, ccy=areaY+areaH/2, scr=(x,y)=>{ const [rx,ry]=rotp(x,y); return [ccx+sc*rx, ccy+sc*ry]; };
+  /* 網格各點上色到離屏小圖，再雙線性平滑放大貼到板面（連續漸層、不馬賽克）；推估範圍外往白拉近 */
+  const off=document.createElement("canvas"); off.width=nx; off.height=ny;
+  const octx=off.getContext("2d"), img=octx.createImageData(nx,ny);
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){ let [r,gg,b]=jet(rel(g[j][i])/spread);
+    if(!ins[j][i]){ r=(r+235)>>1; gg=(gg+235)>>1; b=(b+235)>>1; }
+    const o=(j*nx+i)*4; img.data[o]=r; img.data[o+1]=gg; img.data[o+2]=b; img.data[o+3]=255; }
+  octx.putImageData(img,0,0);
+  /* 像素中心 (0.5,0.5)…(nx-0.5,ny-0.5) 對應板面四角的仿射轉換 */
+  const s0=scr(0,0), a=sc*ca*L/(nx-1), b2=sc*sa*L/(nx-1), c2=-sc*sa*W/(ny-1), d2=sc*ca*W/(ny-1);
+  const e2=s0[0]-0.5*(a+c2), f2=s0[1]-0.5*(b2+d2), quad=[scr(0,0),scr(L,0),scr(L,W),scr(0,W)];
+  ctx.save(); ctx.beginPath(); quad.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.clip();
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality="high"; ctx.transform(a,b2,c2,d2,e2,f2); ctx.drawImage(off,0,0); ctx.restore();
+  /* 板框 */
+  ctx.strokeStyle="rgba(0,0,0,.47)"; ctx.lineWidth=1.2; ctx.beginPath();
+  quad.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
+  /* 尺寸文字（長、寬） */
+  ctx.fillStyle=ink; ctx.font=`500 13px ${TXT}`; ctx.textAlign="center"; ctx.textBaseline="middle";
+  const mb=scr(L/2,W); ctx.fillText(`寬 ${fmm(W)} mm`,mb[0],mb[1]+13);
+  const mr=scr(L,W/2); ctx.textAlign="left"; ctx.fillText(`長 ${fmm(L)} mm`,mr[0]+8,mr[1]);
+  /* 探點（連號 1～N）＋白底編號；最高點白圈標「最高」、最低點標「最低」；無數據為紅 ✕ */
+  pts.forEach(p=>{ const [sx,sy]=scr(p.x,p.y), num=String(numof.get(p.key)), boxY=sy-21;
+    if(p.v==null){ ctx.strokeStyle=ng; ctx.lineWidth=3; ctx.lineCap="round"; ctx.beginPath();
+      ctx.moveTo(sx-5,sy-5); ctx.lineTo(sx+5,sy+5); ctx.moveTo(sx+5,sy-5); ctx.lineTo(sx-5,sy+5); ctx.stroke(); ctx.lineCap="butt"; }
+    else { ctx.fillStyle="rgb(25,25,25)"; ctx.beginPath(); ctx.arc(sx,sy,3.5,0,2*Math.PI); ctx.fill(); }
+    ctx.fillStyle="rgba(255,255,255,.84)"; ctx.beginPath();
+    ctx.roundRect?ctx.roundRect(sx-11,boxY,22,15,3):ctx.rect(sx-11,boxY,22,15); ctx.fill();
+    ctx.fillStyle=ink; ctx.font=`700 12px ${TXT}`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(num,sx,boxY+8);
+    if(p.key===hiK){ ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx,sy,7,0,2*Math.PI); ctx.stroke();
+      ctx.fillStyle=ng; ctx.font=`700 12px ${TXT}`; ctx.fillText("最高",sx,sy+14); }
+    if(p.key===loK){ ctx.fillStyle=focus; ctx.font=`700 12px ${TXT}`; ctx.fillText("最低",sx,sy+14); } });
   $("#v3ang").textContent=`旋轉 ${V3.rot}°`;
 }
-function side3d(){ const m=V3.models[V3.mode], std=m.mode===STANDARD;
-  const hl=([k])=>`<div>${k===m.hi[0]?"最高點":"最低點"}　<b>${esc(m.by[k].name)}</b>　<span class="n">${sgn3(labelValue(m,k))}</span></div>`;
-  const sideW={hi:"偏高（表面較低）",lo:"偏低（表面較高）"};
-  const out=m.pts.filter(p=>sideW[p.st]&&p.v!=null).map(p=>`${p.name} ${sideW[p.st]}`), miss=m.pts.filter(p=>p.v==null).map(p=>p.name);
-  const notes=[`使用 ${m.ok.length}/${m.pts.length} 點。`,`高度放大約 ×${Math.round(m.ex).toLocaleString()} 倍，厚度為示意。`,
-    "點與點之間的形狀是推估；淡色區為量測點範圍外的推估，判定以實測點為準。","探頭在板子下方，已換算成由上往下看的高度。"];
-  if(!std) notes.splice(1,0,"已扣除整片傾斜與高低。");
-  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">${std?"讀值差（最高 − 最低）":"平面度（最小平方）"}</span>
-      <span class="big">${m.spread.toFixed(3)}<small> mm</small></span>${std?"":`<span class="s">允許值：未定（TBD-07）；只供檢視，不用於判定</span>`}</div>
-    <div class="v3-card">${hl(m.hi)}${hl(m.lo)}<span class="s">${std?"單位 mm；數值為讀值，以標準件為 0（探頭在下方，讀值越小表面越高）":"單位 mm；相對於擬合平面，表面向上為正"}</span></div>
-    <div class="v3-card v3-leg"><span class="s">越高越白、越低越灰；光從左上方照射</span><div class="bar"></div>
-      <div class="tk"><span>${(-m.lim).toFixed(3)}</span><span>0</span><span>+${m.lim.toFixed(3)}</span></div></div>
-    ${out.length||miss.length?`<div class="v3-card red">${out.length?`<span class="ng"><b>超出允收：</b>${esc(out.join("、"))}</span>`:""}
-      ${miss.length?`<span class="ng"><b>無數據（不參與繪圖）：</b>${esc(miss.join("、"))}</span>`:""}
-      <span class="s">探頭在下方：讀值偏高＝表面較低，讀值偏低＝表面較高</span></div>`:""}
-    <ul class="v3-note">${notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`; }
-const V3={models:null,mode:STANDARD,rot:0,timer:null};
-function v3Mode(mode){ V3.mode=mode; document.querySelectorAll(".v3m").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===mode)); side3d(); draw3d(); }
-function v3Play(on){ clearInterval(V3.timer); V3.timer=on?setInterval(()=>{ V3.rot=(V3.rot+STEP_DEG)%360; draw3d(); },STEP_MS):null;
-  $("#v3play").textContent=on?"❚❚ 暫停":"▶ 播放"; }
-function v3Turn(d){ v3Play(false); V3.rot=(V3.rot+d+360)%360; draw3d(); }
+/* 側欄：點位相對高度逐點清單（偏高紅／偏低藍／合格）＋ jet 色條（相對高度 mm，0..最大） */
+function side3d(){ const m=V3.model, zmin=m.lo[1], rel=z=>z-zmin, spread=m.spread||1e-9;
+  const numof=new Map(m.pts.map((p,i)=>[p.key,i+1])), word={hi:"偏高",lo:"偏低",ok:"合格"};
+  const rows=m.pts.map(p=>{ const n=numof.get(p.key);
+    if(p.v==null) return `<li class="miss">${n}：無數據</li>`;
+    const cls=p.st==="hi"?"hi":p.st==="lo"?"lo":"";
+    return `<li class="${cls}">${n}：${rel(m.z[p.key]).toFixed(4)} ${word[p.st]||""}</li>`; }).join("");
+  const ticks=[0,1,2,3,4,5].map(i=>`<span>${(i/5*spread).toFixed(4)}</span>`).join("");
+  $("#v3side").innerHTML=`<div class="v3-card"><span class="k">點位相對高度 (mm)</span><ul class="v3-list">${rows}</ul></div>
+    <div class="v3-card v3-leg"><span class="s">相對高度 (mm)</span><div class="bar" style="background:${jetCss()}"></div>
+      <div class="tk">${ticks}</div></div>`; }
+const V3={model:null,rot:20};   // 預設平面內傾斜 20°，讓橫向板子填滿直式畫面、探點散開（5.11 行為）
+function v3Turn(d){ V3.rot=(V3.rot+d+360)%360; draw3d(); }
 function upd3d(){ const b=$("#v3dBtn"), on=!!lastData&&!busy&&!detecting; b.disabled=!on;
-  b.title=on?"以立體圖檢視這一片的表面高低":"量測完成後可檢視這一片的 3D 圖"; }
+  b.title=on?"以熱力圖檢視這一片的表面高低":"量測完成後可檢視這一片的變形曲面示意圖"; }
 async function open3d(){ if(!lastData||busy||detecting) return;
   const pts=snapshot3d(), why=check3d(pts);
-  let models=null; if(!why){ try{ models={[STANDARD]:build3d(pts,STANDARD),[DETRENDED]:build3d(pts,DETRENDED)}; }catch(e){ return showMsg("3D 繪圖",String(e),["關閉"],"warn"); } }
+  let model=null; if(!why){ try{ model=build3d(pts); }catch(e){ return showMsg("3D 繪圖",String(e),["關閉"],"warn"); } }
   if(why) return showMsg("3D 繪圖",why,["關閉"],"warn");
-  V3.models=models; V3.rot=0;
+  V3.model=model; V3.rot=20;
   $("#v3sn").textContent=serial||""; const rs=$("#v3rs"); rs.className="v3-rs "+lastJudg; rs.textContent={PASS:"合格",FAIL:"不合格",ERROR:"設備異常"}[lastJudg];
-  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ v3Mode(STANDARD); v3Play(true); }); }
+  $("#v3Dlg").showModal(); requestAnimationFrame(()=>{ side3d(); draw3d(); }); }
 $("#v3dBtn").addEventListener("click",open3d);
-document.querySelectorAll(".v3m").forEach(b=>b.addEventListener("click",()=>v3Mode(b.dataset.mode)));
 $("#v3prev").addEventListener("click",()=>v3Turn(-STEP_DEG)); $("#v3next").addEventListener("click",()=>v3Turn(STEP_DEG));
-$("#v3play").addEventListener("click",()=>v3Play(!V3.timer));
 [$("#v3x"),$("#v3done")].forEach(b=>b.addEventListener("click",()=>$("#v3Dlg").close()));
-$("#v3Dlg").addEventListener("close",()=>v3Play(false));
-$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG);
-  else if(e.key===" "){ e.preventDefault(); v3Play(!V3.timer); } else if(e.key==="m"||e.key==="M") v3Mode(V3.mode===STANDARD?DETRENDED:STANDARD); });
+$("#v3Dlg").addEventListener("keydown",e=>{ if(e.key==="ArrowLeft") v3Turn(-STEP_DEG); else if(e.key==="ArrowRight") v3Turn(STEP_DEG); });
 window.addEventListener("resize",()=>{ if($("#v3Dlg").open) draw3d(); });
 
 /* ================= 其他按鍵 ================= */

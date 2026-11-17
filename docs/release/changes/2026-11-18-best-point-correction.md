@@ -10,18 +10,26 @@
 
 ## 顯示與紀錄（方案 A）
 - 主畫面方塊、3D、Excel **仍顯示原始讀值**；只有判定與「超出上限／低於下限」的差距用修正值。
+- **整片恰一個方塊標記藍色「最佳點」標籤**（判定基準，每次量測重設），讓作業員辨識（2026-11-18 PO 要求，已簽核）。
+- **刻度條三角指標改以修正值定位**（區間為該點上下限）：合格→指標落在上下限內、偏高/偏低→落在區間外、最佳點→中線，真實反映判定（2026-11-18 PO 要求，已簽核）。
 - 量測紀錄 `measured_value` 維持原始讀值；本機暫存 JSON 另記該片最佳點讀值 `best_offset` 供回溯。**DB 不加欄位**（App 帳號無 DDL 權限；`best_offset` 可由各點 `measured_value` 推回）。
 
 ## 程式
 - `measure.py`：新增 `best_offset(values)`（取 `|v|` 最小、並列取較小）與 `correct(value, best)`；`DemoStation.read` 的 fail 模式改為讓缺陷點相對其餘點的最佳點明確超標（與新判定一致）。
-- `ui/main_window.py`：`show_result` 改為兩階段——先掃全片有效讀值求 `best`，再逐點以修正值 `judge`；不合格註記用修正值；方塊仍顯示原始讀值；`PointResult` 新增 `best_offset`。
+- `ui/main_window.py`：`show_result` 改為兩階段——先掃全片有效讀值求 `best`，再逐點以修正值 `judge`；不合格註記用修正值；方塊仍顯示原始讀值；`PointResult` 新增 `best_offset`。`ProbeTile` 新增「最佳點」標籤與 `set_best()`，`show_result` 標記最佳點方塊；`set_result` 新增 `scale_value`，刻度指標以修正值定位（大字仍為原始讀值）。
 - `results.py`：`to_record` 明細新增 `best_offset`（僅暫存 JSON；DB INSERT 不變）。
 
+## 3D 繪圖改為熱力圖（2026-11-18，真機測試通過後統一更新）
+- 立體起伏圖改為**俯視平滑熱力圖「變形曲面示意圖」**，完全取代（P3D-06～P3D-08 修訂）：jet 配色、相對高度最低=0、網格雙線性內插的**連續漸層**（不馬賽克）；移除「相對標準件／扣除傾斜」兩模式與自動旋轉、不再畫板厚實心塊。
+- 抬頭（尺寸、垂直放大 5 倍、最低／最高點）、下方「點位相對高度」逐點清單（偏高紅／偏低藍／合格）、底部 jet 色條；最高點白圈「最高」、最低點「最低」。
+- 探點位置映射改為**首尾落板緣**（POS-13）：x = 長 ×(點−1)/(點數−1)、y = 寬 ×(排−1)/(排數−1)；3 排×4 點時外圈 10 點貼四邊、第 2 排第 2、3 點居中。
+- `plate3d/renderer.py` 重寫 render()（jet 熱力圖、小圖平滑放大）；`plate3d/dialog.py` 移除模式／側欄、改直式；`plate3d/config.py` 映射改貼板緣。
+
 ## 文件
-- 規格書 JDG-07（新增並簽核）、JDG-01（修訂）、JDG-07-G1／G2／A1～A3。
-- 操作說明書第 9.1 章（最佳點修正）。
+- 規格書 JDG-07（新增並簽核）、JDG-01（修訂）、JDG-07-G1／G2／A1～A5；P3D-06～P3D-08、P3D-10、POS-13（修訂並簽核 2026-11-18）；P3D-G1。
+- 操作說明書第 9.1 章（最佳點修正）、5.5 章（3D 熱力圖）；畫面設計規格 5.11；網站原型 board-station.html；截圖（main-*、plate3d、settings-*）。
 
 ## 驗證
 - 單元與畫面測試通過（新增 `tests/test_measure.py` 8 項、`test_ui.test_best_point_correction_judges_relative`；修正 `DemoStation` fail 模式後 `test_demo_station`、3D 與橫幅測試照常）。
 - 不需跑 SQL（沿用既有 JSON 與量測紀錄欄位）。
-- 真機（mosa）：待 eno2 網路恢復後確認。
+- 真機（mosa）：**測試通過（2026-11-18）**，PO 授權後統一更新文件、網站與截圖。

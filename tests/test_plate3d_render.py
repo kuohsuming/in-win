@@ -94,9 +94,8 @@ class Render(unittest.TestCase):
         return out
 
     def test_dialog_controls_and_cache(self):
-        """P3D-08：置中、自動播放、暫停、轉動、切換模式；第二圈使用快取。"""
+        """P3D-08：置中、轉動、暫停；第二圈使用快取。"""
         from flatness.plate3d.dialog import Plate3DDialog
-        from flatness.plate3d.model import DETRENDED
 
         def act(central):
             d = central.findChildren(Plate3DDialog)[0]
@@ -105,8 +104,6 @@ class Render(unittest.TestCase):
                    "playing": d.timer.isActive()}
             d.turn(30)
             res["after_turn"] = (d.view.rot, d.timer.isActive(), d.angle.text())
-            d.set_mode(DETRENDED)
-            res["mode_label"] = d.side_lay.itemAt(0).widget().findChildren(type(d.angle))[0].text()
             d.view.frame(0)
             n = len(d.view._cache)
             d.view.frame(0)
@@ -114,9 +111,8 @@ class Render(unittest.TestCase):
             return res
         out = self._open(self.snapshot(), act)
         self.assertLessEqual(out["center"], 2)
-        self.assertTrue(out["playing"])
-        self.assertEqual(out["after_turn"], (30, False, "旋轉 30°"))
-        self.assertIn("平面度", out["mode_label"])
+        self.assertFalse(out["playing"])                      # 直式熱力圖預設不自動旋轉
+        self.assertEqual(out["after_turn"], (50, False, "旋轉 50°"))   # 預設傾斜 20° + 轉 30°
         self.assertEqual(out["cache"][0], out["cache"][1])
 
     def test_refuse_shows_warning(self):

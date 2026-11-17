@@ -1123,6 +1123,18 @@ class MainWindowTest(UiBase):
         self.assertEqual(res[defect].value, 5.30)                 # 方塊仍顯示原始讀值（方案 A）
         self.assertEqual(res[defect].best_offset, 5.00)          # 量測當時的最佳點
         self.assertTrue(all(p.state == "ok" for k, p in res.items() if k != defect))
+        # JDG-07：恰一個方塊標記「最佳點」，且就是讀值 5.00（最佳點）之一、不是缺陷點
+        best_tiles = [kp for kp, t in w.tiles.items() if t.is_best]
+        self.assertEqual(len(best_tiles), 1)
+        self.assertNotEqual(best_tiles[0], defect)
+        self.assertEqual(res[best_tiles[0]].value, 5.00)
+        # JDG-07：刻度指標用修正值定位（大字仍為原始讀值）；最佳點落在中線、合格點落在區間內
+        self.assertAlmostEqual(w.tiles[defect].scale.value, 5.30 - 5.00)   # 偏高點 → 修正值 0.3
+        self.assertEqual(w.tiles[best_tiles[0]].scale.value, 0.0)          # 最佳點 → 修正值 0
+        for kp, t in w.tiles.items():
+            if res[kp].state == "ok":
+                lo, hi = t.std.lower, t.std.upper
+                self.assertTrue(lo <= t.scale.value <= hi)                 # 合格 → 指標在上下限內
 
     def test_tile_sub_uses_device_number(self):  # POS-06：方塊小字「第 N 台 名稱」，與設定頁一致
         from flatness.ui.main_window import ProbeTile
@@ -1250,7 +1262,7 @@ class MainWindowTest(UiBase):
         self.assertEqual(snap.judgment, "FAIL")
         self.assertEqual(len(snap.points), 12)
         first = snap.points[0]
-        self.assertEqual((first.name, first.x, first.y), ("前排 左", 100.0, 60.0))  # 第 1 排第 1 點（5 × 5 格）
+        self.assertEqual((first.name, first.x, first.y), ("前排 左", 0.0, 0.0))  # 第 1 排第 1 點落板緣角（POS-13）
         self.assertEqual(snap.points[-1].name, "後排 右")
         self.assertEqual(snap.unplaced, ())
         p = w.result.points[-1].std

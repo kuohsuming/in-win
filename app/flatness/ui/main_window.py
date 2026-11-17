@@ -114,18 +114,22 @@ class ScaleBar(QWidget):
     def __init__(self):
         super().__init__()
         self.k = 1.0
-        self.setFixedHeight(34)
+        self.setFixedHeight(48)
         self.value = self.std = None
         self.color = C["ink"]
 
     def set_scale(self, k: float):
         self.k = k
-        self.setFixedHeight(max(14, round(34 * k)))
+        self.setFixedHeight(max(20, round(48 * k)))   # 上標校正值、下標上下限（對齊綠色區間左右邊緣）（JDG-07）
         self.update()
 
     def set(self, value, std, color):
         self.value, self.std, self.color = value, std, color
         self.update()
+
+    @staticmethod
+    def _lim(v: float) -> str:
+        return "0" if v == 0 else f"{v:+g}"
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -133,20 +137,34 @@ class ScaleBar(QWidget):
         w, k = self.width(), self.k
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(C["line"]))
-        p.drawRoundedRect(QRectF(0, 14 * k, w, 6 * k), 3 * k, 3 * k)
+        p.drawRoundedRect(QRectF(0, 24 * k, w, 6 * k), 3 * k, 3 * k)   # 軌道
         ok = QColor(C["go"])
         ok.setAlphaF(0.35)
         p.setBrush(ok)
-        p.drawRoundedRect(QRectF(w * 0.2, 10 * k, w * 0.6, 14 * k), 2, 2)
+        p.drawRoundedRect(QRectF(w * 0.2, 20 * k, w * 0.6, 14 * k), 2, 2)  # 允收區間（中間 60%）
         p.setBrush(QColor(C["ink-2"]))
-        p.drawRect(QRectF(w * 0.5 - 1, 7 * k, 2, 20 * k))
-        if self.value is not None and self.std is not None:
+        p.drawRect(QRectF(w * 0.5 - 1, 17 * k, 2, 20 * k))                 # 標準值線（50%）
+        lbl_px = max(9, round(12 * k))
+        if self.value is not None and self.std is not None:   # 三角指標（依校正值定位）＋上方標校正值
             span = (self.std.upper - self.std.lower) / 0.6
             start = self.std.lower - span * 0.2
             pct = max(0.02, min(0.98, (self.value - start) / span))
             x = w * pct
             p.setBrush(QColor(self.color))
-            p.drawPolygon(QPolygonF([QPointF(x - 9 * k, 0), QPointF(x + 9 * k, 0), QPointF(x, 13 * k)]))
+            p.drawPolygon(QPolygonF([QPointF(x - 9 * k, 13 * k), QPointF(x + 9 * k, 13 * k), QPointF(x, 23 * k)]))
+            p.setPen(QColor(self.color))
+            p.setFont(text_font(lbl_px, 700))
+            cw = w * 0.4
+            cx = min(max(x - cw / 2, 0.0), w - cw)
+            p.drawText(QRectF(cx, 0, cw, 13 * k), Qt.AlignHCenter | Qt.AlignVCenter, f3(self.value))
+        if self.std is not None:            # 綠色區間左邊緣標下限、右邊緣標上限
+            p.setPen(QColor(C["ink-2"]))
+            p.setFont(text_font(lbl_px))
+            lw = w * 0.26
+            p.drawText(QRectF(w * 0.2 - lw / 2, 35 * k, lw, 13 * k), Qt.AlignHCenter | Qt.AlignVCenter,
+                       self._lim(self.std.lower))
+            p.drawText(QRectF(w * 0.8 - lw / 2, 35 * k, lw, 13 * k), Qt.AlignHCenter | Qt.AlignVCenter,
+                       self._lim(self.std.upper))
 
 
 class ProbeTile(QFrame):
@@ -173,6 +191,11 @@ class ProbeTile(QFrame):
         self.ip_tag = QLabel()
         self.ip_tag.hide()
         sub.addWidget(self.ip_tag)
+        self.is_best = False             # JDG-07：本片是否為最佳點（判定基準）
+        self.best_tag = QLabel("最佳點")   # JDG-07：整片判定的基準點（相對它看平整度）
+        self.best_tag.setStyleSheet(f"background:{C['focus']};color:white;padding:0 6px;border-radius:3px;")
+        self.best_tag.hide()
+        sub.addWidget(self.best_tag)
         sub.addStretch()
         name_col.addLayout(sub)
         top.addLayout(name_col)
@@ -250,6 +273,7 @@ class ProbeTile(QFrame):
         self.pos.setFont(text_font(self._fpx(20), 700))
         self.sub.setFont(text_font(self._fpx(13)))
         self.ip_tag.setFont(text_font(self._fpx(13), 700))
+        self.best_tag.setFont(text_font(self._fpx(13), 700))
         self.badge_text.setFont(text_font(self._fpx(22), 900))
         for lb in self._keys:
             lb.setFont(text_font(self._fpx(15)))
@@ -297,6 +321,8 @@ class ProbeTile(QFrame):
         self._frame(3, C["line"], C["panel-2"])
         self.badge_icon.clear()
         self.badge_text.clear()
+        self.is_best = False                 # JDG-07：重新量測時清除最佳點標記
+        self.best_tag.hide()
         self.m.setFont(num_font(self._fpx(44), 700))
         self.m.setText("—")
         self.m.setStyleSheet(f"color:{C['ink']}")
@@ -306,8 +332,9 @@ class ProbeTile(QFrame):
         self._device(dev_color, dev_text, blink=blink)
         self.fade(False)
 
-    def set_result(self, state, value=None, note="", device_text="設備正常", device_error=False):
-        self._last = (self.set_result, (state, value, note, device_text, device_error), {})
+    def set_result(self, state, value=None, note="", device_text="設備正常", device_error=False, scale_value=None):
+        # JDG-07：大字測量值仍為原始讀值（方案 A）；刻度指標用修正值 scale_value（相對上下限定位），省略時用 value
+        self._last = (self.set_result, (state, value, note, device_text, device_error), {"scale_value": scale_value})
         self.state = state
         color = C["go"] if state == OK else C["ng"]
         if state == OK:
@@ -327,7 +354,8 @@ class ProbeTile(QFrame):
             self.m.setText(self._value_html(value))
             self.m.setStyleSheet(f"color:{C['ink'] if state == OK else C['ng']}")
             self.scale.show()
-            self.scale.set(value, self.std, C["ink"] if state == OK else C["ng"])
+            self.scale.set(value if scale_value is None else scale_value, self.std,
+                           C["ink"] if state == OK else C["ng"])
         self.note.setText(note)
         self.note.setVisible(bool(note) and note != device_text)  # 與設備狀態相同時不重複顯示
         if device_error:
@@ -356,6 +384,11 @@ class ProbeTile(QFrame):
         else:
             self._device("stale", "不連線、不量測")
         self.fade(False)
+
+    def set_best(self, on: bool):
+        """JDG-07：標記整片的最佳點（判定基準；相對它看平整度）。每次量測重設。"""
+        self.is_best = bool(on)
+        self.best_tag.setVisible(bool(on))
 
     def set_ip(self, text: str):
         """IP 不符的附加標示（空字串取消）；方塊內容不變（PROPOSAL §5.5）。"""
@@ -1522,8 +1555,10 @@ class MainWindow(QMainWindow):
             for p in d["probes"]:
                 r = by.get((d["key"], p["id"]))
                 if r is not None and r.value is not None and not r.error and sd.get(p["id"]) is not None:
-                    cand.append(r.value)
-        best = measure.best_offset(cand)
+                    cand.append((r.value, d["key"], p["id"]))
+        best = measure.best_offset([v for v, _k, _p in cand])
+        # 最佳點（供畫面標記）：與 best_offset 同一順序（絕對值最小、並列取較小），空片為 None
+        best_point = min(cand, key=lambda t: (abs(t[0]), t[0]))[1:] if cand else None
         for d in self.devices:
             missing = 0
             probes = {p["id"]: p for p in d["probes"]}
@@ -1564,9 +1599,10 @@ class MainWindow(QMainWindow):
                     state = measure.judge(corrected, s)
                     note = (f"超出上限 {f3(corrected - s.upper)}" if state == HI else
                             f"低於下限 {f3(s.lower - corrected)}" if state == LO else "")
-                    tile.set_result(state, r.value, note)  # 方案 A：方塊仍顯示原始讀值
+                    tile.set_result(state, r.value, note, scale_value=corrected)  # 方案 A：大字原始讀值、刻度用修正值
                     if state != OK:
                         outs.append(f"{who}{WORD[state]}")
+                tile.set_best((d["key"], pid) == best_point)  # JDG-07：標記判定基準的最佳點
                 where = self.point_pos.get((d["key"], pid))
                 points.append(PointResult(d["key"], pid, d["name"], desc, mac.get(d["key"], ""), state,
                                           r.value, s, r.raw, r.error or ("未設定允收標準" if s is None else None),

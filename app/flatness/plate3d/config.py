@@ -99,8 +99,10 @@ def probe_positions(devices: list[dict], plate: PlateConfig,
             where = positions.pos(p)
             if where:
                 r, k = where
-                out[(d["key"], p["id"])] = (plate.length * (k - 0.5) / grid.grid_points,
-                                            plate.width * (r - 0.5) / grid.grid_rows)
+                # POS-13（熱力圖）：版面首尾點落在板緣，外圈探點貼四邊、內圈留中間
+                fx = (k - 1) / (grid.grid_points - 1) if grid.grid_points > 1 else 0.5
+                fy = (r - 1) / (grid.grid_rows - 1) if grid.grid_rows > 1 else 0.5
+                out[(d["key"], p["id"])] = (plate.length * fx, plate.width * fy)
     return out
 
 
