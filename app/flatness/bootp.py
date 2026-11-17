@@ -39,7 +39,9 @@ class DefinitionError(ValueError):
         super().__init__("\n".join(f"{where}: {why}" for where, why in errors))
 
 
-TOLERANCES = (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50)  # 探頭允許誤差（mm）的選項（JDG-06）
+TOLERANCES = (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50)  # 舊版對稱允許誤差（mm）的選項（JDG-06，向下相容）
+LIMIT_OPTIONS = (0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
+                 -0.1, -0.2, -0.5, -1.0, -2.0, -5.0, -10.0, -20.0, -50.0)  # 上限／下限（mm）的選項（JDG-06）
 
 
 def _is_int(value) -> bool:
@@ -140,7 +142,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                         errors.append((pat, "必須是物件"))
                         continue
                     for extra in sorted(set(probe) - {"id", "description", "zero_offset", "zeroed_at", "tolerance",
-                                                      "row", "point", "enabled"}):
+                                                      "upper", "lower", "row", "point", "enabled"}):
                         errors.append((f"{pat}.{extra}", "不允許的欄位"))
                     errors += [(f"{pat}.{f}", why) for f, why in positions.probe_errors(probe)]
                     where = positions.pos(probe)
@@ -153,10 +155,7 @@ def validate(definition, equip_net: ipaddress.IPv4Interface) -> list[dict]:
                         else:
                             placed[where] = pat
                     _check_zero(errors, pat, probe)
-                    tol = probe.get("tolerance")
-                    if "tolerance" in probe and (isinstance(tol, bool) or not isinstance(tol, (int, float))
-                                                 or tol not in TOLERANCES):
-                        errors.append((f"{pat}.tolerance", "須為 " + "、".join(f"{v:g}" for v in TOLERANCES) + "（mm）"))
+                    _check_limits(errors, pat, probe)
                     pid = probe.get("id")
                     if not (_is_int(pid) and 1 <= pid <= 15):
                         errors.append((f"{pat}.id", "須為 1～15 的整數"))
@@ -200,6 +199,28 @@ def render_hosts(devices: list[dict]) -> str:
     lines = ["# 由 DL-EN1 定義檔自動產生，請勿手動修改；修改請改定義檔後重新套用"]
     lines += [f"{d['mac'].lower()},{d['ipv4']},{d['key']}" for d in devices]
     return "\n".join(lines) + "\n"
+
+
+def _check_limits(errors, pat, probe):
+    """JDG-06：上限／下限須在選項內、下限 ≤ 上限；向下相容舊的對稱 tolerance（不與 upper／lower 併用）。"""
+    has_new = "upper" in probe or "lower" in probe
+    if "tolerance" in probe:
+        tol = probe["tolerance"]
+        if has_new:
+            errors.append((f"{pat}.tolerance", "不可與 upper／lower 併用"))
+        elif isinstance(tol, bool) or not isinstance(tol, (int, float)) or tol not in TOLERANCES:
+            errors.append((f"{pat}.tolerance", "須為 " + "、".join(f"{v:g}" for v in TOLERANCES) + "（mm）"))
+    opts = "、".join(f"{v:g}" for v in sorted(LIMIT_OPTIONS))
+    for f in ("upper", "lower"):
+        if f in probe:
+            v = probe[f]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v not in LIMIT_OPTIONS:
+                errors.append((f"{pat}.{f}", f"須為 {opts}（mm）"))
+    if has_new:
+        lower = probe["lower"] if isinstance(probe.get("lower"), (int, float)) and not isinstance(probe.get("lower"), bool) else -0.2
+        upper = probe["upper"] if isinstance(probe.get("upper"), (int, float)) and not isinstance(probe.get("upper"), bool) else 0.2
+        if lower > upper:
+            errors.append((f"{pat}.lower", f"下限 {lower:g} 不可大於上限 {upper:g}"))
 
 
 def _check_zero(errors, pat: str, probe: dict):

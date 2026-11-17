@@ -45,7 +45,7 @@ STATUS_HELP = {
 }
 COLS = ("", "設備", "名稱", "MAC", "IPv4", "最後出現", "次數")
 # 探頭清單的欄（POS-01：第幾排、第幾點）
-P_ID, P_EN, P_DESC, P_ROW, P_PT, P_CAL, P_BTN, P_TOL = range(8)
+P_ID, P_EN, P_DESC, P_ROW, P_PT, P_CAL, P_BTN, P_UP, P_LO = range(9)
 
 
 def fmt_time(ts: datetime | None, full: bool = False) -> str:
@@ -477,14 +477,14 @@ class SettingsDialog(QDialog):
         pb.setSpacing(6)
         pb.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
                             "label", True))
-        pt = self.probe_table = QTableWidget(0, 8)
-        pt.setHorizontalHeaderLabels(("探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"))
+        pt = self.probe_table = QTableWidget(0, 9)
+        pt.setHorizontalHeaderLabels(("探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "上限", "下限"))
         pt.verticalHeader().hide()
         pt.setSelectionBehavior(QAbstractItemView.SelectRows)
         pt.setSelectionMode(QAbstractItemView.SingleSelection)
         pt.setMinimumHeight(180)
         pt.setMaximumHeight(180)
-        for col, width in ((P_ID, 70), (P_EN, 118), (P_ROW, 118), (P_PT, 118), (P_CAL, 150), (P_BTN, 80), (P_TOL, 100)):
+        for col, width in ((P_ID, 70), (P_EN, 118), (P_ROW, 118), (P_PT, 118), (P_CAL, 150), (P_BTN, 80), (P_UP, 104), (P_LO, 104)):
             pt.horizontalHeader().setSectionResizeMode(col, QHeaderView.Fixed)
             pt.setColumnWidth(col, width)
         pt.horizontalHeader().setSectionResizeMode(P_DESC, QHeaderView.Stretch)
@@ -857,7 +857,8 @@ class SettingsDialog(QDialog):
         for p in cfg.get("probes") or []:
             zero = {f: p[f] for f in lan.ZERO_FIELDS if f in p} or None
             scan = self._scans.get(d.mac)
-            self._append_probe_row(p.get("id"), p.get("description", ""), zero, lan.probe_tolerance(p),
+            lo, up = lan.probe_limits(p)
+            self._append_probe_row(p.get("id"), p.get("description", ""), zero, up, lo,
                                    p.get("row"), p.get("point"), positions.is_enabled(p),
                                    (scan.short(p["id"]), scan.text(p["id"])) if scan and p.get("id") in scan.states
                                    else ("", ""))
@@ -906,7 +907,7 @@ class SettingsDialog(QDialog):
         idx = self.row_box.findData(key)
         self.row_box.setCurrentIndex(idx if idx >= 0 else 0)
 
-    def _append_probe_row(self, pid, desc, zero=None, tolerance=lan.DEFAULT_TOLERANCE, row=None, point=None,
+    def _append_probe_row(self, pid, desc, zero=None, upper=lan.DEFAULT_UPPER, lower=lan.DEFAULT_LOWER, row=None, point=None,
                           enabled=True, status=("", "")):
         r = self.probe_table.rowCount()
         self.probe_table.insertRow(r)
@@ -945,17 +946,23 @@ class SettingsDialog(QDialog):
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(lambda _=False, b=btn: self._calibrate(self._button_row(b)))
         self.probe_table.setCellWidget(r, P_BTN, btn)
-        tol = QComboBox()  # JDG-06：允許誤差，判定為 |讀值| ≤ 允許誤差
-        for v in lan.TOLERANCES:
-            tol.addItem(f"{v:g} mm", v)
-        tol.setCurrentIndex(next((i for i, v in enumerate(lan.TOLERANCES) if v == tolerance),
-                                 lan.TOLERANCES.index(lan.DEFAULT_TOLERANCE)))
-        tol.setEnabled(not self.read_only)
-        tol.setToolTip("允許誤差：讀值在 ± 此值內為合格")
-        tol.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
-        tol.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)  # 不超出列高
-        tol.currentIndexChanged.connect(lambda _i: self._on_field_edited())
-        self.probe_table.setCellWidget(r, P_TOL, tol)
+        # JDG-06：上限、下限兩個選單，判定為 下限 ≤ 讀值 ≤ 上限
+        self.probe_table.setCellWidget(r, P_UP, self._limit_combo(upper, "允收上限：讀值 ≤ 此值為合格"))
+        self.probe_table.setCellWidget(r, P_LO, self._limit_combo(lower, "允收下限：讀值 ≥ 此值為合格"))
+
+    def _limit_combo(self, value, tip):
+        """JDG-06：上限／下限選單（選項 +50…0…−50 mm）。"""
+        box = QComboBox()
+        for v in sorted(lan.LIMIT_OPTIONS, reverse=True):
+            box.addItem(lan.limit_text(v), v)
+        box.setCurrentIndex(max(0, next((i for i, v in enumerate(sorted(lan.LIMIT_OPTIONS, reverse=True))
+                                         if v == value), 0)))
+        box.setEnabled(not self.read_only)
+        box.setToolTip(tip)
+        box.setStyleSheet("QComboBox { padding: 0 6px; font-size: 15px; border-width: 1px; }")
+        box.setFixedHeight(self.probe_table.verticalHeader().defaultSectionSize() - 2)  # 不超出列高
+        box.currentIndexChanged.connect(lambda _i: self._on_field_edited())
+        return box
 
     def _button_row(self, btn) -> int:
         for r in range(self.probe_table.rowCount()):
@@ -1513,9 +1520,12 @@ class SettingsDialog(QDialog):
                 desc = self._desc(r)
                 zero = self.probe_table.item(r, P_ID).data(Qt.UserRole) if self.probe_table.item(r, P_ID) else None
                 probe = {"id": r + 1, "description": desc, **(zero or {})}
-                tol = self.probe_table.cellWidget(r, P_TOL)
-                if tol is not None and tol.currentData() != lan.DEFAULT_TOLERANCE:  # 預設值（0.5 mm）不寫入
-                    probe["tolerance"] = tol.currentData()
+                up = self.probe_table.cellWidget(r, P_UP)
+                lo = self.probe_table.cellWidget(r, P_LO)
+                if up is not None and up.currentData() != lan.DEFAULT_UPPER:  # 預設值（+0.2 mm）不寫入
+                    probe["upper"] = up.currentData()
+                if lo is not None and lo.currentData() != lan.DEFAULT_LOWER:  # 預設值（−0.2 mm）不寫入
+                    probe["lower"] = lo.currentData()
                 row, pt = self._row_pos(r)  # POS-01：未定時不寫入；只設其一照實寫入，由檢查擋下
                 if not self._row_enabled(r):  # PDT-03：未啟用的探頭沒有位置
                     probe["enabled"] = False

@@ -62,8 +62,9 @@ class Shots(test_ui.UiBase):
         unk = next((d for d in devs if d.status == lan.UNCLASSIFIED), None)
         if unk: s.select(unk.mac); shot("settings-unknown", s)
         s.select(live.mac)
-        from flatness.ui.settings_dialog import P_TOL
-        box = s.probe_table.cellWidget(0, P_TOL); box.setCurrentIndex(box.findText("0.5 mm"))
+        from flatness.ui.settings_dialog import P_UP, P_LO  # JDG-06：上限、下限
+        s.probe_table.cellWidget(0, P_UP).setCurrentIndex(s.probe_table.cellWidget(0, P_UP).findData(0.5))
+        s.probe_table.cellWidget(0, P_LO).setCurrentIndex(s.probe_table.cellWidget(0, P_LO).findData(-0.1))
         s.btn_save.click(); shot("settings-confirm", s)
         s._ask = lambda *a, **k: True; s.close()
         s = SettingsDialog(be); s.enter_edit(); s.resize(1920, 1080); s.show()  # 探頭偵測：多 1 支、感測頭未接（PDT-01、PDT-02）

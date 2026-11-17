@@ -171,28 +171,43 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(cfg["max_probes"], 5)
         self.assertEqual([p["description"] for p in cfg["probes"]], ["左", "左中", "右中", "右", "探頭 5"])
 
-    def test_probe_tolerance_select(self):  # JDG-06：每個探頭最右邊的允許誤差，預設 0.5 mm
+    def test_probe_limits_select(self):  # JDG-06：每個探頭的上限、下限，預設 +0.2／−0.2 mm
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
-        from flatness.ui.settings_dialog import P_TOL
-        self.assertEqual(d.probe_table.horizontalHeaderItem(P_TOL).text(), "允許誤差")
-        box = d.probe_table.cellWidget(1, P_TOL)
-        self.assertEqual([box.itemText(i) for i in range(box.count())],
-                         ["0.1 mm", "0.2 mm", "0.5 mm", "1 mm", "2 mm", "5 mm", "10 mm", "20 mm", "50 mm"])
-        self.assertEqual(box.currentData(), 0.5)
-        self.assertFalse(d.is_dirty())                          # 未設定視為 0.5 mm，開啟時不算變更
-        box.setCurrentIndex(box.findText("0.2 mm"))
+        from flatness.ui.settings_dialog import P_UP, P_LO
+        self.assertEqual(d.probe_table.horizontalHeaderItem(P_UP).text(), "上限")
+        self.assertEqual(d.probe_table.horizontalHeaderItem(P_LO).text(), "下限")
+        up, lo = d.probe_table.cellWidget(1, P_UP), d.probe_table.cellWidget(1, P_LO)
+        self.assertEqual(up.itemText(0), "+50 mm")              # 由大到小
+        self.assertEqual(lo.itemText(lo.count() - 1), "-50 mm")
+        self.assertEqual((up.currentData(), lo.currentData()), (0.2, -0.2))
+        self.assertFalse(d.is_dirty())                          # 未設定視為預設，開啟時不算變更
+        up.setCurrentIndex(up.findData(0.5))
+        lo.setCurrentIndex(lo.findData(-0.1))
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
-        self.assertIn("第 2 台 中排 左中（ID 2）允許誤差：0.5 mm → 0.2 mm", d.preview.summary() + str(d.preview.items[0].lines))
+        text = d.preview.summary() + str(d.preview.items[0].lines)
+        self.assertIn("第 2 台 中排 左中（ID 2）上限：+0.2 mm → +0.5 mm", text)
+        self.assertIn("下限：-0.2 mm → -0.1 mm", text)
         d.btn_commit.click()
         probes = by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"]
-        self.assertEqual(probes[1]["tolerance"], 0.2)
-        self.assertNotIn("tolerance", probes[0])               # 預設 0.5 mm 不寫入
+        self.assertEqual((probes[1]["upper"], probes[1]["lower"]), (0.5, -0.1))
+        self.assertNotIn("upper", probes[0])                   # 預設不寫入
+        self.assertNotIn("lower", probes[0])
         std = self.be.standards()["row-2"]
-        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.5, 0.5), (-0.2, 0.2)))
+        self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.2, 0.2), (-0.1, 0.5)))
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.cellWidget(1, P_TOL).currentText(), "0.2 mm")  # 重新開啟仍為 0.2 mm
+        self.assertEqual(d.probe_table.cellWidget(1, P_UP).currentText(), "+0.5 mm")
+        self.assertEqual(d.probe_table.cellWidget(1, P_LO).currentText(), "-0.1 mm")
+
+    def test_lower_above_upper_blocks_save(self):  # JDG-06-A3
+        d = self.dlg
+        d.select("00:01:FC:DE:3A:76")
+        from flatness.ui.settings_dialog import P_UP, P_LO
+        d.probe_table.cellWidget(0, P_UP).setCurrentIndex(d.probe_table.cellWidget(0, P_UP).findData(0.2))
+        d.probe_table.cellWidget(0, P_LO).setCurrentIndex(d.probe_table.cellWidget(0, P_LO).findData(0.5))
+        msgs = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
+        self.assertTrue(any("下限 0.5 不可大於上限 0.2" in m for m in msgs), msgs)
 
     def test_port_field_hidden_but_kept(self):  # 2026-10-07 PO：設定頁不顯示 TCP 埠
         d = self.dlg
@@ -260,7 +275,7 @@ class SettingsDialogTest(UiBase):
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         headers = [d.probe_table.horizontalHeaderItem(c).text() for c in range(d.probe_table.columnCount())]
-        self.assertEqual(headers, ["探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "允許誤差"])
+        self.assertEqual(headers, ["探頭 ID", "啟用", "位置名稱", "第幾排", "第幾點", "校準", "", "上限", "下限"])
         self.assertEqual([self.pos_box(0, c).currentText() for c in ("row", "point")], ["未定", "未定"])
         self.assertEqual(self.pos_box(0, "row").count(), 6)  # 未定、1～5
 
@@ -1192,7 +1207,8 @@ class MainWindowTest(UiBase):
         self.assertEqual((first.name, first.x, first.y), ("前排 左", 100.0, 60.0))  # 第 1 排第 1 點（5 × 5 格）
         self.assertEqual(snap.points[-1].name, "後排 右")
         self.assertEqual(snap.unplaced, ())
-        self.assertEqual(snap.points[-1].tolerance_mm, w.result.points[-1].std.upper)
+        p = w.result.points[-1].std
+        self.assertEqual(snap.points[-1].tolerance_mm, max(abs(p.upper), abs(p.lower)))
         with mock.patch("flatness.plate3d.open_plate3d") as op:
             w.banner.btn_3d.click()
         op.assert_called_once()
@@ -1386,16 +1402,16 @@ class MainWindowTest(UiBase):
         self.assertTrue(all(t.dev_text.text() == "DL-EN1 偵測不到" for t in w.dev_tiles["row-2"]))
         self.assertEqual(w.flags["dev"], "第 2 台 中排 偵測不到")
 
-    def test_standard_from_probe_tolerance(self):  # JDG-06：允收標準為 0 ± 探頭的允許誤差，取代 config.toml
+    def test_standard_from_probe_limits(self):  # JDG-06：允收標準為 下限、上限，取代 config.toml，預設 ±0.2
         from flatness import measure
         self.be.cfg.standards.clear()                     # config.toml 的 [standards] 不再使用
         std = self.be.standards()
-        self.assertEqual((std["row-1"][1].nominal, std["row-1"][1].lower, std["row-1"][1].upper), (0.0, -0.5, 0.5))
+        self.assertEqual((std["row-1"][1].nominal, std["row-1"][1].lower, std["row-1"][1].upper), (0.0, -0.2, 0.2))
         self.win.rebuild(self.be.definition)
         self.win.detect()
         self.wait_state("idle")                           # 沒有「未設定允收標準」
         s = std["row-1"][1]
-        self.assertEqual((measure.judge(0.4999, s), measure.judge(0.5001, s), measure.judge(-0.5001, s)),
+        self.assertEqual((measure.judge(0.1999, s), measure.judge(0.2001, s), measure.judge(-0.2001, s)),
                          (measure.OK, measure.HI, measure.LO))
 
     def test_settings_saved_rebuilds_and_detects(self):  # 5.10 儲存後

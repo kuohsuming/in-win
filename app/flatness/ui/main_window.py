@@ -1611,7 +1611,8 @@ class MainWindow(QMainWindow):
             if xy is None:
                 continue
             value = None if p.state == ERR or p.value is None else p.value  # 設備異常、未校準等視為無數據
-            tol = p.std.upper if p.std is not None else lan.DEFAULT_TOLERANCE
+            # P3D-07 高度放大以上下限的較大絕對值為基準（JDG-06 上下限可不對稱）
+            tol = max(abs(p.std.upper), abs(p.std.lower)) if p.std is not None else lan.DEFAULT_UPPER
             pts.append(plate3d.ProbeReading(f"{lan.row_no(p.key)}-{p.probe_id}", self._point_name(p.key, p.probe_id),
                                             xy[0], xy[1], value, tol, p.state))
         missing = tuple(self._point_name(k, pid) for k, pid in plate3d_config.unplaced(devices))

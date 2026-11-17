@@ -512,20 +512,37 @@ def set_status(devices, mac: str, status: str, equip_net, ranges=None,
 
 
 ZERO_FIELDS = ("zero_offset", "zeroed_at")
-TOLERANCES = bootp.TOLERANCES          # 探頭允許誤差（mm）的選項（JDG-06）
-DEFAULT_TOLERANCE = 0.5                 # 未設定時的允許誤差（mm，2026-10-08 PO 由 5 改為 0.5）；等於預設值時設定中不寫此欄
+TOLERANCES = bootp.TOLERANCES          # 舊版對稱允許誤差（mm）的選項（JDG-06，向下相容）
+LIMIT_OPTIONS = bootp.LIMIT_OPTIONS    # 上限／下限（mm）的選項（JDG-06）
+DEFAULT_UPPER = 0.2                     # 未設定時的上限（mm，2026-11-17 PO）；等於預設值時設定中不寫此欄
+DEFAULT_LOWER = -0.2                    # 未設定時的下限（mm，2026-11-17 PO）
 
 
-def probe_tolerance(probe: dict) -> int:
-    return probe.get("tolerance") or DEFAULT_TOLERANCE
+def probe_limits(probe: dict) -> tuple[float, float]:
+    """JDG-06：回傳 (下限, 上限)。優先用 upper／lower；相容舊的對稱 tolerance；都沒有時用預設 ±0.2。"""
+    if "upper" in probe or "lower" in probe:
+        return (float(probe.get("lower", DEFAULT_LOWER)), float(probe.get("upper", DEFAULT_UPPER)))
+    if probe.get("tolerance"):
+        t = float(probe["tolerance"])
+        return (-t, t)
+    return (DEFAULT_LOWER, DEFAULT_UPPER)
+
+
+def limit_text(v: float) -> str:
+    """上下限的顯示：「+0.2 mm」「-0.2 mm」「0 mm」。"""
+    return ("0 mm" if v == 0 else f"{v:+g} mm")
 
 
 def standards(definition: dict) -> dict:
-    """JDG-06：允收標準由各探頭的允許誤差決定：標準值 0、上下限 ± 允許誤差 → {key: {探頭 id: Standard}}。"""
+    """JDG-06：允收標準由各探頭的上下限決定：標準值 0、下限、上限 → {key: {探頭 id: Standard}}。"""
     from .config import Standard
-    return {d["key"]: {p["id"]: Standard(0.0, -float(probe_tolerance(p)), float(probe_tolerance(p)))
-                       for p in d.get("probes") or []}
-            for d in (definition or {}).get("dl_en1") or []}
+    out = {}
+    for d in (definition or {}).get("dl_en1") or []:
+        out[d["key"]] = {}
+        for p in d.get("probes") or []:
+            lo, up = probe_limits(p)
+            out[d["key"]][p["id"]] = Standard(0.0, lo, up)
+    return out
 
 
 def clear_zero(cfg, ids=None) -> None:
@@ -655,8 +672,8 @@ def _probes(cfg) -> dict:
     return {p["id"]: p["description"] for p in (cfg or {}).get("probes") or []}
 
 
-def _tolerances(cfg) -> dict:
-    return {p["id"]: probe_tolerance(p) for p in (cfg or {}).get("probes") or []}
+def _limits(cfg) -> dict:
+    return {p["id"]: probe_limits(p) for p in (cfg or {}).get("probes") or []}
 
 
 def diff(old_devices, new_devices, standards: dict | None = None,
@@ -729,10 +746,13 @@ def diff(old_devices, new_devices, standards: dict | None = None,
             for pid in sorted(pa.keys() & pb.keys()):
                 if pa[pid] != pb[pid]:
                     lines.append((f"{call(co, pa[pid])}（ID {pid}）位置名稱：{pa[pid]} → {pb[pid]}", False))
-            ta, tb = _tolerances(co), _tolerances(cn)  # JDG-06
-            for pid in sorted(ta.keys() & tb.keys()):
-                if ta[pid] != tb[pid]:
-                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）允許誤差：{ta[pid]:g} mm → {tb[pid]:g} mm", False))
+            la, lb = _limits(co), _limits(cn)  # JDG-06：上限、下限分開列出
+            for pid in sorted(la.keys() & lb.keys()):
+                (loa, upa), (lob, upb) = la[pid], lb[pid]
+                if upa != upb:
+                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）上限：{limit_text(upa)} → {limit_text(upb)}", False))
+                if loa != lob:
+                    lines.append((f"{call(cn, pb[pid])}（ID {pid}）下限：{limit_text(loa)} → {limit_text(lob)}", False))
             qa = {x["id"]: x for x in co.get("probes") or []}
             qb = {x["id"]: x for x in cn.get("probes") or []}
             for pid in sorted(qb):  # PDT-03：啟用變更（新增的探頭不啟用時也列出）

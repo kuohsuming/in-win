@@ -41,7 +41,7 @@ class ValidateTest(unittest.TestCase):
         ]}
         self.assertEqual(len(bootp.validate(spec, NET)), 2)
 
-    def test_tolerance_field(self):  # JDG-06
+    def test_tolerance_field(self):  # JDG-06：舊版對稱 tolerance 向下相容
         def defn(tol):
             return {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
                 {"id": 1, "description": "左", "tolerance": tol}])]}
@@ -50,6 +50,18 @@ class ValidateTest(unittest.TestCase):
         for bad in (7, 100, 0.3, "5", True):
             with self.assertRaises(bootp.DefinitionError, msg=bad):
                 bootp.validate(defn(bad), NET)
+
+    def test_limit_fields(self):  # JDG-06：上限／下限
+        def defn(**kw):
+            return {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[
+                {"id": 1, "description": "左", **kw}])]}
+        for ok in (dict(upper=0.5, lower=-0.1), dict(upper=0.3 and 0.2), dict(lower=-2),
+                   dict(upper=0.3 and 0.5, lower=0.1), dict(upper=0.0, lower=0.0)):
+            self.assertEqual(len(bootp.validate(defn(**ok), NET)), 1, ok)
+        for bad in (dict(upper=0.3), dict(lower=0.3), dict(upper="5"), dict(upper=True),
+                    dict(upper=0.2, lower=0.5), dict(upper=0.5, tolerance=0.5)):  # 0.3 非選項、下限>上限、併用 tolerance
+            with self.assertRaises(bootp.DefinitionError, msg=bad):
+                bootp.validate(defn(**bad), NET)
 
     def test_zero_offset_fields(self):  # CAL-06、3.7.1
         ok = {"version": 1, "dl_en1": [device("row-1", "00:01:FC:12:34:56", "192.168.10.11", probes=[

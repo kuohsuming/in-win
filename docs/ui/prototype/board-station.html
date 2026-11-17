@@ -474,7 +474,8 @@ const PC_IP="192.168.10.1", NET="192.168.10.";
 const RANGE={dl:[11,99], other:[100,199]};                     // 預設 IP 範圍（DSC-08）
 const ROWS=10;                                                   // DL-EN1 第 1～10 台（EDT-05、POS-06）
 const PSIZE=5;                                                   // 探頭位置：第 1～5 排、第 1～5 點（POS-01）
-const TOLS=[0.1,0.2,0.5,1,2,5,10,20,50], DEF_TOL=0.5;            // 允許誤差（JDG-06）：預設 0.5 mm
+const MAGS=[0.1,0.2,0.5,1,2,5,10,20,50], LIMS=[...MAGS,0,...MAGS.map(v=>-v)].sort((a,b)=>b-a);  // 上限／下限選項（JDG-06）
+const DEF_UP=0.2, DEF_LO=-0.2;                                   // 預設上限 +0.2、下限 −0.2
 const rowNo=k=>{const m=/^row-(\d+)$/.exec(k||""); return m?+m[1]:null;};
 const rowLabel=k=>rowNo(k)?`第 ${rowNo(k)} 台`:"—";
 const devTag=c=>`${rowLabel(c.key)} ${c.name||""}`.trim();                       // 「第 N 台 名稱」
@@ -512,8 +513,11 @@ const viewOf=d=>{ if(!_view.has(d)) _view.set(d,{...d,cfg:{...d.cfg,probes:d.cfg
 const shown=()=>DB.filter(d=>d.status==="active"||d.status==="maint").map(viewOf).sort((a,b)=>rowNo(a.cfg.key)-rowNo(b.cfg.key));
 const live=()=>shown().filter(d=>d.status==="active");
 const nProbes=()=>live().reduce((n,d)=>n+d.cfg.probes.length,0);
-const tolOf=p=>p.tolerance??DEF_TOL;
-const stdOf=p=>({nom:0,lo:-tolOf(p),hi:tolOf(p)});   // 標準值 0、上下限 ±允許誤差（JDG-06）
+const upOf=p=>p.upper??(p.tolerance!=null?p.tolerance:DEF_UP);   // 向下相容舊的對稱 tolerance
+const loOf=p=>p.lower??(p.tolerance!=null?-p.tolerance:DEF_LO);
+const magOf=p=>Math.max(Math.abs(upOf(p)),Math.abs(loOf(p)));
+const stdOf=p=>({nom:0,lo:loOf(p),hi:upOf(p)});      // 標準值 0、下限、上限（JDG-06）
+const limTxt=v=>v===0?'0 mm':(v>0?'+':'')+v+' mm';
 
 const f=v=>v.toFixed(3), f4=v=>(v>=0?"+":"")+v.toFixed(4), $=s=>document.querySelector(s);
 const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -524,20 +528,20 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 /* ================= 樣本情境 ================= */
 const OFFS=[.15,-.10,.6,-.45,-.2,.45,.75,-.5,-.1,-.25,.45,.2];
-function baseVals(){ let k=0; return live().map(d=>d.cfg.probes.map(p=>+(OFFS[k++%OFFS.length]*tolOf(p)).toFixed(3))); }
+function baseVals(){ let k=0; return live().map(d=>d.cfg.probes.map(p=>+(OFFS[k++%OFFS.length]*magOf(p)).toFixed(3))); }
 const at=(v,ri,i)=>v[ri]&&i<v[ri].length;
 const SC={
   pass:   ()=>({vals:baseVals(),err:{}}),
-  fail:   ()=>{const v=baseVals(),L=live(); const t=(ri,i)=>tolOf(L[ri].cfg.probes[i]);
-    if(at(v,1,3)) v[1][3]=+(-t(1,3)-0.001).toFixed(3); else v[0][0]=+(t(0,0)+0.017).toFixed(3);
-    if(at(v,2,0)) v[2][0]=+(-t(2,0)-0.1).toFixed(3);
+  fail:   ()=>{const v=baseVals(),L=live(); const up=(ri,i)=>upOf(L[ri].cfg.probes[i]), lo=(ri,i)=>loOf(L[ri].cfg.probes[i]);
+    if(at(v,1,3)) v[1][3]=+(lo(1,3)-0.001).toFixed(3); else v[0][0]=+(up(0,0)+0.017).toFixed(3);
+    if(at(v,2,0)) v[2][0]=+(lo(2,0)-0.1).toFixed(3);
     return {vals:v,err:{}};},
   nodl:   ()=>{const v=baseVals(), ri=live().length>1?1:0, err={}; v[ri]=v[ri].map(()=>null);
     v[ri].forEach((_,i)=>err[`${ri}-${i}`]="down"); return {vals:v,err,down:[ri]};},
   noprobe:()=>{const v=baseVals(), ri=v.length-1, i=v[ri].length-1; v[ri][i]=null; return {vals:v,err:{[`${ri}-${i}`]:"ErH"}};},
   uncal:  ()=>{const v=baseVals(); if(at(v,0,1)){ v[0][1]=null; return {vals:v,err:{"0-1":"uncal"}}; } return {vals:v,err:{}};},
   mix:    ()=>{const v=baseVals(),err={},L=live();
-    if(at(v,1,2)) v[1][2]=+(tolOf(L[1].cfg.probes[2])+0.017).toFixed(3);
+    if(at(v,1,2)) v[1][2]=+(upOf(L[1].cfg.probes[2])+0.017).toFixed(3);
     if(at(v,0,1)){ v[0][1]=null; err["0-1"]="FFFF"; } return {vals:v,err};},
   only1:  ()=>{const v=baseVals(),err={},down=[]; v.forEach((r,ri)=>{ if(!ri) return; down.push(ri); v[ri]=r.map(()=>null); r.forEach((_,i)=>err[`${ri}-${i}`]="down"); });
     return {vals:v,err,down};}
@@ -1001,7 +1005,7 @@ function renderDetail(){
   if(dl){
     const blk=calBlock(d);
     h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span></h4>
-      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:100px">允許誤差</th></tr></thead><tbody id="pBody">
+      <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:92px">上限</th><th style="width:92px">下限</th></tr></thead><tbody id="pBody">
       ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
         const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
         const full=r=>PN.every(k=>used[[r,k]]);
@@ -1016,7 +1020,8 @@ function renderDetail(){
         <td>${rowSel}</td><td>${ptSel}</td>
         <td class="cal${p.zero==null?" uncal":""}">${calText(p)}</td>
         <td><button class="btn sm" type="button" data-ed="cal" data-p="${pi}" ${blk||!on?"disabled":""} title="${esc(blk||(on?"以標準件校準此探頭（歸零）":"未啟用的探頭不能校準"))}">校準</button></td>
-        <td><select data-tol="${pi}">${TOLS.map(t=>`<option value="${t}" ${tolOf(p)===t?"selected":""}>${t} mm</option>`).join("")}</select></td></tr>`;}).join("")}
+        <td><select data-up="${pi}">${LIMS.map(t=>`<option value="${t}" ${upOf(p)===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select></td>
+        <td><select data-lo="${pi}">${LIMS.map(t=>`<option value="${t}" ${loOf(p)===t?"selected":""}>${limTxt(t)}</option>`).join("")}</select></td></tr>`;}).join("")}
       </tbody></table></div>
       <div class="btnrow"><button class="btn sm" type="button" data-ed="addp">新增探頭</button><button class="btn sm danger" type="button" data-ed="rmp" ${selP!==c.probes.length-1||selP<1?"disabled":""} title="${selP>=0&&selP<c.probes.length-1?"中間的探頭請取消啟用（ID 由放大器的位置決定，刪除會讓後面的探頭對錯）":"只能刪除最後一支探頭"}">刪除探頭</button>
         ${blk&&d.status==="active"?`<span class="stdesc">校準：${esc(blk)}</span>`:""}
@@ -1083,7 +1088,8 @@ function diff(oldL,newL){
       Object.keys(np).forEach(id=>{ const x=np[id], y=op[id];
         if(!y){ ch.push(`新增探頭 ${id}「${esc(x.description)}」`); return; }
         if(y.description!==x.description) ch.push(`探頭 ${id} 位置名稱「${esc(y.description)}」→「${esc(x.description)}」`);
-        if(tolOf(y)!==tolOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）允許誤差：${tolOf(y)} mm → ${tolOf(x)} mm`);
+        if(upOf(y)!==upOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）上限：${limTxt(upOf(y))} → ${limTxt(upOf(x))}`);
+        if(loOf(y)!==loOf(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）下限：${limTxt(loOf(y))} → ${limTxt(loOf(x))}`);
         if((y.enabled!==false)!==(x.enabled!==false)) ch.push(`${esc(devCall(b,x))}（ID ${id}）啟用：${y.enabled!==false?"是":"否"} → ${x.enabled!==false?"是":"否"}`);   // PDT-03
         const pt=q=>posOf(q)?`${draftNames.rows[q.row-1]} ${draftNames.points[q.point-1]}`:"未定";   // POS-01
         if(pt(y)!==pt(x)) ch.push(`${esc(devCall(b,x))}（ID ${id}）位置：${esc(pt(y))} → ${esc(pt(x))}`); });
@@ -1159,7 +1165,8 @@ edBody.addEventListener("change",e=>{
       if(p.row&&p.point&&occupied(d,+t.dataset.p)[[p.row,p.point]]){ toast(`第 ${+t.dataset.p+1} 列（ID ${p.id}）${draftNames.rows[p.row-1]} ${draftNames.points[p.point-1]} 已被使用，請重新選擇點`); delete p.point; } }
     else { if(v) p.point=v; else delete p.point; p.description=autoDesc(p.description,oldPt,v); }
     touch(); renderDetail(); return; }
-  if(t.dataset.tol!=null&&d){ const p=d.cfg.probes[+t.dataset.tol], v=+t.value; if(v===DEF_TOL) delete p.tolerance; else p.tolerance=v; touch(); renderDetail(); return; }
+  if(t.dataset.up!=null&&d){ const p=d.cfg.probes[+t.dataset.up]; delete p.tolerance; const v=+t.value; if(v===DEF_UP) delete p.upper; else p.upper=v; touch(); renderDetail(); return; }
+  if(t.dataset.lo!=null&&d){ const p=d.cfg.probes[+t.dataset.lo]; delete p.tolerance; const v=+t.value; if(v===DEF_LO) delete p.lower; else p.lower=v; touch(); renderDetail(); return; }
   if(t.id==="fCnt"&&d){ const n=Math.max(1,Math.min(15,Math.round(+t.value)||1)), P=d.cfg.probes;   // 數量即清單筆數（EDT-06）
     while(P.length<n) P.push({id:P.length+1,description:`探頭 ${P.length+1}`,zero:null,zeroed_at:null});
     P.length=n; selP=-1; touch(); renderDetail(); }
