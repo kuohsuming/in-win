@@ -35,7 +35,7 @@ Load the PM Skill and dispatch to the appropriate subcommand workflow:
 
 ## Path conventions
 
-When SKILL.md says "read `../../docs/...`" — that's relative to SKILL.md location. From your CWD (repo root, eg. `~/AzureLineBOT-main/`), resolve as `docs/...`.
+When SKILL.md says "read `../../docs/...`" — that's relative to SKILL.md location. From your CWD (repo root, eg. `~/in-win/`), resolve as `docs/...`.
 
 When SKILL.md says "write to `docs/pm/<project>/...`" — that's a runtime operational path from repo root, so write directly to `docs/pm/<project>/...` (or `docs/pm/<project>/...` if user is operating in the namecard subdirectory — confirm with active-project.txt location).
 

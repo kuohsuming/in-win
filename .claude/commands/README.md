@@ -11,8 +11,8 @@
 
 ## How it works after `git clone`
 
-1. You clone the repo to `~/<wherever>/AzureLineBOT-main/`.
-2. Start Claude Code in that directory: `cd AzureLineBOT-main && claude`.
+1. You clone the repo to `~/<wherever>/in-win/`.
+2. Start Claude Code in that directory: `cd in-win && claude`.
 3. Claude Code auto-detects `.claude/commands/*.md` and registers each as a slash command.
 4. Type `/pm help` and PM Skill loads + responds with the command list.
 
@@ -33,6 +33,6 @@
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `/pm help` → "Unknown command: /pm" | You started Claude Code in a directory above `~/<...>/AzureLineBOT-main/` | `cd` into the repo root first |
-| `/pm` works but says "SKILL.md not found" | You're running from `~/<...>/AzureLineBOT-main/` but SKILL.md was moved | Verify `skills/pm-skill/SKILL.md` still exists |
+| `/pm help` → "Unknown command: /pm" | You started Claude Code in a directory above `~/<...>/in-win/` | `cd` into the repo root first |
+| `/pm` works but says "SKILL.md not found" | You're running from `~/<...>/in-win/` but SKILL.md was moved | Verify `skills/pm-skill/SKILL.md` still exists |
 | Slash command list doesn't show `pm` | Claude Code session started before files existed | Restart Claude Code |
