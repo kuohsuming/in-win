@@ -483,7 +483,7 @@ const PSIZE=5;                                                   // 探頭位置
 const MAGS=[0.1,0.2,0.5,1,2,5,10,20,50], LIMS=[...MAGS,0,...MAGS.map(v=>-v)].sort((a,b)=>b-a);  // 上限／下限選項（JDG-06）
 const DEF_UP=0.2, DEF_LO=-0.2;                                   // 預設上限 +0.2、下限 −0.2
 const LIM_MIN=-50, LIM_MAX=50;                                  // JDG-06 rev2：自由輸入範圍
-let freeLimits=false;                                           // 上下限輸入模式（整台共用，預設下拉）
+const freeLimits=true;                                          // JDG-06 rev3：上下限固定自己輸入（勾選框鎖定、預設勾）
 const rowNo=k=>{const m=/^row-(\d+)$/.exec(k||""); return m?+m[1]:null;};
 const rowLabel=k=>rowNo(k)?`第 ${rowNo(k)} 台`:"—";
 const devTag=c=>`${rowLabel(c.key)} ${c.name||""}`.trim();                       // 「第 N 台 名稱」
@@ -1028,7 +1028,7 @@ function renderDetail(){
   h+=`</div>`;
   if(dl){
     const blk=calBlock(d);
-    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span><label class="enc" style="float:right;font-weight:400"><input type="checkbox" id="freeLim" ${freeLimits?"checked":""}> 自己輸入上下限</label></h4>
+    h+=`<h4>已安裝的探頭<span class="sub">（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）</span><label class="enc" style="float:right;font-weight:400"><input type="checkbox" id="freeLim" checked disabled> 自己輸入上下限</label></h4>
       <div class="listwrap short"><table class="lst ptbl"><thead><tr><th style="width:64px">探頭 ID</th><th style="width:118px">啟用</th><th>位置名稱</th><th style="width:112px">第幾排</th><th style="width:112px">第幾點</th><th style="width:170px">校準</th><th style="width:70px"></th><th style="width:92px">上限</th><th style="width:92px">下限</th></tr></thead><tbody id="pBody">
       ${c.probes.map((p,pi)=>{const pe=E.filter(e=>e.pi===pi), used=occupied(d,pi);
         const G=draftNames.grid, RN=Array.from({length:G.rows},(_,i)=>i+1), PN=Array.from({length:G.points},(_,i)=>i+1);   // POS-10：只列出版面內的值
@@ -1172,7 +1172,6 @@ edBody.addEventListener("input",e=>{
 edBody.addEventListener("change",e=>{
   const t=e.target, d=cur();
   if(t.dataset.st&&d){ setStatus(d,t.value); return; }
-  if(t.id==="freeLim"){ freeLimits=t.checked; renderDetail(); return; }   // JDG-06 rev2：切換上下限輸入模式
   if(t.id==="showHid"){ showHidden=t.checked; renderEd(); return; }
   if(t.dataset.f==="ipv4"&&d){ probeIp(d); return; }
   if(t.dataset.f==="key"&&d){ d.cfg.key=t.value; touch(); renderDetail(); return; }

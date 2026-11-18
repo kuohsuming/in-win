@@ -143,7 +143,7 @@ class SettingsDialog(QDialog):
         self.remembered: dict[str, dict] = {}
         self.replaced_from: dict[str, str] = {}   # 新機 MAC → 舊機 MAC（DSC-14 探測時辨識舊機）
         self.ip_checks: dict[str, tuple[str, str, str]] = {}  # mac → (ip, 狀態, 文字)
-        self.free_limits = False                             # JDG-06 rev2：上下限自己輸入（整台共用，預設下拉）
+        self.free_limits = True                              # JDG-06 rev3：上下限固定自己輸入（勾選框鎖定、預設勾）
         self.ip_check_macs: dict[str, str | None] = {}       # mac → ARP 回應者的 MAC（DSC-22 與 DSC-10 合併用）
         self.selected: str | None = None
         self.read_only = False
@@ -480,8 +480,10 @@ class SettingsDialog(QDialog):
         hdr.addWidget(_label("已安裝的探頭（探頭 ID 依放大器串接順序自動編號 1～N；第幾排、第幾點為探頭在板子下方的位置）",
                              "label", True))
         hdr.addStretch()
-        self.chk_free_limits = QCheckBox("自己輸入上下限")  # JDG-06 rev2：整台共用，預設不勾（下拉選單）
-        self.chk_free_limits.setToolTip("打勾後上限、下限改為輸入框，可填 −50～50 mm（最細 0.1 mm）")
+        self.chk_free_limits = QCheckBox("自己輸入上下限")  # JDG-06 rev3：固定勾選且鎖定（上下限一律輸入框）
+        self.chk_free_limits.setChecked(True)
+        self.chk_free_limits.setEnabled(False)
+        self.chk_free_limits.setToolTip("上限、下限固定為輸入框，可填 −50～50 mm（最細 0.1 mm）")
         self.chk_free_limits.toggled.connect(self._on_limit_mode)
         hdr.addWidget(self.chk_free_limits)
         pb.addLayout(hdr)
@@ -848,7 +850,7 @@ class SettingsDialog(QDialog):
         self._render_info()
         self.status_box.setCurrentIndex(STATUS_ORDER.index(d.status))
         self.status_box.setEnabled(not self.read_only)
-        self.chk_free_limits.setEnabled(not self.read_only)  # JDG-06 rev2
+        self.chk_free_limits.setEnabled(False)               # JDG-06 rev3：鎖定、不能變更
         self.status_help.setText(STATUS_HELP[d.status])
         dl = d.is_dl_en1
         cfg = d.config or {}

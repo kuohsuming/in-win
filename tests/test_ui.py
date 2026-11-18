@@ -178,12 +178,10 @@ class SettingsDialogTest(UiBase):
         self.assertEqual(d.probe_table.horizontalHeaderItem(P_UP).text(), "上限")
         self.assertEqual(d.probe_table.horizontalHeaderItem(P_LO).text(), "下限")
         up, lo = d.probe_table.cellWidget(1, P_UP), d.probe_table.cellWidget(1, P_LO)
-        self.assertEqual(up.itemText(0), "+50 mm")              # 由大到小
-        self.assertEqual(lo.itemText(lo.count() - 1), "-50 mm")
-        self.assertEqual((up.currentData(), lo.currentData()), (0.2, -0.2))
+        self.assertEqual((up.value(), lo.value()), (0.2, -0.2))  # 固定輸入框（JDG-06 rev3）
         self.assertFalse(d.is_dirty())                          # 未設定視為預設，開啟時不算變更
-        up.setCurrentIndex(up.findData(0.5))
-        lo.setCurrentIndex(lo.findData(-0.1))
+        up.setValue(0.5)
+        lo.setValue(-0.1)
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
         text = d.preview.summary() + str(d.preview.items[0].lines)
@@ -197,42 +195,37 @@ class SettingsDialogTest(UiBase):
         std = self.be.standards()["row-2"]
         self.assertEqual(((std[1].lower, std[1].upper), (std[2].lower, std[2].upper)), ((-0.2, 0.2), (-0.1, 0.5)))
         d.select("00:01:FC:DE:3A:76")
-        self.assertEqual(d.probe_table.cellWidget(1, P_UP).currentText(), "+0.5 mm")
-        self.assertEqual(d.probe_table.cellWidget(1, P_LO).currentText(), "-0.1 mm")
+        self.assertEqual((d.probe_table.cellWidget(1, P_UP).value(),
+                          d.probe_table.cellWidget(1, P_LO).value()), (0.5, -0.1))
 
-    def test_free_limit_input_mode(self):  # JDG-06 rev2：勾選框切換下拉／輸入框
-        from PySide6.QtWidgets import QComboBox, QDoubleSpinBox
+    def test_free_limit_locked_on(self):  # JDG-06 rev3：上下限固定自己輸入、勾選框預設勾且鎖定
+        from PySide6.QtWidgets import QDoubleSpinBox
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         from flatness.ui.settings_dialog import P_UP, P_LO
-        self.assertFalse(d.chk_free_limits.isChecked())                      # AC-8：預設不勾
-        self.assertIsInstance(d.probe_table.cellWidget(0, P_UP), QComboBox)
-        d.chk_free_limits.setChecked(True)                                   # AC-9：改輸入框，帶入原值
+        self.assertTrue(d.chk_free_limits.isChecked())                       # 預設打勾
+        self.assertFalse(d.chk_free_limits.isEnabled())                      # disabled、不能變更
         up = d.probe_table.cellWidget(0, P_UP)
-        self.assertIsInstance(up, QDoubleSpinBox)
+        self.assertIsInstance(up, QDoubleSpinBox)                            # 一律輸入框
+        self.assertIsInstance(d.probe_table.cellWidget(0, P_LO), QDoubleSpinBox)
         self.assertEqual((up.value(), d.probe_table.cellWidget(0, P_LO).value()), (0.2, -0.2))
-        self.assertFalse(d.is_dirty())                                       # 只切模式不算變更
-        up.setValue(60)                                                      # AC-10：夾在 +50
+        self.assertFalse(d.is_dirty())
+        up.setValue(60)                                                      # 夾在 +50
         self.assertEqual(up.value(), 50.0)
-        up.setValue(0.3)                                                     # 非選單值
+        up.setValue(0.3)                                                     # 非下拉常用值也能存
         self.assertTrue(d.is_dirty())
         d.btn_save.click()
         self.assertIn("第 2 台 中排 左（ID 1）上限：+0.2 mm → +0.3 mm",
                       d.preview.summary() + str(d.preview.items[0].lines))
         d.btn_commit.click()
         self.assertEqual(by_mac(self.store.load())["00:01:FC:DE:3A:76"].config["probes"][0]["upper"], 0.3)
-        d.select("00:01:FC:DE:3A:76")                                        # AC-12：回下拉，非選項值保留
-        d.chk_free_limits.setChecked(False)
-        box = d.probe_table.cellWidget(0, P_UP)
-        self.assertIsInstance(box, QComboBox)
-        self.assertEqual(box.currentData(), 0.3)
 
     def test_lower_above_upper_blocks_save(self):  # JDG-06-A3
         d = self.dlg
         d.select("00:01:FC:DE:3A:76")
         from flatness.ui.settings_dialog import P_UP, P_LO
-        d.probe_table.cellWidget(0, P_UP).setCurrentIndex(d.probe_table.cellWidget(0, P_UP).findData(0.2))
-        d.probe_table.cellWidget(0, P_LO).setCurrentIndex(d.probe_table.cellWidget(0, P_LO).findData(0.5))
+        d.probe_table.cellWidget(0, P_UP).setValue(0.2)
+        d.probe_table.cellWidget(0, P_LO).setValue(0.5)
         msgs = [d.msg_list.item(r).text() for r in range(d.msg_list.count())]
         self.assertTrue(any("下限 0.5 不可大於上限 0.2" in m for m in msgs), msgs)
 
