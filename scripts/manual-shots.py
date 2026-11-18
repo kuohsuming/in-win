@@ -58,6 +58,7 @@ class Shots(test_ui.UiBase):
         s.enter_edit(); s.resize(1920, 1080)
         live = next(d for d in devs if d.status == lan.LIVE)
         s.select(live.mac); shot("settings-edit", s)
+        shot("settings-detail", s.detail)   # 右欄「偵測到的設備」詳情面板（第 7.2 章逐塊說明）
         s.btn_names.click(); shot("settings-grid", s); s.btn_names.click()  # 板子版面與排、點名稱（POS-10）
         unk = next((d for d in devs if d.status == lan.UNCLASSIFIED), None)
         if unk: s.select(unk.mac); shot("settings-unknown", s)
