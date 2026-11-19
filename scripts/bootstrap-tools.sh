@@ -56,13 +56,48 @@ else
   echo "  ~/in-win 已存在，略過 clone"
 fi
 
+echo "== 5. 版本驗證 =="
+google-chrome --version 2>/dev/null || echo "  ⚠ Chrome 版本讀取失敗"
+code --version 2>/dev/null | head -1 || echo "  ⚠ VS Code 版本讀取失敗"
+if code --list-extensions 2>/dev/null | grep -qx anthropic.claude-code; then
+  echo "  Claude 擴充 anthropic.claude-code：已安裝"
+else
+  echo "  ⚠ Claude 擴充未偵測到，請手動：code --install-extension anthropic.claude-code"
+fi
+
+echo "== 6. 桌面整合（需桌面 session）=="
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+  # 設 Chrome 為預設瀏覽器（Claude 擴充登入會開瀏覽器）
+  xdg-settings set default-web-browser google-chrome.desktop 2>/dev/null \
+    && echo "  預設瀏覽器 → Chrome" || echo "  （設定預設瀏覽器略過）"
+  # 把 VS Code 與 Chrome 釘到 Dock
+  python3 - <<'PY' 2>/dev/null || echo "  （釘 Dock 略過）"
+import ast, subprocess
+r = subprocess.run(["gsettings","get","org.gnome.shell","favorite-apps"],
+                   capture_output=True, text=True).stdout
+fav = ast.literal_eval(r) if r.strip() else []
+for app in ("code.desktop", "google-chrome.desktop"):
+    if app not in fav: fav.append(app)
+subprocess.run(["gsettings","set","org.gnome.shell","favorite-apps", str(fav)])
+print("  Dock：", ", ".join(fav))
+PY
+else
+  echo "  （非桌面 session，略過預設瀏覽器與 Dock；請在桌面終端機執行以套用）"
+fi
+
+echo "== 7. 開啟 VS Code =="
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v code >/dev/null; then
+  ( code "$HOME/in-win" >/dev/null 2>&1 & ) && echo "  已開啟 code ~/in-win"
+else
+  echo "  請手動：code ~/in-win"
+fi
+
 cat <<'NEXT'
 
 ====================================================================
-引導完成。接下來（由你操作，之後交給 Claude）：
-  1. 開啟 VS Code：  code ~/in-win
-  2. 登入 Claude 擴充（側邊欄 Claude；首次需用瀏覽器登入，故先裝了 Chrome）
-  3. 對 Claude 說：「依 docs/manual/新機安裝指南.md 把這台從空白設定到 App 可運行」
+引導完成。VS Code 應已開啟 ~/in-win。接下來（由你操作，之後交給 Claude）：
+  1. 在側邊欄登入 Claude 擴充（首次用瀏覽器登入，已設 Chrome 為預設瀏覽器）
+  2. 對 Claude 說：「依 docs/manual/新機安裝指南.md 把這台從空白設定到 App 可運行」
 Claude 會接手階段 1～7（系統套件、venv、網路 bridge、MySQL、桌面/自動啟動、kiosk、驗證）。
 ====================================================================
 NEXT
