@@ -1,0 +1,21 @@
+# 2026-11-19 新機安裝文件與腳本（空白 Ubuntu → App 可運行）
+
+原本 repo 只有《快速安裝指南》（從「電腦已裝好 App」開始的設備／校準設定），缺少 **OS／環境層**（空白 Ubuntu 到 App 跑起來）的文件；系統 MySQL 與 kiosk 設定也沒有腳本（本站是手動做的）。本次補齊，讓下一台站台以「這份文件 + Claude」從空白 Ubuntu 一路設定完成。
+
+## 新增
+- `docs/manual/新機安裝指南.md`：OS／環境層 runbook。涵蓋系統套件、clone+venv、網路（WAN／設備 LAN bridge，依 `site.conf`）、持久 MySQL、桌面/Dock/開機自動啟動、kiosk、重開機驗證；含本站實例值與疑難排解。接續《快速安裝指南》步驟 1。
+- `scripts/setup-station-db.sh`：安裝/啟用系統 MySQL、匯入 `sql/in-win.sql`、設定 `flatness_app` 密碼、寫 `.dev/db-system.env`（600）；可重複執行。
+- `scripts/setup-kiosk.sh`：GDM 自動登入、關鎖屏/螢幕保護、`idle-delay 0`、不自動睡眠、系統 dconf 預設、遮蔽 systemd 睡眠目標；可重複執行。
+
+## 沿用既有
+- 網路 bridge + BOOTP：`installer/setup-bootp.sh`（2026-11-19 起 `EQUIP_BRIDGE_PORTS` 支援多埠橋接）。
+- 桌面捷徑/選單/自動啟動：`scripts/install-desktop.sh`（圖示為已隨 repo 帶入的 InWin logo）。
+
+## 驗證
+- 兩支新腳本 `bash -n` 通過；內含指令均為本站 2026-11-19 實作時逐步手動執行並驗證過的步驟。
+- 文件流程對應本站重開機後實測結果（自動登入、br-lan、dnsmasq 綁 br-lan:67、系統 MySQL、App 自動啟動皆正常）。
+- 未在既有站台重跑 `setup-station-db.sh`（會重設 DB 密碼、需重啟 App），避免干擾運行中機台。
+
+## 備註
+- `setup-kiosk.sh` 需在 `install-desktop.sh` 之後執行（後者會把閒置關螢幕設回 5 分鐘）。
+- 需求規格書列作業系統為 Ubuntu 24.04；本站為 22.04，文件標示兩者皆適用，指令於 22.04 實測。
