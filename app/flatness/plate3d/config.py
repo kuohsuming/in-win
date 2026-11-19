@@ -84,25 +84,25 @@ def save(plate: PlateConfig, settings=None) -> None:
 
 def probe_positions(devices: list[dict], plate: PlateConfig,
                     grid: positions.Names | None = None) -> dict[tuple[str, int], tuple[float, float]]:
-    """(DL-EN1 key, 探頭 ID) → (x, y) mm（POS-07、POS-13，修訂 P3D-05）。
+    """(DL-EN1 key, 探頭 ID) → (x, y) mm（POS-07、POS-13，修訂 2026-11-19）。
 
-    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。探頭依設備設定的第幾排、第幾點放在板子版面
-    （grid：R 排 × P 點，預設 5 × 5）的格子上：x = 長 × (點 − 0.5) / P、y = 寬 × (排 − 0.5) / R。
+    devices 為主畫面版面（定義檔格式，含維修中 "maint": True）。探頭依「實際配置到的排／點」自動平均分布在整片板上：
+    取所有已設定位置探頭的排號、點號的最小～最大值當版面範圍，首尾落板緣、其餘等分；**第一排第一點在板子左下角**。
+    （renderer 俯視圖 y=0 在上緣，故排由下而上：首排 → 下緣、末排 → 上緣。）grid 參數保留相容但不再決定間距。
     只回傳使用中設備、已設定位置的探頭；位置未定的見 unplaced。
     """
-    grid = grid or positions.Names.default()
+    placed = [(d["key"], p["id"], where[0], where[1])
+              for d in devices if not d.get("maint")
+              for p in (d.get("probes") or []) if (where := positions.pos(p))]
+    if not placed:
+        return {}
+    rmin, rmax = min(t[2] for t in placed), max(t[2] for t in placed)
+    kmin, kmax = min(t[3] for t in placed), max(t[3] for t in placed)
     out = {}
-    for d in devices:
-        if d.get("maint"):
-            continue
-        for p in d.get("probes") or []:
-            where = positions.pos(p)
-            if where:
-                r, k = where
-                # POS-13（熱力圖）：版面首尾點落在板緣，外圈探點貼四邊、內圈留中間
-                fx = (k - 1) / (grid.grid_points - 1) if grid.grid_points > 1 else 0.5
-                fy = (r - 1) / (grid.grid_rows - 1) if grid.grid_rows > 1 else 0.5
-                out[(d["key"], p["id"])] = (plate.length * fx, plate.width * fy)
+    for key, pid, r, k in placed:
+        fx = (k - kmin) / (kmax - kmin) if kmax > kmin else 0.5   # 點：首點左緣、末點右緣
+        fy = (rmax - r) / (rmax - rmin) if rmax > rmin else 0.5   # 排：首排下緣、末排上緣（y=0 在上）
+        out[(key, pid)] = (plate.length * fx, plate.width * fy)
     return out
 
 

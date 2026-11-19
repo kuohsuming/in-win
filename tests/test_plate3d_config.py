@@ -66,14 +66,14 @@ class Positions(unittest.TestCase):
         return d
 
     def test_corners(self):
-        """板子 1000 × 600：第 1 排第 1 點 → (0, 0)、第 5 排第 5 點 → (1000, 600)（首尾落板緣）。"""
+        """板子 1000 × 600：第 1 排第 1 點 → 左下角 (0, 600)、最末排最末點 → 右上角 (1000, 0)（首尾落板緣）。"""
         pos = probe_positions([self.placed("row-1", [(1, 1), (5, 5)])], PlateConfig())
-        self.assertEqual(pos, {("row-1", 1): (0.0, 0.0), ("row-1", 2): (1000.0, 600.0)})
+        self.assertEqual(pos, {("row-1", 1): (0.0, 600.0), ("row-1", 2): (1000.0, 0.0)})
 
-    def test_device_split_across_rows(self):  # 一台的探頭可在不同排；一排可混不同台
+    def test_device_split_across_rows(self):  # 一台的探頭可在不同排；一排可混不同台（自動以實配排/點 1~3、2~4 平均）
         pos = probe_positions([self.placed("row-1", [(1, 2), (3, 2)]), self.placed("row-2", [(1, 4)])], PlateConfig())
-        self.assertEqual(pos[("row-1", 2)], (250.0, 300.0))
-        self.assertEqual(pos[("row-2", 1)][1], pos[("row-1", 1)][1])
+        self.assertEqual(pos[("row-1", 2)], (0.0, 0.0))                 # (第3排,點2)=末排左緣→右上角 x、上緣
+        self.assertEqual(pos[("row-2", 1)][1], pos[("row-1", 1)][1])   # 同為第 1 排 → 同一 y（下緣）
 
     def test_unplaced_and_maint(self):
         devs = [self.placed("row-2", [(1, 1), None]), self.placed("row-1", [None]),
@@ -82,17 +82,17 @@ class Positions(unittest.TestCase):
         self.assertEqual(set(pos), {("row-2", 1)})                     # 未定與維修中不畫
         self.assertEqual(config.unplaced(devs), [("row-1", 1), ("row-2", 2)])  # 依第幾台；維修中不算
 
-    def test_plate_size(self):
+    def test_plate_size(self):  # 實配排 1~2、點 1~5 → 首排在下緣、末排在上緣
         pos = probe_positions([self.placed("row-1", [(1, 1), (2, 5)])], PlateConfig(800, 400, 3))
-        self.assertEqual(pos[("row-1", 1)], (0.0, 0.0))
-        self.assertEqual(pos[("row-1", 2)], (800.0, 100.0))
+        self.assertEqual(pos[("row-1", 1)], (0.0, 400.0))              # 第1排第1點 → 左下角
+        self.assertEqual(pos[("row-1", 2)], (800.0, 0.0))             # 第2排第5點 → 右上角
 
-    def test_grid(self):  # POS-13：版面 2 排 × 3 點、板子 900 × 600 → 第 1 排第 3 點在板緣 (900, 0)
+    def test_auto_span_ignores_grid(self):  # POS-13（修訂）：間距依實配排/點，與傳入的 grid 無關
         from flatness.positions import Names
         pos = probe_positions([self.placed("row-1", [(1, 3), (2, 1)])], PlateConfig(900, 600, 5),
-                              Names().with_grid(2, 3))
-        self.assertEqual(pos[("row-1", 1)], (900.0, 0.0))
-        self.assertEqual(pos[("row-1", 2)], (0.0, 600.0))
+                              Names().with_grid(5, 5))                 # grid 傳 5×5 也被忽略
+        self.assertEqual(pos[("row-1", 1)], (900.0, 600.0))           # (第1排,點3)=末點右緣、首排下緣 → 右下角
+        self.assertEqual(pos[("row-1", 2)], (0.0, 0.0))               # (第2排,點1)=首點左緣、末排上緣 → 左上角
 
 
 if __name__ == "__main__":

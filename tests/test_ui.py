@@ -1255,7 +1255,7 @@ class MainWindowTest(UiBase):
         self.assertEqual(snap.judgment, "FAIL")
         self.assertEqual(len(snap.points), 12)
         first = snap.points[0]
-        self.assertEqual((first.name, first.x, first.y), ("前排 左", 0.0, 0.0))  # 第 1 排第 1 點落板緣角（POS-13）
+        self.assertEqual((first.name, first.x, first.y), ("前排 左", 0.0, 600.0))  # 第 1 排第 1 點 → 左下角（POS-13，width=600）
         self.assertEqual(snap.points[-1].name, "後排 右")
         self.assertEqual(snap.unplaced, ())
         p = w.result.points[-1].std
