@@ -29,7 +29,14 @@ else
 fi
 
 echo "[4] App 自動啟動（真機模式）"
-pgrep -f '[-]m flatness' >/dev/null && ok "App 執行中" || no "App 未執行（看 .dev/autostart.log）"
+pgrep -f '[-]m flatness' >/dev/null && ok "App 執行中" || no "App 未執行（journalctl --user -u flatness.service）"
+if systemctl --user list-unit-files 2>/dev/null | grep -q '^flatness.service'; then
+  st=$(systemctl --user is-active flatness.service 2>/dev/null)
+  nr=$(systemctl --user show flatness.service -p NRestarts --value 2>/dev/null)
+  [ "$st" = active ] && ok "flatness.service $st（自動重啟次數 ${nr:-0}）" || warn "flatness.service: $st"
+else
+  warn "未安裝 flatness.service（autostart 模式；建議跑 install-service.sh）"
+fi
 
 echo "[5] dnsmasq（由 App 啟動，綁 br-lan:67）"
 pgrep -f '[d]nsmasq --keep-in-foreground' >/dev/null && ok "dnsmasq 執行中" || warn "dnsmasq 未執行（App 未起或 br-lan 尚未可用）"

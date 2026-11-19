@@ -58,4 +58,11 @@ sudo dconf update
 #    恢復：sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target
 sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 
-echo ">> 完成：自動登入、不鎖屏、不黑屏、不睡眠（重開機後生效）"
+# 5. 關閉自動更新（避免產線時間自動更新／自動重開機）
+#    恢復：sudo systemctl enable --now unattended-upgrades
+if systemctl list-unit-files 2>/dev/null | grep -q '^unattended-upgrades'; then
+  sudo systemctl disable --now unattended-upgrades 2>/dev/null || true
+  echo "  已停用 unattended-upgrades（自動更新）"
+fi
+
+echo ">> 完成：自動登入、不鎖屏、不黑屏、不睡眠、關自動更新（重開機後生效）"

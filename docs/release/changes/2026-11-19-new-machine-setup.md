@@ -17,12 +17,14 @@
 - 文件流程對應本站重開機後實測結果（自動登入、br-lan、dnsmasq 綁 br-lan:67、系統 MySQL、App 自動啟動皆正常）。
 - 未在既有站台重跑 `setup-station-db.sh`（會重設 DB 密碼、需重啟 App），避免干擾運行中機台。
 
-## 審查修正（2026-11-19，交付工廠前複查）
-- **P0**：runbook 與流程改用系統 `python3`（原綁 `python3.11` 在新機 22.04 無 deadsnakes PPA 會裝不到；PySide6 6.11 支援 3.10～3.13）。
+## 審查修正（2026-11-19，交付工廠前複查；PO 決策後實作）
+- **P0**：階段 1 加 **deadsnakes PPA** 後安裝 **python3.11**（PO 決定鎖定 3.11；22.04 預設無 3.11）。
 - 階段 1 加入時區與 NTP 設定（`timedatectl`），確保量測時間戳正確。
+- **App 崩潰自動重啟**：新增 `scripts/install-service.sh`，以 systemd 使用者服務（`Restart=always`、`WantedBy=graphical-session.target`）啟動 App，取代 install-desktop 的 autostart。**真機實測**：強殺 App 後約 3 秒自動拉起（NRestarts +1），GUI 正常、無畫面錯誤。runbook 階段 5 改用之。
+- **關閉自動更新**：`setup-kiosk.sh` 加停用 `unattended-upgrades`，避免產線時間自動更新／重開機。
 - `setup-station-db.sh` 改為冪等：`flatness_app` 已設定且可連線時保留現有密碼，不重設（避免打斷運行中的 App）；schema 仍可重匯入供升級。
-- 新增 `scripts/verify-station.sh`（repo 版一鍵驗證，不需 sudo，修正舊 `verify-boot.sh` 的 port 67 誤報）；runbook 階段 7 改用它。
-- runbook 新增「工廠車間部署強化建議」：App 崩潰自動重啟（systemd 服務）、關閉 unattended-upgrades、工程人員密碼改預設、時間同步、UPS（建議項，待 PO 採用）。
+- 新增 `scripts/verify-station.sh`（repo 版一鍵驗證，不需 sudo，含服務狀態；修正舊 `verify-boot.sh` 的 port 67 誤報）；runbook 階段 7 改用它。
+- 工程人員密碼：PO 決定**維持固定 `1234`**（文件附如需更改的指令）。
 
 ## 備註
 - `setup-kiosk.sh` 需在 `install-desktop.sh` 之後執行（後者會把閒置關螢幕設回 5 分鐘）。
