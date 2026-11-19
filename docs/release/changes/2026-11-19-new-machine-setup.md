@@ -3,7 +3,8 @@
 原本 repo 只有《快速安裝指南》（從「電腦已裝好 App」開始的設備／校準設定），缺少 **OS／環境層**（空白 Ubuntu 到 App 跑起來）的文件；系統 MySQL 與 kiosk 設定也沒有腳本（本站是手動做的）。本次補齊，讓下一台站台以「這份文件 + Claude」從空白 Ubuntu 一路設定完成。
 
 ## 新增
-- `docs/manual/新機安裝指南.md`：OS／環境層 runbook。涵蓋系統套件、clone+venv、網路（WAN／設備 LAN bridge，依 `site.conf`）、持久 MySQL、桌面/Dock/開機自動啟動、kiosk、重開機驗證；含本站實例值與疑難排解。接續《快速安裝指南》步驟 1。
+- `scripts/bootstrap-tools.sh`：**Phase 0 引導**（人手動、Claude 之前）。用 Google／Microsoft 官方 apt 來源裝 Chrome、VS Code、Claude 擴充（`anthropic.claude-code`，自帶 runtime，不需 Node/CLI），並 clone `~/in-win`。可用 `wget raw URL` 一行取得，不需先 clone。
+- `docs/manual/新機安裝指南.md`：OS／環境層 runbook（含階段 0 引導）。涵蓋系統套件、clone+venv、網路（WAN／設備 LAN bridge，依 `site.conf`）、持久 MySQL、桌面/Dock/開機自動啟動、kiosk、重開機驗證；含本站實例值與疑難排解。接續《快速安裝指南》步驟 1。
 - `scripts/setup-station-db.sh`：安裝/啟用系統 MySQL、匯入 `sql/in-win.sql`、設定 `flatness_app` 密碼、寫 `.dev/db-system.env`（600）；可重複執行。
 - `scripts/setup-kiosk.sh`：GDM 自動登入、關鎖屏/螢幕保護、`idle-delay 0`、不自動睡眠、系統 dconf 預設、遮蔽 systemd 睡眠目標；可重複執行。
 
