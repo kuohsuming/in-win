@@ -158,7 +158,11 @@ class MySQLWriteTest(unittest.TestCase):
         self.assertEqual(self.store.count_inspections(T.date()), 1)
         (got,) = self.store.read_inspections(T.date())                      # EXP-03
         self.assertEqual(got["head"], dict(head, measured_at=T))
-        self.assertEqual(got["points"], [dict(p, zero_offset=None) for p in rec["points"]])
+        # best_offset 僅存本機暫存 JSON、不寫 DB（JDG-07），讀回的點不含此欄
+        expected = [dict(p, zero_offset=None) for p in rec["points"]]
+        for p in expected:
+            p.pop("best_offset", None)
+        self.assertEqual(got["points"], expected)
 
 
 if __name__ == "__main__":
