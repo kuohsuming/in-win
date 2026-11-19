@@ -17,6 +17,13 @@
 - 文件流程對應本站重開機後實測結果（自動登入、br-lan、dnsmasq 綁 br-lan:67、系統 MySQL、App 自動啟動皆正常）。
 - 未在既有站台重跑 `setup-station-db.sh`（會重設 DB 密碼、需重啟 App），避免干擾運行中機台。
 
+## 審查修正（2026-11-19，交付工廠前複查）
+- **P0**：runbook 與流程改用系統 `python3`（原綁 `python3.11` 在新機 22.04 無 deadsnakes PPA 會裝不到；PySide6 6.11 支援 3.10～3.13）。
+- 階段 1 加入時區與 NTP 設定（`timedatectl`），確保量測時間戳正確。
+- `setup-station-db.sh` 改為冪等：`flatness_app` 已設定且可連線時保留現有密碼，不重設（避免打斷運行中的 App）；schema 仍可重匯入供升級。
+- 新增 `scripts/verify-station.sh`（repo 版一鍵驗證，不需 sudo，修正舊 `verify-boot.sh` 的 port 67 誤報）；runbook 階段 7 改用它。
+- runbook 新增「工廠車間部署強化建議」：App 崩潰自動重啟（systemd 服務）、關閉 unattended-upgrades、工程人員密碼改預設、時間同步、UPS（建議項，待 PO 採用）。
+
 ## 備註
 - `setup-kiosk.sh` 需在 `install-desktop.sh` 之後執行（後者會把閒置關螢幕設回 5 分鐘）。
 - 需求規格書列作業系統為 Ubuntu 24.04；本站為 22.04，文件標示兩者皆適用，指令於 22.04 實測。

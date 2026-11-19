@@ -19,22 +19,25 @@ sudo systemctl enable --now mysql
 for _ in $(seq 1 30); do [ -S /var/run/mysqld/mysqld.sock ] && break; sleep 1; done
 [ -S /var/run/mysqld/mysqld.sock ] || { echo "MySQL socket 未就緒" >&2; exit 1; }
 
-# 2. 匯入 schema（建 flatness／flatness_sim 與資料表、flatness_app 帳號與授權；可重複執行）
+# 2. 匯入 schema（建 flatness／flatness_sim 與資料表、flatness_app 帳號與授權；可重複執行，亦用於升級）
 echo ">> 匯入 sql/in-win.sql"
 sudo mysql < sql/in-win.sql
 
-# 3. 設定 App 帳號密碼 + 寫連線設定（.dev/db-system.env，600）
-PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')
-sudo mysql -e "ALTER USER 'flatness_app'@'localhost' IDENTIFIED BY '$PASS'; FLUSH PRIVILEGES;"
-mkdir -p .dev
-umask 077
-printf 'DB_SOCKET=/var/run/mysqld/mysqld.sock\nDB_NAME=flatness\nDB_USER=flatness_app\nDB_PASS=%s\n' "$PASS" > .dev/db-system.env
-chmod 600 .dev/db-system.env
-
-# 4. 驗證 App 帳號連得上
-if mysql --no-defaults -uflatness_app -p"$PASS" --socket=/var/run/mysqld/mysqld.sock flatness \
-     -e "SELECT 1" >/dev/null 2>&1; then
-  echo ">> 完成：schema 已匯入、flatness_app 可連線、.dev/db-system.env 已寫入"
+# 3. App 帳號密碼：已設定且連得上就保留（避免打斷運行中的 App）；否則重設並寫 .dev/db-system.env（600）
+SOCK=/var/run/mysqld/mysqld.sock
+if [ -f .dev/db-system.env ] \
+   && EXIST_PASS=$(sed -n 's/^DB_PASS=//p' .dev/db-system.env) && [ -n "$EXIST_PASS" ] \
+   && mysql --no-defaults -uflatness_app -p"$EXIST_PASS" --socket="$SOCK" flatness -e "SELECT 1" >/dev/null 2>&1; then
+  echo ">> flatness_app 已設定且可連線，保留現有密碼（.dev/db-system.env 不變）"
 else
-  echo "flatness_app 連線測試失敗" >&2; exit 1
+  PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')
+  sudo mysql -e "ALTER USER 'flatness_app'@'localhost' IDENTIFIED BY '$PASS'; FLUSH PRIVILEGES;"
+  mkdir -p .dev
+  umask 077
+  printf 'DB_SOCKET=%s\nDB_NAME=flatness\nDB_USER=flatness_app\nDB_PASS=%s\n' "$SOCK" "$PASS" > .dev/db-system.env
+  chmod 600 .dev/db-system.env
+  mysql --no-defaults -uflatness_app -p"$PASS" --socket="$SOCK" flatness -e "SELECT 1" >/dev/null 2>&1 \
+    || { echo "flatness_app 連線測試失敗" >&2; exit 1; }
+  echo ">> flatness_app 密碼已設定、.dev/db-system.env 已寫入"
 fi
+echo ">> 完成"
