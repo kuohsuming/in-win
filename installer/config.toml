@@ -2,7 +2,7 @@
 # 安裝時已存在則保留，不覆蓋（3.0.8）。DL-EN1 的 MAC、IP 與探頭不在此，於 App「設備設定」維護。
 
 station_id = "ST01"          # 工站代號（site.conf STATION_ID）
-equip_if = "eno2"            # 設備網卡（site.conf EQUIP_IF）
+equip_if = "br-lan"          # 設備網卡（site.conf EQUIP_IF）：port1+port2 橋接
 pc_ip = "192.168.10.1"       # 設備網卡沒有位址時使用的網段（site.conf PC_IP／NET_PREFIX，DSC-08）
 net_prefix = 24
 countdown_seconds = 0.5      # 按「下一片」「重讀」後到讀取的秒數（MEA-03、MEA-07）；1 以上逐秒倒數

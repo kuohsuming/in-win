@@ -24,7 +24,15 @@ load_site_conf() {
   [[ -n ${EQUIP_IF:-} ]] || fail "site.conf 缺少 EQUIP_IF"
   [[ -n ${PC_IP:-} && -n ${NET_PREFIX:-} ]] || fail "site.conf 缺少 PC_IP 或 NET_PREFIX"
   [[ -n ${DLEN1_DEF_FILE:-} ]] || fail "site.conf 缺少 DLEN1_DEF_FILE"
-  ip link show "$EQUIP_IF" >/dev/null 2>&1 || fail "設備網卡 $EQUIP_IF 不存在（ip -br link 查看網卡名稱）"
+  # 橋接模式下 EQUIP_IF（bridge）可能尚未建立（由 step_equip_net 產生），改為檢查實體埠存在
+  if [[ -n ${EQUIP_BRIDGE_PORTS:-} ]]; then
+    local p
+    for p in $EQUIP_BRIDGE_PORTS; do
+      ip link show "$p" >/dev/null 2>&1 || fail "橋接埠 $p 不存在（site.conf EQUIP_BRIDGE_PORTS；ip -br link 查看網卡名稱）"
+    done
+  else
+    ip link show "$EQUIP_IF" >/dev/null 2>&1 || fail "設備網卡 $EQUIP_IF 不存在（ip -br link 查看網卡名稱）"
+  fi
 }
 
 # 內容不同才寫入；有寫入回傳 0，內容相同回傳 1（3.0.8：內容相同時不重啟服務）
