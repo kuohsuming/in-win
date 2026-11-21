@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>表面平整檢查 作業員畫面</title>
 <!-- UI 原型：依 App 2026-11-18 版的實際畫面與操作更新（主畫面依探頭位置排列、取出測試數據、設備設定〔第幾台、探頭第幾排／第幾點、排與點名稱〕、探頭校準、允許誤差、板子尺寸）。
-     2026-11-18 PO：(1) 探頭方塊判定改為 JDG-07「最佳點修正」（整片 |讀值| 最小者為最佳點，逐點以讀值 − 最佳點修正後再比上下限；大字仍顯示原始讀值）；(2) 3D 繪圖改為俯視 jet 熱力圖「變形曲面示意圖」（5.11） -->
+     2026-11-18 PO：(1) 探頭方塊判定用 JDG-07「最佳點修正」（整片 |讀值| 最小者為最佳點，逐點以讀值 − 最佳點修正後再比上下限）；(2) 3D 繪圖改為俯視 jet 熱力圖「變形曲面示意圖」（5.11）。
+     2026-11-21 PO：方塊不再標「最佳點」；首頁大字測量值改為 max(本次讀值) − 讀值（與 3D 相對高度同定義）；刻度校正值字體放大。紀錄／3D／Excel／DB 仍為原始讀值 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -151,13 +152,13 @@ button,select{font:inherit}
   .vals .m{grid-column:2} .vals .rg{white-space:normal;font-size:14px} .vals .m{font-size:28px}
 }
 /* 刻度條（5.6、JDG-07）：三角指標依修正值定位、上標修正值、綠色區間左右下標該點下限／上限 */
-.gauge{position:relative;height:50px}
-.gauge .track{position:absolute;left:0;right:0;top:27px;height:6px;background:var(--line);border-radius:3px}
-.gauge .ok{position:absolute;left:20%;right:20%;top:23px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
-.gauge .nom{position:absolute;left:50%;top:20px;height:20px;width:2px;background:var(--ink-2)}
-.gauge .mk{position:absolute;top:16px;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:10px solid var(--ink);margin-left:-9px}
-.gauge .cv{position:absolute;top:0;height:14px;line-height:14px;transform:translateX(-50%);font-family:var(--num);font-size:12px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
-.gauge .lo,.gauge .hi{position:absolute;top:37px;height:13px;line-height:13px;transform:translateX(-50%);font-family:var(--num);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge{position:relative;height:56px}
+.gauge .track{position:absolute;left:0;right:0;top:33px;height:6px;background:var(--line);border-radius:3px}
+.gauge .ok{position:absolute;left:20%;right:20%;top:29px;height:14px;background:var(--go);opacity:.35;border-radius:2px}
+.gauge .nom{position:absolute;left:50%;top:26px;height:20px;width:2px;background:var(--ink-2)}
+.gauge .mk{position:absolute;top:22px;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:10px solid var(--ink);margin-left:-9px}
+.gauge .cv{position:absolute;top:0;height:20px;line-height:20px;transform:translateX(-50%);font-family:var(--num);font-size:16px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gauge .lo,.gauge .hi{position:absolute;top:43px;height:13px;line-height:13px;transform:translateX(-50%);font-family:var(--num);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .gauge .lo{left:20%} .gauge .hi{left:80%}
 .devst{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:6px;min-height:31px}
 .devst .note{margin-left:auto;font-size:18px;font-weight:700;color:var(--ng);text-align:right}
@@ -167,9 +168,6 @@ button,select{font:inherit}
 .probe.hi .badge,.probe.lo .badge,.probe.hi .m,.probe.lo .m{color:var(--ng)}
 .probe.hi .mk,.probe.lo .mk{border-top-color:var(--ng)}
 .probe.hi .cv,.probe.lo .cv{color:var(--ng)}
-/* 最佳點（JDG-07）：整片判定基準的那一點，藍色標籤 */
-.probe .besttag{display:none;background:var(--focus);color:#fff;border-radius:3px;padding:0 6px;font-size:12px;font-weight:700;white-space:nowrap}
-.probe.best .besttag{display:inline}
 .probe.err{border-color:var(--ng);border-width:5px;background:var(--ng-soft);opacity:1!important}
 .probe.err .badge{color:var(--ng)} .probe.err .m{color:var(--ng);font-family:var(--txt);font-size:26px;font-weight:900}
 .probe.err .gauge{visibility:hidden} .probe.err .devst{color:var(--ng);font-weight:700}
@@ -574,7 +572,7 @@ function makeSerial(d=new Date()){const p=(n,w=2)=>String(n).padStart(w,"0");
 /* 主畫面依探頭位置排列（POS-04）：第 1～5 排、每排固定 5 格，沒有探頭的格為淡色空框；位置未定的在最下方「未設定位置」區 */
 function tileHtml(d,p,id){ const s=stdOf(p), maint=d.status==="maint";
   return `<div class="probe ${maint?"maint":"blank"}"${id?` id="${id}"`:""} data-dev="${d.cfg.key}">
-      <div class="top"><span class="pos">${esc(p.description)}<small class="sub">${esc(devTag(d.cfg))}<b class="iptag">IP 不符</b><b class="besttag">最佳點</b></small></span>
+      <div class="top"><span class="pos">${esc(p.description)}<small class="sub">${esc(devTag(d.cfg))}<b class="iptag">IP 不符</b></small></span>
         <span class="badge"><svg><use href="#i-ok"/></svg><span class="bw">${maint?"維修中":""}</span></span></div>
       <div class="vals">
         <span class="k ml">測量值</span><span class="m">${maint?"維修中":"—"}</span>
@@ -615,11 +613,12 @@ function clearRows(dot,text){
 }
 function paint(data){
   const out=[], errs=[];
-  /* JDG-07：先在整片所有有效讀值中找最佳點（|讀值| 最小、並列取較小），逐點修正後再判定（方案 A：大字仍顯示原始讀值） */
+  /* JDG-07：先在整片所有有效讀值中找最佳點（|讀值| 最小、並列取較小），逐點修正後再判定；首頁大字另以 max−讀值 顯示（紀錄仍用原始讀值） */
   const cand=[]; live().forEach((d,ri)=>d.cfg.probes.forEach((p,i)=>{
     if(!data.err[`${ri}-${i}`]&&data.vals[ri][i]!=null) cand.push({ri,i,m:data.vals[ri][i]}); }));
   const bestPt=cand.length?cand.reduce((a,c)=>(Math.abs(c.m)<Math.abs(a.m)||(Math.abs(c.m)===Math.abs(a.m)&&c.m<a.m))?c:a):null;
   const best=bestPt?bestPt.m:null;
+  const hiVal=cand.length?Math.max(...cand.map(c=>c.m)):0;   // 本次最大讀值：首頁大字＝max−讀值（與 3D 相對高度同定義；紀錄仍用原始讀值）
   live().forEach((d,ri)=>{
     const down=(data.down||[]).includes(ri), P=d.cfg.probes; let uncal=0;
     if(down) errs.push(`${esc(devTag(d.cfg))} DL-EN1 偵測不到`);
@@ -640,10 +639,9 @@ function paint(data){
       const st=judge(s,cv);                   // 判定改用修正值
       if(st!=="ok") out.push(`${esc(dispName(d.cfg,p))}${WORD[st]}`);
       el.className="probe "+st;
-      if(bestPt&&bestPt.ri===ri&&bestPt.i===i) el.classList.add("best");   // 最佳點標籤
       el.querySelector(".badge use").setAttribute("href","#i-"+st);
       el.querySelector(".bw").textContent=WORD[st];
-      el.querySelector(".m").innerHTML=`${f(m)}<small>mm</small>`;          // 方案 A：大字仍為原始讀值
+      el.querySelector(".m").innerHTML=`${f(hiVal-m)}<small>mm</small>`;    // 首頁大字＝max(本次讀值)−讀值（與 3D 相對高度同定義；紀錄仍用原始讀值）
       const span=(s.hi-s.lo)/0.6, start=s.lo-span*0.2, pct=Math.max(2,Math.min(98,(cv-start)/span*100));
       el.querySelector(".mk").style.left=pct+"%";                          // 三角依修正值定位
       const cvEl=el.querySelector(".cv"); cvEl.textContent=slim(+cv.toFixed(3)); cvEl.style.left=pct+"%";

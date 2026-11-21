@@ -907,9 +907,9 @@ class ScreenFitTest(UiBase):
         win4 = self.window(4)
         k_big = win4.scale_k
         self.assertGreater(win.scale_k, k_big)                            # 排少時方塊較大
-        win4.resize(1600, 900)
+        win4.resize(2560, 1440)
         pump(self.app, 0.1)
-        self.assertLess(win4.scale_k, k_big)                              # 畫面變小，方塊跟著縮小
+        self.assertGreater(win4.scale_k, k_big)                           # 畫面變大，方塊跟著放大（UI-11；1080p 下 4 排已在縮放下限 0.45）
 
     def test_tile_height_same_for_every_result(self):  # 結果改變時排不跳動
         from flatness.measure import ERR, HI, OK
@@ -1113,21 +1113,21 @@ class MainWindowTest(UiBase):
         res = {(p.key, p.probe_id): p for p in w.result.points}
         self.assertEqual(w.result.judgment, "FAIL")
         self.assertEqual(res[defect].state, "hi")
-        self.assertEqual(res[defect].value, 5.30)                 # 方塊仍顯示原始讀值（方案 A）
+        self.assertEqual(res[defect].value, 5.30)                 # 紀錄/DB 仍為原始讀值（不受首頁顯示影響）
         self.assertEqual(res[defect].best_offset, 5.00)          # 量測當時的最佳點
         self.assertTrue(all(p.state == "ok" for k, p in res.items() if k != defect))
-        # JDG-07：恰一個方塊標記「最佳點」，且就是讀值 5.00（最佳點）之一、不是缺陷點
-        best_tiles = [kp for kp, t in w.tiles.items() if t.is_best]
-        self.assertEqual(len(best_tiles), 1)
-        self.assertNotEqual(best_tiles[0], defect)
-        self.assertEqual(res[best_tiles[0]].value, 5.00)
-        # JDG-07：刻度指標用修正值定位（大字仍為原始讀值）；最佳點落在中線、合格點落在區間內
+        # JDG-07：刻度指標用修正值定位（相對最佳點）；最佳點落在中線、合格點落在區間內
         self.assertAlmostEqual(w.tiles[defect].scale.value, 5.30 - 5.00)   # 偏高點 → 修正值 0.3
-        self.assertEqual(w.tiles[best_tiles[0]].scale.value, 0.0)          # 最佳點 → 修正值 0
+        a_good = next(kp for kp in res if kp != defect)                    # 任一合格點（讀值 5.00 = 最佳點）
+        self.assertEqual(w.tiles[a_good].scale.value, 0.0)                 # 最佳點 → 修正值 0
         for kp, t in w.tiles.items():
             if res[kp].state == "ok":
                 lo, hi = t.std.lower, t.std.upper
                 self.assertTrue(lo <= t.scale.value <= hi)                 # 合格 → 指標在上下限內
+        # 首頁大字＝max(本次讀值) − 該點讀值（與 3D 相對高度同定義）；缺陷點讀值 5.30 最大 → 顯示 0.000
+        from flatness.ui.main_window import f3
+        self.assertTrue(w.tiles[defect].m.text().startswith(f3(0.0)))     # 讀值最大 → 0.000
+        self.assertTrue(w.tiles[a_good].m.text().startswith(f3(0.30)))    # 5.00 → 5.30−5.00 = 0.300
 
     def test_tile_sub_uses_device_number(self):  # POS-06：方塊小字「第 N 台 名稱」，與設定頁一致
         from flatness.ui.main_window import ProbeTile
