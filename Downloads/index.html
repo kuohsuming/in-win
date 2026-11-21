@@ -1341,10 +1341,19 @@ let lastData=null, lastJudg="";
 const MIN3=3, LINE_MM=1, GRID_LONG=41, GRID_SHORT_MIN=9, STEP_DEG=30, STEP_MS=700;
 const LINE_MSG="無法繪製 3D：所有有效量測點在同一直線上（例如都在同一排，或都在同一點），探頭須分佈在不同的排與點。";
 
-/* POS-13：每個探頭的第幾排、第幾點，依板子版面 R 排 × P 點、首尾落板緣：x = 長 ×（點 − 1）／（P − 1）、y = 寬 ×（排 − 1）／（R − 1）（P 或 R 為 1 時取 0.5） */
-function probeXY(){ const out={}, R=NAMES.grid.rows, P=NAMES.grid.points;
-  live().forEach(d=>d.cfg.probes.forEach(p=>{ if(posOf(p)) out[`${d.cfg.key}#${p.id}`]=[
-    P>1?PLATE.length*(p.point-1)/(P-1):PLATE.length*0.5, R>1?PLATE.width*(p.row-1)/(R-1):PLATE.width*0.5]; }));   // POS-13
+/* POS-13（2026-11-19 修訂，與 App flatness/plate3d/config.probe_positions 同一算法）：
+   探頭依「實際配置到的排／點」自動平均分布在整片板上——取所有已設定位置探頭的排號、點號
+   最小～最大值當版面範圍，首尾落板緣、其餘等分（不再用板子版面格點 R×P 當間距）；
+   第一排第一點在板子左下角（俯視 y=0 在上緣，故首排→下緣、末排→上緣）；
+   只有單一排號／點號時該軸置中 0.5。 */
+function probeXY(){
+  const placed=[]; live().forEach(d=>d.cfg.probes.forEach(p=>{ const w=posOf(p); if(w) placed.push([`${d.cfg.key}#${p.id}`,w[0],w[1]]); }));
+  if(!placed.length) return {};
+  const rows=placed.map(t=>t[1]), cols=placed.map(t=>t[2]);
+  const rmin=Math.min(...rows), rmax=Math.max(...rows), kmin=Math.min(...cols), kmax=Math.max(...cols);
+  const out={};
+  placed.forEach(([key,r,c])=>{ const fx=kmax>kmin?(c-kmin)/(kmax-kmin):0.5, fy=rmax>rmin?(rmax-r)/(rmax-rmin):0.5;   // 點：首點左緣、末點右緣；排：首排下緣、末排上緣
+    out[key]=[PLATE.length*fx, PLATE.width*fy]; });
   return out; }
 /* P3D-01、P3D-04：按下當下這一片的結果；設備異常、未校準的點為無數據；位置未定的探頭另列（POS-07） */
 function snapshot3d(){ const xy=probeXY(), pts=[], unplaced=[];
