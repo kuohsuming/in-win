@@ -81,13 +81,13 @@ def render(p: QPainter, w: float, h: float, model: SurfaceModel, rot_deg: float,
     bar_h = 42
     area = QRectF(8, head_h, w - 16, h - head_h - legend_h - bar_h - 12)
 
-    # ---- 抬頭（尺寸、垂直放大、最低、最高）
+    # ---- 抬頭（尺寸、最低、最高）
     hi_k, hi_z = model.highest
     lo_k, lo_z = model.lowest
     p.setPen(ink)
     p.setFont(text_font(14))
     head = [
-        f"寬 {fmt(W)} × 長 {fmt(L)} × 厚 {fmt(model.plate.height)} mm　垂直放大 5 倍",
+        f"寬 {fmt(W)} × 長 {fmt(L)} × 厚 {fmt(model.plate.height)} mm",
         f"最低：{model.by_key[lo_k].name} = {rel(lo_z):.4f} mm",
         f"最高：{model.by_key[hi_k].name} = {rel(hi_z):.4f} mm",
     ]
