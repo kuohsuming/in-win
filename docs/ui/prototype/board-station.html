@@ -1418,10 +1418,10 @@ function draw3d(){
   const TXT=C3("--txt"), ink=C3("--ink"), ng=C3("--ng"), focus=C3("--focus");
   const {L,W,g,ins,nx,ny,pts}=m, zmin=m.lo[1], spread=m.spread||1e-9, rel=z=>z-zmin;
   const numof=new Map(pts.map((p,i)=>[p.key,i+1])), hiK=m.hi[0], loK=m.lo[0];
-  /* 抬頭（三列：尺寸與垂直放大、最低、最高） */
+  /* 抬頭（三列：尺寸、最低、最高） */
   const headH=3*20+14;
   ctx.fillStyle=ink; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font=`500 14px ${TXT}`;
-  [`寬 ${fmm(W)} × 長 ${fmm(L)} × 厚 ${fmm(m.T)} mm　垂直放大 5 倍`,
+  [`寬 ${fmm(W)} × 長 ${fmm(L)} × 厚 ${fmm(m.T)} mm`,
    `最低：${m.by[loK].name} = ${rel(m.lo[1]).toFixed(4)} mm`,
    `最高：${m.by[hiK].name} = ${rel(m.hi[1]).toFixed(4)} mm`].forEach((t,i)=>ctx.fillText(t,24,18+i*20));
   /* 板面投影（平面內旋轉；仿射，無透視） */
